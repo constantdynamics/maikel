@@ -4,9 +4,10 @@ import { useState, useCallback, useEffect } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import StockTable from '@/components/StockTable';
 import FilterBar from '@/components/FilterBar';
+import ScanProgress from '@/components/ScanProgress';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useStocks } from '@/hooks/useStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
-import type { Stock } from '@/lib/types';
 
 export default function DashboardPage() {
   const {
@@ -26,7 +27,15 @@ export default function DashboardPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [scanRunning, setScanRunning] = useState(false);
-  const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [scanTriggered, setScanTriggered] = useState(false);
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -43,15 +52,14 @@ export default function DashboardPage() {
       }
       if (e.key === 'Delete') {
         if (selectedIds.size > 0) {
-          bulkDelete(selectedIds);
-          setSelectedIds(new Set());
+          requestBulkDelete();
         }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, bulkFavorite, bulkDelete]);
+  }, [selectedIds, bulkFavorite]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -79,26 +87,20 @@ export default function DashboardPage() {
 
   async function handleRunScan() {
     setScanRunning(true);
-    setScanMessage('Scan started...');
+    setScanTriggered(true);
 
     try {
-      const response = await fetch('/api/scan', { method: 'POST' });
-      const result = await response.json();
-
-      if (result.error) {
-        setScanMessage(`Scan failed: ${result.error}`);
-      } else {
-        setScanMessage(
-          `Scan complete: ${result.stocksFound} stocks found out of ${result.stocksScanned} scanned (${result.durationSeconds}s)`,
-        );
-        refreshStocks();
-      }
-    } catch (error) {
-      setScanMessage('Scan failed: Network error');
-    } finally {
+      await fetch('/api/scan', { method: 'POST' });
+      // The ScanProgress component handles polling and completion
+    } catch {
       setScanRunning(false);
-      setTimeout(() => setScanMessage(null), 10000);
     }
+  }
+
+  function handleScanComplete() {
+    setScanRunning(false);
+    setScanTriggered(false);
+    refreshStocks();
   }
 
   function handleBulkFavorite() {
@@ -106,9 +108,31 @@ export default function DashboardPage() {
     setSelectedIds(new Set());
   }
 
-  function handleBulkDelete() {
-    bulkDelete(selectedIds);
-    setSelectedIds(new Set());
+  function requestBulkDelete() {
+    const count = selectedIds.size;
+    setConfirmDialog({
+      open: true,
+      title: `Delete ${count} stock${count !== 1 ? 's' : ''}?`,
+      message: `${count} stock${count !== 1 ? 's' : ''} will be moved to the recycle bin. You can restore them later.`,
+      onConfirm: () => {
+        bulkDelete(selectedIds);
+        setSelectedIds(new Set());
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
+  }
+
+  function requestDelete(id: string) {
+    const stock = stocks.find((s) => s.id === id);
+    setConfirmDialog({
+      open: true,
+      title: `Delete ${stock?.ticker || 'stock'}?`,
+      message: `This stock will be moved to the recycle bin. You can restore it later.`,
+      onConfirm: () => {
+        deleteStock(id);
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
   }
 
   return (
@@ -116,16 +140,12 @@ export default function DashboardPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          {scanMessage && (
-            <div className={`text-sm px-3 py-1.5 rounded ${
-              scanMessage.includes('failed')
-                ? 'bg-red-900/30 text-red-400'
-                : 'bg-blue-900/30 text-blue-400'
-            }`}>
-              {scanMessage}
-            </div>
-          )}
         </div>
+
+        <ScanProgress
+          scanTriggered={scanTriggered}
+          onScanComplete={handleScanComplete}
+        />
 
         <FilterBar
           filters={filters}
@@ -136,7 +156,7 @@ export default function DashboardPage() {
           scanRunning={scanRunning}
           selectedCount={selectedIds.size}
           onBulkFavorite={handleBulkFavorite}
-          onBulkDelete={handleBulkDelete}
+          onBulkDelete={requestBulkDelete}
         />
 
         {loading ? (
@@ -146,10 +166,12 @@ export default function DashboardPage() {
         ) : stocks.length === 0 && !filters.search && !filters.sectorFilter ? (
           <div className="bg-slate-800 border border-slate-700 rounded-lg p-16 text-center">
             <h2 className="text-xl font-semibold mb-2">No Data Yet</h2>
-            <p className="text-slate-400 mb-6">
-              Click &ldquo;Run Scan&rdquo; to start scanning for stocks matching your criteria.
-              The scan will check NYSE and NASDAQ stocks that have declined 95-99% from their
-              all-time high but showed multiple 200%+ growth events.
+            <p className="text-slate-400 mb-4">
+              Click &ldquo;Run Scan&rdquo; to start scanning for high-potential recovery stocks.
+            </p>
+            <p className="text-slate-500 text-sm mb-6">
+              The scanner fetches the biggest losers from TradingView, then deep-scans
+              each one for 95-99% ATH decline with multiple 200%+ growth events.
             </p>
             <button
               onClick={handleRunScan}
@@ -168,9 +190,19 @@ export default function DashboardPage() {
             onToggleSelect={toggleSelect}
             onToggleSelectAll={toggleSelectAll}
             onToggleFavorite={toggleFavorite}
-            onDelete={deleteStock}
+            onDelete={requestDelete}
           />
         )}
+
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+        />
       </div>
     </AuthGuard>
   );

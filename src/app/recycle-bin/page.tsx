@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '@/components/AuthGuard';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils';
 import type { Stock } from '@/lib/types';
@@ -9,6 +10,12 @@ import type { Stock } from '@/lib/types';
 export default function RecycleBinPage() {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
   const fetchDeleted = useCallback(async () => {
     setLoading(true);
@@ -41,7 +48,6 @@ export default function RecycleBinPage() {
     const stock = stocks.find((s) => s.id === id);
     if (!stock) return;
 
-    // Delete related data first
     await supabase.from('price_history').delete().eq('ticker', stock.ticker);
     await supabase.from('growth_events').delete().eq('ticker', stock.ticker);
     await supabase.from('stocks').delete().eq('id', id);
@@ -68,6 +74,31 @@ export default function RecycleBinPage() {
     setStocks([]);
   }
 
+  function requestEmptyBin() {
+    setConfirmDialog({
+      open: true,
+      title: 'Empty recycle bin?',
+      message: `All ${stocks.length} stock${stocks.length !== 1 ? 's' : ''} and their price history will be permanently deleted. This cannot be undone.`,
+      onConfirm: () => {
+        emptyBin();
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
+  }
+
+  function requestPermanentDelete(id: string) {
+    const stock = stocks.find((s) => s.id === id);
+    setConfirmDialog({
+      open: true,
+      title: `Permanently delete ${stock?.ticker || 'stock'}?`,
+      message: 'This stock and all its price history will be permanently deleted. This cannot be undone.',
+      onConfirm: () => {
+        permanentlyDelete(id);
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
+  }
+
   return (
     <AuthGuard>
       <div className="space-y-4">
@@ -82,7 +113,7 @@ export default function RecycleBinPage() {
                 Restore All
               </button>
               <button
-                onClick={emptyBin}
+                onClick={requestEmptyBin}
                 className="px-3 py-2 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
               >
                 Empty Bin
@@ -138,7 +169,7 @@ export default function RecycleBinPage() {
                             Restore
                           </button>
                           <button
-                            onClick={() => permanentlyDelete(stock.id)}
+                            onClick={() => requestPermanentDelete(stock.id)}
                             className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 rounded transition-colors"
                           >
                             Delete Forever
@@ -155,6 +186,16 @@ export default function RecycleBinPage() {
             </div>
           </div>
         )}
+
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel="Delete Permanently"
+          variant="danger"
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+        />
       </div>
     </AuthGuard>
   );

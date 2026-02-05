@@ -1,13 +1,12 @@
 import { createServiceClient } from '../supabase';
-import { getTickerUniverse, getSectorForTicker } from './tickers';
+import { fetchTopLosers, fetchHighDeclineStocks } from './tradingview';
+import type { TradingViewStock } from './tradingview';
 import * as yahoo from './yahoo';
 import * as alphavantage from './alphavantage';
 import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow } from './scorer';
 import {
   validateStockData,
   validatePriceHistory,
-  checkIsNYSEOrNASDAQ,
-  checkMinimumAge,
   crossValidatePrice,
   detectStockSplit,
 } from './validator';
@@ -18,6 +17,8 @@ interface ScanResult {
   status: 'completed' | 'failed' | 'partial';
   stocksScanned: number;
   stocksFound: number;
+  stocksFromSource: number;
+  candidatesAfterPreFilter: number;
   errors: string[];
   durationSeconds: number;
   apiCallsYahoo: number;
@@ -57,19 +58,33 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   return defaults;
 }
 
+/**
+ * Update scan_logs with current progress so the frontend can poll it.
+ */
+async function updateProgress(
+  supabase: ReturnType<typeof createServiceClient>,
+  scanId: string | undefined,
+  fields: Record<string, unknown>,
+) {
+  if (!scanId) return;
+  await supabase.from('scan_logs').update(fields).eq('id', scanId);
+}
+
 export async function runScan(): Promise<ScanResult> {
   const startTime = Date.now();
   const supabase = createServiceClient();
   const errors: string[] = [];
   let stocksScanned = 0;
   let stocksFound = 0;
+  let stocksFromSource = 0;
+  let candidatesAfterPreFilter = 0;
   let apiCallsYahoo = 0;
   let apiCallsAlphaVantage = 0;
 
   // Create scan log entry
   const { data: scanLog } = await supabase
     .from('scan_logs')
-    .insert({ status: 'running' })
+    .insert({ status: 'running', stocks_scanned: 0, stocks_found: 0 })
     .select()
     .single();
 
@@ -77,29 +92,91 @@ export async function runScan(): Promise<ScanResult> {
 
   try {
     const settings = await getSettings(supabase);
-    const tickers = getTickerUniverse();
 
-    console.log(`Starting scan of ${tickers.length} tickers...`);
+    // =========================================================
+    // PHASE 1: Fetch candidates from TradingView (the source)
+    // =========================================================
+    console.log('Phase 1: Fetching candidates from TradingView...');
+    await updateProgress(supabase, scanId, {
+      status: 'running',
+      stocks_scanned: 0,
+      stocks_found: 0,
+    });
 
-    for (const ticker of tickers) {
+    // Fetch both top losers AND high-decline stocks from TradingView
+    const [topLosers, highDecline] = await Promise.all([
+      fetchTopLosers(300),
+      fetchHighDeclineStocks(settings.ath_decline_min, 500),
+    ]);
+
+    // Merge and deduplicate by ticker
+    const candidateMap = new Map<string, TradingViewStock>();
+    for (const stock of [...topLosers, ...highDecline]) {
+      if (!candidateMap.has(stock.ticker)) {
+        candidateMap.set(stock.ticker, stock);
+      }
+    }
+
+    const allCandidates = Array.from(candidateMap.values());
+    stocksFromSource = allCandidates.length;
+    console.log(`TradingView returned ${stocksFromSource} unique candidates`);
+
+    if (stocksFromSource === 0) {
+      errors.push('TradingView returned 0 candidates - API may be down');
+    }
+
+    // =========================================================
+    // PHASE 2: Pre-filter using TradingView data (no API calls)
+    // =========================================================
+    console.log('Phase 2: Pre-filtering candidates...');
+
+    const preFiltered = allCandidates.filter((stock) => {
+      // Must be on NYSE/NASDAQ (TradingView already filtered, but double-check)
+      const ex = stock.exchange.toUpperCase();
+      if (!ex.includes('NYSE') && !ex.includes('NASDAQ') && !ex.includes('AMEX')) {
+        return false;
+      }
+
+      // Skip excluded sectors
+      if (stock.sector && settings.excluded_sectors.includes(stock.sector)) {
+        return false;
+      }
+
+      // Price must be positive
+      if (stock.close <= 0) return false;
+
+      return true;
+    });
+
+    candidatesAfterPreFilter = preFiltered.length;
+    const totalToScan = preFiltered.length;
+    console.log(`${candidatesAfterPreFilter} candidates after pre-filter, starting deep scan...`);
+
+    await updateProgress(supabase, scanId, {
+      stocks_scanned: 0,
+      stocks_found: 0,
+    });
+
+    // =========================================================
+    // PHASE 3: Deep scan each candidate (Yahoo historical data)
+    // =========================================================
+    for (const tvStock of preFiltered) {
+      const ticker = tvStock.ticker;
+
       try {
         stocksScanned++;
-        console.log(`[${stocksScanned}/${tickers.length}] Scanning ${ticker}...`);
 
-        // Step 1: Get basic quote from Yahoo
-        const quote = await yahoo.getStockQuote(ticker);
-        apiCallsYahoo++;
-
-        if (!quote || !quote.price) {
-          continue;
+        // Update progress every 5 stocks so frontend can poll
+        if (stocksScanned % 5 === 0 || stocksScanned === 1) {
+          await updateProgress(supabase, scanId, {
+            stocks_scanned: stocksScanned,
+            stocks_found: stocksFound,
+          });
         }
 
-        // Step 2: Exchange check
-        if (quote.exchange && !checkIsNYSEOrNASDAQ(quote.exchange)) {
-          continue;
-        }
+        console.log(`[${stocksScanned}/${totalToScan}] Deep scanning ${ticker}...`);
 
-        // Step 3: Get historical data
+        // Get 5-year historical data from Yahoo Finance
         await sleep(300); // Rate limiting
         const history = await yahoo.getHistoricalData(ticker, 5);
         apiCallsYahoo++;
@@ -116,20 +193,20 @@ export async function runScan(): Promise<ScanResult> {
           continue;
         }
 
-        // Step 4: Check minimum age (3 years of data)
+        // Check minimum age (3 years of data)
         const threeYearsAgo = new Date();
         threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
         const oldestDate = new Date(history[0].date);
         if (oldestDate > threeYearsAgo) {
-          continue; // Stock doesn't have 3 years of history
+          continue;
         }
 
-        // Step 5: Calculate ATH and decline
+        // Calculate ATH and decline from full history
         const ath = calculateATH(history);
         if (!ath) continue;
 
-        const athDeclinePct =
-          ((ath.price - quote.price) / ath.price) * 100;
+        const currentPrice = tvStock.close;
+        const athDeclinePct = ((ath.price - currentPrice) / ath.price) * 100;
 
         // Check if decline is in our range
         if (
@@ -139,14 +216,13 @@ export async function runScan(): Promise<ScanResult> {
           continue;
         }
 
-        // Step 6: Detect stock splits
+        // Detect stock splits
         const splits = detectStockSplit(history);
         if (splits.length > 0) {
-          // Log but continue - prices from Yahoo should already be adjusted
           console.log(`${ticker}: Detected ${splits.length} potential split(s)`);
         }
 
-        // Step 7: Analyze growth events
+        // Analyze growth events
         const growthAnalysis = analyzeGrowthEvents(
           history,
           settings.growth_threshold_pct,
@@ -158,47 +234,31 @@ export async function runScan(): Promise<ScanResult> {
           continue;
         }
 
-        // Step 8: Calculate 5-year low and purchase limit
+        // Calculate 5-year low and purchase limit
         const fiveYearLow = calculateFiveYearLow(history);
         const purchaseLimit = fiveYearLow
           ? fiveYearLow.price * settings.purchase_limit_multiplier
           : null;
 
-        // Step 9: Cross-validate with Alpha Vantage (if calls available)
+        // Cross-validate with Alpha Vantage (if calls available)
         let confidenceScore = 100;
         if (alphavantage.getRemainingCalls() > 0) {
-          const avVerification = await alphavantage.verifyPrice(
-            ticker,
-            quote.price,
-          );
+          const avVerification = await alphavantage.verifyPrice(ticker, currentPrice);
           apiCallsAlphaVantage++;
 
           if (avVerification.price !== null) {
-            const crossValidation = crossValidatePrice(
-              quote.price,
-              avVerification.price,
-            );
+            const crossValidation = crossValidatePrice(currentPrice, avVerification.price);
             confidenceScore = crossValidation.confidence;
           }
         }
 
-        // Step 10: Get sector info
-        let sector = getSectorForTicker(ticker);
-        if (!sector) {
-          const profile = await yahoo.getStockProfile(ticker);
-          apiCallsYahoo++;
-          sector = profile?.sector || null;
-        }
+        // Use sector from TradingView (already available, no extra API call needed)
+        const sector = tvStock.sector || null;
 
-        // Check sector exclusions
-        if (sector && settings.excluded_sectors.includes(sector)) {
-          continue;
-        }
-
-        // Step 11: Validate final data
+        // Validate final data
         const validation = validateStockData({
-          price: quote.price,
-          marketCap: quote.marketCap,
+          price: currentPrice,
+          marketCap: tvStock.marketCap,
           allTimeHigh: ath.price,
           athDeclinePct,
         });
@@ -222,13 +282,13 @@ export async function runScan(): Promise<ScanResult> {
           reviewReason = `Extreme growth: ${growthAnalysis.highestGrowthPct.toFixed(0)}%`;
         }
 
-        // Step 12: Upsert stock into database
+        // Upsert stock into database
         const { error: upsertError } = await supabase.from('stocks').upsert(
           {
             ticker,
-            company_name: quote.name,
+            company_name: tvStock.name || ticker,
             sector,
-            current_price: quote.price,
+            current_price: currentPrice,
             all_time_high: ath.price,
             ath_decline_pct: athDeclinePct,
             five_year_low: fiveYearLow?.price || null,
@@ -241,8 +301,8 @@ export async function runScan(): Promise<ScanResult> {
             confidence_score: confidenceScore,
             needs_review: needsReview,
             review_reason: reviewReason,
-            exchange: quote.exchange,
-            market_cap: quote.marketCap,
+            exchange: tvStock.exchange,
+            market_cap: tvStock.marketCap,
           },
           { onConflict: 'ticker' },
         );
@@ -252,10 +312,11 @@ export async function runScan(): Promise<ScanResult> {
           continue;
         }
 
-        // Step 13: Store growth events
-        for (const event of growthAnalysis.events) {
-          await supabase.from('growth_events').upsert(
-            {
+        // Store growth events - delete old ones first, then insert fresh
+        await supabase.from('growth_events').delete().eq('ticker', ticker);
+        if (growthAnalysis.events.length > 0) {
+          await supabase.from('growth_events').insert(
+            growthAnalysis.events.map((event) => ({
               ticker,
               start_date: event.start_date,
               end_date: event.end_date,
@@ -264,12 +325,11 @@ export async function runScan(): Promise<ScanResult> {
               growth_pct: event.growth_pct,
               consecutive_days_above: event.consecutive_days_above,
               is_valid: event.is_valid,
-            },
-            { onConflict: 'ticker' },
+            })),
           );
         }
 
-        // Step 14: Store price history (batch insert)
+        // Store price history (batch upsert)
         const priceRecords = history.map((d) => ({
           ticker,
           trade_date: d.date,
@@ -280,7 +340,6 @@ export async function runScan(): Promise<ScanResult> {
           volume: d.volume,
         }));
 
-        // Insert in batches of 500
         for (let i = 0; i < priceRecords.length; i += 500) {
           const batch = priceRecords.slice(i, i + 500);
           await supabase.from('price_history').upsert(batch, {
@@ -290,11 +349,16 @@ export async function runScan(): Promise<ScanResult> {
 
         stocksFound++;
         console.log(
-          `✓ ${ticker}: Score=${growthAnalysis.score}, ATH Decline=${athDeclinePct.toFixed(1)}%, Events=${growthAnalysis.events.length}`,
+          `  >>> MATCH: ${ticker} | Score=${growthAnalysis.score} | ATH Decline=${athDeclinePct.toFixed(1)}% | Events=${growthAnalysis.events.length}`,
         );
 
-        // Rate limiting between stocks
-        await sleep(500);
+        // Update progress after every match
+        await updateProgress(supabase, scanId, {
+          stocks_scanned: stocksScanned,
+          stocks_found: stocksFound,
+        });
+
+        await sleep(200);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         errors.push(`${ticker}: ${errMsg}`);
@@ -305,21 +369,20 @@ export async function runScan(): Promise<ScanResult> {
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     const status = errors.length === 0 ? 'completed' : 'partial';
 
-    // Update scan log
+    // Final scan log update
     if (scanId) {
       await supabase.from('scan_logs').update({
         completed_at: new Date().toISOString(),
         status,
         stocks_scanned: stocksScanned,
         stocks_found: stocksFound,
-        errors: errors.slice(0, 50), // Limit stored errors
+        errors: errors.slice(0, 50),
         duration_seconds: durationSeconds,
         api_calls_yahoo: apiCallsYahoo,
         api_calls_alphavantage: apiCallsAlphaVantage,
       }).eq('id', scanId);
     }
 
-    // Log errors
     if (errors.length > 0) {
       await supabase.from('error_logs').insert(
         errors.slice(0, 20).map((e) => ({
@@ -334,6 +397,8 @@ export async function runScan(): Promise<ScanResult> {
       status,
       stocksScanned,
       stocksFound,
+      stocksFromSource,
+      candidatesAfterPreFilter,
       errors,
       durationSeconds,
       apiCallsYahoo,
@@ -364,6 +429,8 @@ export async function runScan(): Promise<ScanResult> {
       status: 'failed',
       stocksScanned,
       stocksFound,
+      stocksFromSource,
+      candidatesAfterPreFilter,
       errors: [errMsg, ...errors],
       durationSeconds,
       apiCallsYahoo,
