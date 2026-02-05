@@ -2,19 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/scan",
-      "schedule": "30 15 * * 1-5"
-    },
-    {
-      "path": "/api/cron/scan",
-      "schedule": "0 20 * * 1-5"
-    },
-    {
-      "path": "/api/cron/health",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/archive",
-      "schedule": "0 6 1 * *"
+      "schedule": "0 21 * * 1-5"
     }
   ]
 }

@@ -195,35 +195,31 @@ export async function fetchHighDeclineStocks(
     if (!data?.data) return [];
 
     return data.data
-      .map((item) => {
+      .map((item): { declinePct: number; stock: TradingViewStock } => {
         const [exchangePrefix, ticker] = item.s.split(':');
         const d = item.d;
         const ath = (d[8] as number) || 0;
         const close = (d[2] as number) || 0;
 
         return {
-          ticker: ticker || (d[0] as string),
-          exchange: (d[11] as string) || exchangePrefix || '',
-          name: (d[1] as string) || '',
-          close,
-          change: (d[3] as number) || 0,
-          changePct: (d[4] as number) || 0,
-          volume: (d[5] as number) || 0,
-          marketCap: (d[6] as number) || null,
-          sector: (d[7] as string) || null,
-          high52w: (d[9] as number) || null,
-          low52w: (d[10] as number) || null,
-          _ath: ath,
-          _declinePct: ath > 0 ? ((ath - close) / ath) * 100 : 0,
+          declinePct: ath > 0 ? ((ath - close) / ath) * 100 : 0,
+          stock: {
+            ticker: ticker || (d[0] as string),
+            exchange: (d[11] as string) || exchangePrefix || '',
+            name: (d[1] as string) || '',
+            close,
+            change: (d[3] as number) || 0,
+            changePct: (d[4] as number) || 0,
+            volume: (d[5] as number) || 0,
+            marketCap: (d[6] as number) || null,
+            sector: (d[7] as string) || null,
+            high52w: (d[9] as number) || null,
+            low52w: (d[10] as number) || null,
+          },
         };
       })
-      .filter((s) => {
-        if (!s.ticker || s.close <= 0) return false;
-        // Pre-filter: only stocks that declined significantly from ATH
-        const declinePct = (s as unknown as { _declinePct: number })._declinePct;
-        return declinePct >= minDeclinePct;
-      })
-      .map(({ ...s }) => s as TradingViewStock);
+      .filter((s) => s.stock.ticker && s.stock.close > 0 && s.declinePct >= minDeclinePct)
+      .map((s) => s.stock);
   } catch (error) {
     console.error('TradingView: Error fetching high-decline stocks:', error);
     return [];
