@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import packageJson from '../../package.json';
+
+const APP_VERSION = packageJson.version;
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -26,8 +29,9 @@ export default function Navbar() {
     <nav className="bg-slate-800 border-b border-slate-700 px-4 py-3">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="text-lg font-bold text-white">
+          <Link href="/dashboard" className="text-lg font-bold text-white flex items-baseline gap-2">
             Stock Screener
+            <span className="text-xs font-normal text-slate-500">v{APP_VERSION}</span>
           </Link>
           <div className="flex items-center gap-1">
             {navItems.map((item) => (

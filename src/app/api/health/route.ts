@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import packageJson from '../../../../package.json';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,7 @@ export async function GET() {
       .eq('is_deleted', false);
 
     return NextResponse.json({
+      version: packageJson.version,
       health: healthCheck || null,
       lastScan: lastScan || null,
       stockCount: stockCount || 0,
