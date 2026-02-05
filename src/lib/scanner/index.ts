@@ -11,7 +11,7 @@ import {
   detectStockSplit,
 } from './validator';
 import { sleep } from '../utils';
-import type { Settings } from '../types';
+import type { Settings, StockScanDetail } from '../types';
 
 interface ScanResult {
   status: 'completed' | 'failed' | 'partial';
@@ -74,6 +74,7 @@ export async function runScan(): Promise<ScanResult> {
   const startTime = Date.now();
   const supabase = createServiceClient();
   const errors: string[] = [];
+  const scanDetails: StockScanDetail[] = [];
   let stocksScanned = 0;
   let stocksFound = 0;
   let stocksFromSource = 0;
@@ -109,6 +110,19 @@ export async function runScan(): Promise<ScanResult> {
       fetchHighDeclineStocks(settings.ath_decline_min, 500),
     ]);
 
+    // Track which source each stock came from
+    const sourceMap = new Map<string, 'tradingview_losers' | 'tradingview_high_decline' | 'both'>();
+    for (const stock of topLosers) {
+      sourceMap.set(stock.ticker, 'tradingview_losers');
+    }
+    for (const stock of highDecline) {
+      if (sourceMap.has(stock.ticker)) {
+        sourceMap.set(stock.ticker, 'both');
+      } else {
+        sourceMap.set(stock.ticker, 'tradingview_high_decline');
+      }
+    }
+
     // Merge and deduplicate by ticker
     const candidateMap = new Map<string, TradingViewStock>();
     for (const stock of [...topLosers, ...highDecline]) {
@@ -119,34 +133,121 @@ export async function runScan(): Promise<ScanResult> {
 
     const allCandidates = Array.from(candidateMap.values());
     stocksFromSource = allCandidates.length;
-    console.log(`TradingView returned ${stocksFromSource} unique candidates`);
+    console.log(`TradingView returned ${topLosers.length} losers + ${highDecline.length} high-decline = ${stocksFromSource} unique candidates`);
 
     if (stocksFromSource === 0) {
-      errors.push('TradingView returned 0 candidates - API may be down');
+      errors.push('TradingView returned 0 candidates - API may be blocked or down');
     }
 
     // =========================================================
     // PHASE 2: Pre-filter using TradingView data (no API calls)
+    // Uses TradingView's ATH for initial decline check
     // =========================================================
-    console.log('Phase 2: Pre-filtering candidates...');
+    console.log('Phase 2: Pre-filtering candidates using TradingView ATH...');
 
-    const preFiltered = allCandidates.filter((stock) => {
-      // Must be on NYSE/NASDAQ (TradingView already filtered, but double-check)
+    const preFiltered: TradingViewStock[] = [];
+
+    for (const stock of allCandidates) {
+      const source = sourceMap.get(stock.ticker) || 'tradingview_losers';
+      const tvATH = stock.allTimeHigh;
+      const tvDecline = tvATH && tvATH > 0
+        ? ((tvATH - stock.close) / tvATH) * 100
+        : null;
+
+      // Must be on NYSE/NASDAQ/AMEX
       const ex = stock.exchange.toUpperCase();
       if (!ex.includes('NYSE') && !ex.includes('NASDAQ') && !ex.includes('AMEX')) {
-        return false;
+        scanDetails.push({
+          ticker: stock.ticker,
+          name: stock.name,
+          source,
+          tvPrice: stock.close,
+          tvChange: stock.change,
+          tvATH,
+          tvDeclineFromATH: tvDecline,
+          sector: stock.sector,
+          phase: 'pre_filter',
+          result: 'rejected',
+          rejectReason: `Exchange not supported: ${stock.exchange}`,
+        });
+        continue;
       }
 
       // Skip excluded sectors
       if (stock.sector && settings.excluded_sectors.includes(stock.sector)) {
-        return false;
+        scanDetails.push({
+          ticker: stock.ticker,
+          name: stock.name,
+          source,
+          tvPrice: stock.close,
+          tvChange: stock.change,
+          tvATH,
+          tvDeclineFromATH: tvDecline,
+          sector: stock.sector,
+          phase: 'pre_filter',
+          result: 'rejected',
+          rejectReason: `Excluded sector: ${stock.sector}`,
+        });
+        continue;
       }
 
       // Price must be positive
-      if (stock.close <= 0) return false;
+      if (stock.close <= 0) {
+        scanDetails.push({
+          ticker: stock.ticker,
+          name: stock.name,
+          source,
+          tvPrice: stock.close,
+          tvChange: stock.change,
+          tvATH,
+          tvDeclineFromATH: tvDecline,
+          sector: stock.sector,
+          phase: 'pre_filter',
+          result: 'rejected',
+          rejectReason: `Price <= 0: $${stock.close}`,
+        });
+        continue;
+      }
 
-      return true;
-    });
+      // Use TradingView ATH for pre-filtering: skip stocks clearly outside range
+      if (tvDecline !== null) {
+        if (tvDecline < settings.ath_decline_min * 0.9) {
+          // Allow 10% margin - Yahoo might have different ATH
+          scanDetails.push({
+            ticker: stock.ticker,
+            name: stock.name,
+            source,
+            tvPrice: stock.close,
+            tvChange: stock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: stock.sector,
+            phase: 'pre_filter',
+            result: 'rejected',
+            rejectReason: `ATH decline ${tvDecline.toFixed(1)}% < ${settings.ath_decline_min}% (TradingView ATH: $${tvATH?.toFixed(2)})`,
+          });
+          continue;
+        }
+        if (tvDecline > settings.ath_decline_max + 0.5) {
+          scanDetails.push({
+            ticker: stock.ticker,
+            name: stock.name,
+            source,
+            tvPrice: stock.close,
+            tvChange: stock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: stock.sector,
+            phase: 'pre_filter',
+            result: 'rejected',
+            rejectReason: `ATH decline ${tvDecline.toFixed(1)}% > ${settings.ath_decline_max}% (TradingView ATH: $${tvATH?.toFixed(2)})`,
+          });
+          continue;
+        }
+      }
+
+      preFiltered.push(stock);
+    }
 
     candidatesAfterPreFilter = preFiltered.length;
     const totalToScan = preFiltered.length;
@@ -162,6 +263,11 @@ export async function runScan(): Promise<ScanResult> {
     // =========================================================
     for (const tvStock of preFiltered) {
       const ticker = tvStock.ticker;
+      const source = sourceMap.get(ticker) || 'tradingview_losers';
+      const tvATH = tvStock.allTimeHigh;
+      const tvDecline = tvATH && tvATH > 0
+        ? ((tvATH - tvStock.close) / tvATH) * 100
+        : null;
 
       try {
         stocksScanned++;
@@ -182,14 +288,44 @@ export async function runScan(): Promise<ScanResult> {
         apiCallsYahoo++;
 
         if (history.length === 0) {
-          errors.push(`${ticker}: No historical data available`);
+          const errMsg = `No historical data from Yahoo Finance`;
+          errors.push(`${ticker}: ${errMsg}`);
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'error',
+            errorMessage: errMsg,
+            yahooHistoryDays: 0,
+          });
           continue;
         }
 
         // Validate price history
         const historyValidation = validatePriceHistory(history);
         if (!historyValidation.isValid) {
-          errors.push(`${ticker}: ${historyValidation.errors.join(', ')}`);
+          const errMsg = historyValidation.errors.join(', ');
+          errors.push(`${ticker}: ${errMsg}`);
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'error',
+            errorMessage: errMsg,
+            yahooHistoryDays: history.length,
+          });
           continue;
         }
 
@@ -198,21 +334,73 @@ export async function runScan(): Promise<ScanResult> {
         threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
         const oldestDate = new Date(history[0].date);
         if (oldestDate > threeYearsAgo) {
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'rejected',
+            rejectReason: `Less than 3 years of history (oldest: ${history[0].date})`,
+            yahooHistoryDays: history.length,
+          });
           continue;
         }
 
-        // Calculate ATH and decline from full history
-        const ath = calculateATH(history);
-        if (!ath) continue;
+        // Calculate ATH from Yahoo history (may differ from TradingView)
+        const yahooATHResult = calculateATH(history);
+        // Use TradingView ATH if available and higher (more complete data)
+        const effectiveATH = tvATH && yahooATHResult
+          ? Math.max(tvATH, yahooATHResult.price)
+          : tvATH || yahooATHResult?.price || null;
+
+        if (!effectiveATH || effectiveATH <= 0) {
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'rejected',
+            rejectReason: 'Could not determine ATH',
+            yahooHistoryDays: history.length,
+            yahooATH: yahooATHResult?.price,
+          });
+          continue;
+        }
 
         const currentPrice = tvStock.close;
-        const athDeclinePct = ((ath.price - currentPrice) / ath.price) * 100;
+        const athDeclinePct = ((effectiveATH - currentPrice) / effectiveATH) * 100;
 
         // Check if decline is in our range
         if (
           athDeclinePct < settings.ath_decline_min ||
           athDeclinePct > settings.ath_decline_max
         ) {
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'rejected',
+            rejectReason: `ATH decline ${athDeclinePct.toFixed(1)}% outside range ${settings.ath_decline_min}-${settings.ath_decline_max}% (effective ATH: $${effectiveATH.toFixed(2)})`,
+            yahooHistoryDays: history.length,
+            yahooATH: yahooATHResult?.price,
+            yahooDeclineFromATH: yahooATHResult ? ((yahooATHResult.price - currentPrice) / yahooATHResult.price) * 100 : undefined,
+          });
           continue;
         }
 
@@ -231,6 +419,25 @@ export async function runScan(): Promise<ScanResult> {
         );
 
         if (growthAnalysis.events.length < settings.min_growth_events) {
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'rejected',
+            rejectReason: `Only ${growthAnalysis.events.length} growth events (need ${settings.min_growth_events}+)`,
+            yahooHistoryDays: history.length,
+            yahooATH: yahooATHResult?.price,
+            yahooDeclineFromATH: athDeclinePct,
+            growthEvents: growthAnalysis.events.length,
+            growthScore: growthAnalysis.score,
+            highestGrowthPct: growthAnalysis.highestGrowthPct,
+          });
           continue;
         }
 
@@ -259,7 +466,7 @@ export async function runScan(): Promise<ScanResult> {
         const validation = validateStockData({
           price: currentPrice,
           marketCap: tvStock.marketCap,
-          allTimeHigh: ath.price,
+          allTimeHigh: effectiveATH,
           athDeclinePct,
         });
 
@@ -268,6 +475,25 @@ export async function runScan(): Promise<ScanResult> {
 
         if (!validation.isValid) {
           errors.push(`${ticker}: ${validation.errors.join(', ')}`);
+          scanDetails.push({
+            ticker,
+            name: tvStock.name,
+            source,
+            tvPrice: tvStock.close,
+            tvChange: tvStock.change,
+            tvATH,
+            tvDeclineFromATH: tvDecline,
+            sector: tvStock.sector,
+            phase: 'deep_scan',
+            result: 'error',
+            errorMessage: `Validation failed: ${validation.errors.join(', ')}`,
+            yahooHistoryDays: history.length,
+            yahooATH: yahooATHResult?.price,
+            yahooDeclineFromATH: athDeclinePct,
+            growthEvents: growthAnalysis.events.length,
+            growthScore: growthAnalysis.score,
+            highestGrowthPct: growthAnalysis.highestGrowthPct,
+          });
           continue;
         }
 
@@ -289,7 +515,7 @@ export async function runScan(): Promise<ScanResult> {
             company_name: tvStock.name || ticker,
             sector,
             current_price: currentPrice,
-            all_time_high: ath.price,
+            all_time_high: effectiveATH,
             ath_decline_pct: athDeclinePct,
             five_year_low: fiveYearLow?.price || null,
             purchase_limit: purchaseLimit,
@@ -352,6 +578,26 @@ export async function runScan(): Promise<ScanResult> {
           `  >>> MATCH: ${ticker} | Score=${growthAnalysis.score} | ATH Decline=${athDeclinePct.toFixed(1)}% | Events=${growthAnalysis.events.length}`,
         );
 
+        // Log the match
+        scanDetails.push({
+          ticker,
+          name: tvStock.name,
+          source,
+          tvPrice: tvStock.close,
+          tvChange: tvStock.change,
+          tvATH,
+          tvDeclineFromATH: tvDecline,
+          sector: tvStock.sector,
+          phase: 'deep_scan',
+          result: 'match',
+          yahooHistoryDays: history.length,
+          yahooATH: yahooATHResult?.price,
+          yahooDeclineFromATH: athDeclinePct,
+          growthEvents: growthAnalysis.events.length,
+          growthScore: growthAnalysis.score,
+          highestGrowthPct: growthAnalysis.highestGrowthPct,
+        });
+
         // Update progress after every match
         await updateProgress(supabase, scanId, {
           stocks_scanned: stocksScanned,
@@ -363,13 +609,27 @@ export async function runScan(): Promise<ScanResult> {
         const errMsg = error instanceof Error ? error.message : String(error);
         errors.push(`${ticker}: ${errMsg}`);
         console.error(`Error scanning ${ticker}:`, errMsg);
+
+        scanDetails.push({
+          ticker,
+          name: tvStock.name,
+          source,
+          tvPrice: tvStock.close,
+          tvChange: tvStock.change,
+          tvATH,
+          tvDeclineFromATH: tvDecline,
+          sector: tvStock.sector,
+          phase: 'deep_scan',
+          result: 'error',
+          errorMessage: errMsg,
+        });
       }
     }
 
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
     const status = errors.length === 0 ? 'completed' : 'partial';
 
-    // Final scan log update
+    // Final scan log update with details
     if (scanId) {
       await supabase.from('scan_logs').update({
         completed_at: new Date().toISOString(),
@@ -380,6 +640,7 @@ export async function runScan(): Promise<ScanResult> {
         duration_seconds: durationSeconds,
         api_calls_yahoo: apiCallsYahoo,
         api_calls_alphavantage: apiCallsAlphaVantage,
+        details: scanDetails,
       }).eq('id', scanId);
     }
 
@@ -416,6 +677,7 @@ export async function runScan(): Promise<ScanResult> {
         stocks_found: stocksFound,
         errors: [errMsg],
         duration_seconds: durationSeconds,
+        details: scanDetails,
       }).eq('id', scanId);
     }
 
