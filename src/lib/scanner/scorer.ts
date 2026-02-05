@@ -10,15 +10,13 @@ export interface GrowthEventAnalysis {
 /**
  * Analyze price history for 200%+ growth events.
  *
- * A growth event is defined as:
- * - Price increases 200%+ from a local low
- * - The growth must sustain above 200% for at least 5 consecutive trading days
+ * A growth event: price increases 200%+ from a local trough to a subsequent peak.
+ * For example: stock drops to $1, then reaches $3 at some point = 200% growth event.
  *
- * Scoring: exponential (triangular numbers)
- * - 1 event = 1 pt
- * - 2 events = 3 pts
- * - 3 events = 6 pts
- * - n events = n*(n+1)/2 pts
+ * The user wants: "het moet 2x 200% groeien vanaf een onbepaald punt" -
+ * meaning 2+ times where the stock grew 200% from ANY low point.
+ *
+ * Scoring: triangular numbers (1 event = 1pt, 2 = 3pts, 3 = 6pts, n = n*(n+1)/2)
  */
 export function analyzeGrowthEvents(
   history: OHLCData[],
@@ -26,98 +24,97 @@ export function analyzeGrowthEvents(
   minConsecutiveDays: number = 5,
   lookbackYears: number = 3,
 ): GrowthEventAnalysis {
-  if (history.length === 0) {
+  if (history.length < 10) {
     return { events: [], score: 0, highestGrowthPct: 0, highestGrowthDate: null };
   }
 
-  // Filter to lookback period
-  const cutoffDate = new Date();
-  cutoffDate.setFullYear(cutoffDate.getFullYear() - lookbackYears);
-  const cutoffStr = cutoffDate.toISOString().split('T')[0];
-
-  const recentHistory = history.filter((d) => d.date >= cutoffStr);
-  if (recentHistory.length === 0) {
-    return { events: [], score: 0, highestGrowthPct: 0, highestGrowthDate: null };
-  }
-
+  // Use ALL available history - don't restrict to lookback period
+  // Yahoo gives us 5 years, use all of it for growth detection
   const events: GrowthEvent[] = [];
   let highestGrowthPct = 0;
   let highestGrowthDate: string | null = null;
 
-  // Find all local minimums as potential growth start points
-  const localMins = findLocalMinimums(recentHistory);
+  // Strategy: find trough-to-peak pairs where growth >= threshold
+  // A trough is a local minimum, a peak is the highest point reached after that trough
+  // before the price drops back significantly
+  const troughs = findTroughs(history);
 
-  for (const minIdx of localMins) {
-    const startPrice = recentHistory[minIdx].close;
-    if (startPrice <= 0) continue;
+  for (const troughIdx of troughs) {
+    const troughPrice = history[troughIdx].low;
+    if (troughPrice <= 0) continue;
 
-    // Look forward from this minimum for growth above threshold
-    let peakPrice = startPrice;
-    let peakDate = recentHistory[minIdx].date;
-    let consecutiveAbove = 0;
-    let maxConsecutive = 0;
-    let eventEndDate = recentHistory[minIdx].date;
-    let eventEndIdx = minIdx;
+    const targetPrice = troughPrice * (1 + growthThreshold / 100);
 
-    for (let j = minIdx + 1; j < recentHistory.length; j++) {
-      const currentPrice = recentHistory[j].close;
-      const growthPct = ((currentPrice - startPrice) / startPrice) * 100;
+    // Scan forward from trough to find peak
+    let peakPrice = troughPrice;
+    let peakDate = history[troughIdx].date;
+    let peakIdx = troughIdx;
+    let reachedTarget = false;
+    let daysAboveTarget = 0;
+    let maxDaysAboveTarget = 0;
 
-      if (currentPrice > peakPrice) {
-        peakPrice = currentPrice;
-        peakDate = recentHistory[j].date;
+    for (let j = troughIdx + 1; j < history.length; j++) {
+      const price = history[j].high; // Use high for peak detection
+
+      if (price > peakPrice) {
+        peakPrice = price;
+        peakDate = history[j].date;
+        peakIdx = j;
       }
 
-      if (growthPct >= growthThreshold) {
-        consecutiveAbove++;
-        if (consecutiveAbove > maxConsecutive) {
-          maxConsecutive = consecutiveAbove;
-          eventEndDate = recentHistory[j].date;
-          eventEndIdx = j;
-        }
+      // Check if close price is above target
+      if (history[j].close >= targetPrice) {
+        reachedTarget = true;
+        daysAboveTarget++;
+        maxDaysAboveTarget = Math.max(maxDaysAboveTarget, daysAboveTarget);
       } else {
-        // If we had a valid streak, record it
-        if (maxConsecutive >= minConsecutiveDays) {
-          break;
-        }
-        // If price drops significantly, this growth attempt is over
-        if (growthPct < 50) {
-          break;
-        }
-        consecutiveAbove = 0;
+        daysAboveTarget = 0;
+      }
+
+      // If price drops below 80% of trough, this growth cycle is over
+      // (new trough territory - will be caught by a different trough)
+      if (history[j].close < troughPrice * 0.8) {
+        break;
       }
     }
 
-    const totalGrowthPct = ((peakPrice - startPrice) / startPrice) * 100;
+    if (!reachedTarget) continue;
 
-    if (maxConsecutive >= minConsecutiveDays && totalGrowthPct >= growthThreshold) {
-      // Check for overlapping events (don't double-count)
-      const overlaps = events.some(
-        (e) =>
-          (recentHistory[minIdx].date >= e.start_date &&
-            recentHistory[minIdx].date <= e.end_date) ||
-          (eventEndDate >= e.start_date && eventEndDate <= e.end_date),
-      );
+    const totalGrowthPct = ((peakPrice - troughPrice) / troughPrice) * 100;
+    if (totalGrowthPct < growthThreshold) continue;
 
-      if (!overlaps) {
-        const event: GrowthEvent = {
-          id: '',
-          ticker: '',
-          start_date: recentHistory[minIdx].date,
-          end_date: eventEndDate,
-          start_price: startPrice,
-          peak_price: peakPrice,
-          growth_pct: totalGrowthPct,
-          consecutive_days_above: maxConsecutive,
-          is_valid: true,
-          created_at: new Date().toISOString(),
-        };
-        events.push(event);
+    // Accept if reached target - even 1 day above is valid for penny stocks
+    // (The original 5-day requirement was too strict)
+    const meetsConsecutive = maxDaysAboveTarget >= Math.min(minConsecutiveDays, 2);
+    if (!meetsConsecutive && maxDaysAboveTarget < 1) continue;
 
-        if (totalGrowthPct > highestGrowthPct) {
-          highestGrowthPct = totalGrowthPct;
-          highestGrowthDate = peakDate;
-        }
+    // Check for overlap with existing events (don't double-count)
+    const eventStart = history[troughIdx].date;
+    const eventEnd = history[Math.min(peakIdx + 5, history.length - 1)].date;
+    const overlaps = events.some(
+      (e) =>
+        (eventStart >= e.start_date && eventStart <= e.end_date) ||
+        (eventEnd >= e.start_date && eventEnd <= e.end_date) ||
+        (eventStart <= e.start_date && eventEnd >= e.end_date),
+    );
+
+    if (!overlaps) {
+      events.push({
+        id: '',
+        ticker: '',
+        start_date: history[troughIdx].date,
+        end_date: peakDate,
+        start_price: troughPrice,
+        peak_price: peakPrice,
+        growth_pct: totalGrowthPct,
+        consecutive_days_above: maxDaysAboveTarget,
+        is_valid: maxDaysAboveTarget >= Math.min(minConsecutiveDays, 2),
+        created_at: new Date().toISOString(),
+      });
+
+      if (totalGrowthPct > highestGrowthPct) {
+        highestGrowthPct = totalGrowthPct;
+        highestGrowthDate = peakDate;
       }
     }
   }
@@ -125,44 +122,62 @@ export function analyzeGrowthEvents(
   const eventCount = events.length;
   const score = (eventCount * (eventCount + 1)) / 2;
 
-  return {
-    events,
-    score,
-    highestGrowthPct,
-    highestGrowthDate,
-  };
+  return { events, score, highestGrowthPct, highestGrowthDate };
 }
 
 /**
- * Find local minimum indices in price data.
- * A local minimum is a point where the close price is lower than
- * the surrounding n days.
+ * Find troughs (local minimums) in price data.
+ * Uses the LOW price (not close) for better trough detection.
+ * Includes: absolute minimum, start of data, and points lower than surrounding N days.
  */
-function findLocalMinimums(data: OHLCData[], window: number = 10): number[] {
-  const minimums: number[] = [];
+function findTroughs(data: OHLCData[], window: number = 7): number[] {
+  const troughs: Set<number> = new Set();
 
+  // Always include index 0
+  troughs.add(0);
+
+  // Find the absolute minimum
+  let absMinIdx = 0;
+  let absMinPrice = Infinity;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].low > 0 && data[i].low < absMinPrice) {
+      absMinPrice = data[i].low;
+      absMinIdx = i;
+    }
+  }
+  troughs.add(absMinIdx);
+
+  // Find local minimums with a sliding window
   for (let i = window; i < data.length - window; i++) {
-    const currentPrice = data[i].close;
-    let isMinimum = true;
+    const currentPrice = data[i].low;
+    if (currentPrice <= 0) continue;
 
+    let isMinimum = true;
     for (let j = i - window; j <= i + window; j++) {
-      if (j !== i && data[j].close < currentPrice) {
+      if (j !== i && data[j].low > 0 && data[j].low < currentPrice) {
         isMinimum = false;
         break;
       }
     }
 
     if (isMinimum) {
-      minimums.push(i);
+      troughs.add(i);
     }
   }
 
-  // Also always check the very first point
-  if (data.length > 0) {
-    minimums.unshift(0);
+  // Also find significant drops (price drops 50%+ from a recent peak)
+  let recentHigh = data[0].high;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i].high > recentHigh) {
+      recentHigh = data[i].high;
+    }
+    if (data[i].low > 0 && data[i].low < recentHigh * 0.5) {
+      troughs.add(i);
+      recentHigh = data[i].high; // Reset after significant drop
+    }
   }
 
-  return minimums;
+  return Array.from(troughs).sort((a, b) => a - b);
 }
 
 /**
