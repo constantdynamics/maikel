@@ -35,6 +35,7 @@ export interface TradingViewStock {
   sector: string | null;
   high52w: number | null;
   low52w: number | null;
+  allTimeHigh: number | null;
 }
 
 /**
@@ -121,6 +122,7 @@ export async function fetchTopLosers(limit: number = 200): Promise<TradingViewSt
           sector: (d[7] as string) || null,
           high52w: (d[9] as number) || null,
           low52w: (d[10] as number) || null,
+          allTimeHigh: (d[8] as number) || null,
         };
       })
       .filter((s) => s.ticker && s.close > 0);
@@ -215,6 +217,7 @@ export async function fetchHighDeclineStocks(
             sector: (d[7] as string) || null,
             high52w: (d[9] as number) || null,
             low52w: (d[10] as number) || null,
+            allTimeHigh: ath || null,
           },
         };
       })

@@ -54,6 +54,27 @@ export interface GrowthEvent {
   created_at: string;
 }
 
+export interface StockScanDetail {
+  ticker: string;
+  name: string;
+  source: 'tradingview_losers' | 'tradingview_high_decline' | 'both';
+  tvPrice: number;
+  tvChange: number;
+  tvATH: number | null;
+  tvDeclineFromATH: number | null;
+  sector: string | null;
+  phase: 'pre_filter' | 'deep_scan';
+  result: 'match' | 'rejected' | 'error';
+  rejectReason?: string;
+  errorMessage?: string;
+  yahooHistoryDays?: number;
+  yahooATH?: number;
+  yahooDeclineFromATH?: number;
+  growthEvents?: number;
+  growthScore?: number;
+  highestGrowthPct?: number;
+}
+
 export interface ScanLog {
   id: string;
   started_at: string;
@@ -65,6 +86,7 @@ export interface ScanLog {
   duration_seconds: number | null;
   api_calls_yahoo: number;
   api_calls_alphavantage: number;
+  details: StockScanDetail[] | null;
   created_at: string;
 }
 

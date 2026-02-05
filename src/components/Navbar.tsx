@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/scan-log', label: 'Scan Log' },
   { href: '/recycle-bin', label: 'Recycle Bin' },
   { href: '/archive', label: 'Archive' },
   { href: '/status', label: 'Status' },
