@@ -13,6 +13,31 @@ import {
 import { sleep } from '../utils';
 import type { Settings, StockScanDetail } from '../types';
 
+const ALLOWED_EXCHANGES = new Set(['NYSE', 'NASDAQ', 'AMEX', 'NYSE ARCA', 'NYSE MKT']);
+
+/**
+ * Detect leveraged/inverse ETF-like products by name patterns.
+ * These sometimes slip through the TradingView type/subtype filter.
+ */
+function isLikelyLeveragedProduct(name: string, ticker: string): boolean {
+  const nameLower = name.toLowerCase();
+  const patterns = [
+    /\b\d+x\b/i,           // "2x", "3x"
+    /\bultra\b/i,           // "Ultra"
+    /\bleveraged\b/i,       // "Leveraged"
+    /\binverse\b/i,         // "Inverse"
+    /\bdaily\b.*\b(bull|bear|long|short)\b/i,
+    /\b(bull|bear)\b.*\b\d+x\b/i,
+    /\bproshares\b/i,       // ProShares (ETF provider)
+    /\bdirexion\b/i,        // Direxion (leveraged ETF provider)
+    /\bgranite\s?shares\b/i, // GraniteShares
+    /\bvolatility\s+shares\b/i,
+    /\bdefiance\b/i,        // Defiance ETFs
+    /\bteucrium\b/i,        // Teucrium
+  ];
+  return patterns.some((p) => p.test(name) || p.test(ticker));
+}
+
 interface ScanResult {
   status: 'completed' | 'failed' | 'partial';
   stocksScanned: number;
@@ -154,9 +179,9 @@ export async function runScan(): Promise<ScanResult> {
         ? ((tvATH - stock.close) / tvATH) * 100
         : null;
 
-      // Must be on NYSE/NASDAQ/AMEX
+      // Must be on NYSE/NASDAQ/AMEX (server-side safety net)
       const ex = stock.exchange.toUpperCase();
-      if (!ex.includes('NYSE') && !ex.includes('NASDAQ') && !ex.includes('AMEX')) {
+      if (!ALLOWED_EXCHANGES.has(ex) && !ex.includes('NYSE') && !ex.includes('NASDAQ') && !ex.includes('AMEX')) {
         scanDetails.push({
           ticker: stock.ticker,
           name: stock.name,
@@ -169,6 +194,24 @@ export async function runScan(): Promise<ScanResult> {
           phase: 'pre_filter',
           result: 'rejected',
           rejectReason: `Exchange not supported: ${stock.exchange}`,
+        });
+        continue;
+      }
+
+      // Filter out leveraged/inverse ETF-like products
+      if (isLikelyLeveragedProduct(stock.name, stock.ticker)) {
+        scanDetails.push({
+          ticker: stock.ticker,
+          name: stock.name,
+          source,
+          tvPrice: stock.close,
+          tvChange: stock.change,
+          tvATH,
+          tvDeclineFromATH: tvDecline,
+          sector: stock.sector,
+          phase: 'pre_filter',
+          result: 'rejected',
+          rejectReason: `Leveraged/inverse product: ${stock.name}`,
         });
         continue;
       }
@@ -329,11 +372,12 @@ export async function runScan(): Promise<ScanResult> {
           continue;
         }
 
-        // Check minimum age (3 years of data)
-        const threeYearsAgo = new Date();
-        threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+        // Check minimum age - need at least 1 year of data to analyze growth
+        // (was 3 years, reduced to 1 year to catch more candidates)
+        const minHistoryDate = new Date();
+        minHistoryDate.setFullYear(minHistoryDate.getFullYear() - 1);
         const oldestDate = new Date(history[0].date);
-        if (oldestDate > threeYearsAgo) {
+        if (oldestDate > minHistoryDate) {
           scanDetails.push({
             ticker,
             name: tvStock.name,
@@ -345,7 +389,7 @@ export async function runScan(): Promise<ScanResult> {
             sector: tvStock.sector,
             phase: 'deep_scan',
             result: 'rejected',
-            rejectReason: `Less than 3 years of history (oldest: ${history[0].date})`,
+            rejectReason: `Less than 1 year of history (oldest: ${history[0].date})`,
             yahooHistoryDays: history.length,
           });
           continue;

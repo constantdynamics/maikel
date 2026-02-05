@@ -3,6 +3,15 @@ import { retryWithBackoff, sleep } from '../utils';
 
 const RATE_LIMIT_DELAY = 200;
 const YAHOO_BASE = 'https://query1.finance.yahoo.com';
+const YAHOO_BASE2 = 'https://query2.finance.yahoo.com';
+
+// Rotate between user agents to reduce blocking
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+];
+let uaIndex = 0;
 
 interface YahooQuoteResult {
   symbol: string;
@@ -15,13 +24,39 @@ interface YahooQuoteResult {
   fiftyTwoWeekHigh?: number;
 }
 
+// Store cookies from Yahoo for session continuity
+let yahooCookies = '';
+
 async function yahooFetch(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    },
-  });
+  const ua = USER_AGENTS[uaIndex % USER_AGENTS.length];
+  uaIndex++;
+
+  const headers: Record<string, string> = {
+    'User-Agent': ua,
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
+  if (yahooCookies) {
+    headers['Cookie'] = yahooCookies;
+  }
+
+  const res = await fetch(url, { headers });
+
+  // Store cookies for subsequent requests
+  const setCookie = res.headers.get('set-cookie');
+  if (setCookie) {
+    yahooCookies = setCookie.split(',').map((c) => c.split(';')[0].trim()).join('; ');
+  }
+
   if (!res.ok) {
+    // Try alternate Yahoo endpoint on failure
+    if (url.includes('query1.finance.yahoo.com')) {
+      const altUrl = url.replace('query1.finance.yahoo.com', 'query2.finance.yahoo.com');
+      const altRes = await fetch(altUrl, { headers });
+      if (altRes.ok) {
+        return altRes.json();
+      }
+    }
     throw new Error(`Yahoo Finance HTTP ${res.status}: ${res.statusText}`);
   }
   return res.json();

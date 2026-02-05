@@ -68,24 +68,19 @@ export async function fetchTopLosers(limit: number = 200): Promise<TradingViewSt
     sort: { sortBy: 'change', sortOrder: 'asc' },
     symbols: {},
     markets: ['america'],
-    filter2: {
-      operator: 'and',
-      operands: [
-        // Only common stocks (no ETFs, funds, etc.)
-        { operation: { operator: 'equal', operand: ['type', 'stock'] } },
-        // Only NYSE and NASDAQ
-        {
-          operation: {
-            operator: 'in_range',
-            operand: ['exchange', ['AMEX', 'NYSE', 'NASDAQ']],
-          },
-        },
-        // Must be actively traded (volume > 0)
-        { operation: { operator: 'greater', operand: ['volume', 0] } },
-        // Price > 0 (no weird entries)
-        { operation: { operator: 'greater', operand: ['close', 0] } },
-      ],
-    },
+    filter: [
+      // Only common stocks (no ETFs, leveraged products, etc.)
+      { left: 'type', operation: 'equal', right: 'stock' },
+      { left: 'subtype', operation: 'in_range', right: ['common', 'foreign-issuer'] },
+      // Only major US exchanges
+      { left: 'exchange', operation: 'in_range', right: ['AMEX', 'NYSE', 'NASDAQ'] },
+      // Only primary listings
+      { left: 'is_primary', operation: 'equal', right: true },
+      // Must be actively traded
+      { left: 'volume', operation: 'greater', right: 0 },
+      // Price > 0
+      { left: 'close', operation: 'greater', right: 0 },
+    ],
   };
 
   try {
@@ -161,22 +156,16 @@ export async function fetchHighDeclineStocks(
     sort: { sortBy: 'change', sortOrder: 'asc' },
     symbols: {},
     markets: ['america'],
-    filter2: {
-      operator: 'and',
-      operands: [
-        { operation: { operator: 'equal', operand: ['type', 'stock'] } },
-        {
-          operation: {
-            operator: 'in_range',
-            operand: ['exchange', ['AMEX', 'NYSE', 'NASDAQ']],
-          },
-        },
-        { operation: { operator: 'greater', operand: ['volume', 0] } },
-        { operation: { operator: 'greater', operand: ['close', 0] } },
-        // Must have an all-time high recorded
-        { operation: { operator: 'greater', operand: ['High.All', 0] } },
-      ],
-    },
+    filter: [
+      { left: 'type', operation: 'equal', right: 'stock' },
+      { left: 'subtype', operation: 'in_range', right: ['common', 'foreign-issuer'] },
+      { left: 'exchange', operation: 'in_range', right: ['AMEX', 'NYSE', 'NASDAQ'] },
+      { left: 'is_primary', operation: 'equal', right: true },
+      { left: 'volume', operation: 'greater', right: 0 },
+      { left: 'close', operation: 'greater', right: 0 },
+      // Must have an all-time high recorded
+      { left: 'High.All', operation: 'greater', right: 0 },
+    ],
   };
 
   try {
