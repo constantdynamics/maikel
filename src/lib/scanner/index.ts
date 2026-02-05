@@ -54,8 +54,8 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   const { data } = await supabase.from('settings').select('key, value');
 
   const defaults: Settings = {
-    ath_decline_min: 95,
-    ath_decline_max: 99,
+    ath_decline_min: 85,
+    ath_decline_max: 99.9999,
     growth_threshold_pct: 200,
     min_growth_events: 2,
     min_consecutive_days: 5,
