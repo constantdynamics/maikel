@@ -9,6 +9,8 @@ import type { Archive } from '@/lib/types';
 export default function ArchivePage() {
   const [archives, setArchives] = useState<Archive[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportRange, setExportRange] = useState<'6months' | '1year' | 'all'>('all');
+  const [exporting, setExporting] = useState(false);
 
   const fetchArchives = useCallback(async () => {
     setLoading(true);
@@ -31,25 +33,26 @@ export default function ArchivePage() {
     }
   }
 
-  async function handleDownloadAll() {
-    const { data: stocks } = await supabase
-      .from('stocks')
-      .select('*')
-      .order('score', { ascending: false });
-
-    if (stocks && stocks.length > 0) {
-      const headers = Object.keys(stocks[0]).join(',');
-      const rows = stocks.map((s) =>
-        Object.values(s)
-          .map((v) => {
-            if (v === null) return '';
-            if (typeof v === 'string' && v.includes(',')) return `"${v}"`;
-            return String(v);
-          })
-          .join(','),
-      );
-      const csv = [headers, ...rows].join('\n');
-      downloadCSV(csv, `StockScreener_Full_Export_${new Date().toISOString().split('T')[0]}.csv`);
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const response = await fetch(`/api/export?range=${exportRange}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const disposition = response.headers.get('Content-Disposition');
+        const filename = disposition?.match(/filename="(.+)"/)?.[1]
+          || `StockScreener_Export_${new Date().toISOString().split('T')[0]}.csv`;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -58,12 +61,24 @@ export default function ArchivePage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Archives</h1>
-          <button
-            onClick={handleDownloadAll}
-            className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-          >
-            Download Complete Database
-          </button>
+          <div className="flex items-center gap-2">
+            <select
+              value={exportRange}
+              onChange={(e) => setExportRange(e.target.value as '6months' | '1year' | 'all')}
+              className="px-3 py-2 text-sm bg-slate-700 border border-slate-600 rounded text-white"
+            >
+              <option value="6months">Last 6 months</option>
+              <option value="1year">Last 1 year</option>
+              <option value="all">All time</option>
+            </select>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 rounded transition-colors"
+            >
+              {exporting ? 'Exporting...' : 'Download Database'}
+            </button>
+          </div>
         </div>
 
         <p className="text-slate-400 text-sm">

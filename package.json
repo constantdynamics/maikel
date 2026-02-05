@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup": "bash scripts/setup.sh",
+    "verify": "npx tsx scripts/verify-deployment.ts",
+    "db:push": "npx supabase db push",
+    "db:reset": "npx supabase db reset"
   },
   "dependencies": {
     "@supabase/ssr": "^0.1.0",
@@ -23,6 +27,7 @@
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.3.3"
   }
 }
