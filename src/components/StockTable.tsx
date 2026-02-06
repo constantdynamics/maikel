@@ -1,9 +1,13 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import type { Stock, SortConfig, SortDirection } from '@/lib/types';
 import { getScoreColor } from '@/lib/types';
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils';
+import { getExchangeFlag } from '@/lib/exchanges';
 import RainbowScore from './RainbowScore';
+import StockDetailModal from './StockDetailModal';
+import ColumnSettings, { type ColumnConfig } from './ColumnSettings';
 
 interface StockTableProps {
   stocks: Stock[];
@@ -16,28 +20,40 @@ interface StockTableProps {
   onDelete: (id: string) => void;
 }
 
-const columns: { key: keyof Stock; label: string; shortLabel: string; align?: string }[] = [
-  { key: 'ticker', label: 'Ticker', shortLabel: 'Ticker' },
-  { key: 'company_name', label: 'Company Name', shortLabel: 'Company' },
-  { key: 'sector', label: 'Sector', shortLabel: 'Sector' },
-  { key: 'current_price', label: 'Current Price', shortLabel: 'Price', align: 'right' },
-  { key: 'all_time_high', label: 'ATH', shortLabel: 'ATH', align: 'right' },
-  { key: 'ath_decline_pct', label: '% Decline ATH', shortLabel: 'ATH%', align: 'right' },
-  { key: 'score', label: 'Score', shortLabel: 'Score', align: 'right' },
-  { key: 'highest_growth_pct', label: 'Highest Growth %', shortLabel: 'Max Growth', align: 'right' },
-  { key: 'growth_event_count', label: '# Growth Events', shortLabel: 'Events', align: 'right' },
-  { key: 'five_year_low', label: '5Y Low', shortLabel: '5YL', align: 'right' },
-  { key: 'purchase_limit', label: 'Purchase Limit', shortLabel: 'Kooplim', align: 'right' },
-  { key: 'detection_date', label: 'Detection Date', shortLabel: 'Detected' },
+const DEFAULT_COLUMNS: ColumnConfig[] = [
+  { key: 'ticker', label: 'Ticker', visible: true },
+  { key: 'company_name', label: 'Company Name', visible: true },
+  { key: 'exchange', label: 'Exchange', visible: true },
+  { key: 'sector', label: 'Sector', visible: false },
+  { key: 'current_price', label: 'Price', visible: true },
+  { key: 'all_time_high', label: 'ATH', visible: true },
+  { key: 'ath_decline_pct', label: 'ATH%', visible: true },
+  { key: 'score', label: 'Score', visible: true },
+  { key: 'growth_event_count', label: 'Events', visible: true },
+  { key: 'highest_growth_pct', label: 'Top Growth', visible: true },
+  { key: 'five_year_low', label: '5Y Low', visible: false },
+  { key: 'purchase_limit', label: 'Buy Limit', visible: false },
+  { key: 'detection_date', label: 'Detected', visible: true },
 ];
+
+const COLUMN_ALIGNMENTS: Record<string, string> = {
+  current_price: 'right',
+  all_time_high: 'right',
+  ath_decline_pct: 'right',
+  score: 'right',
+  growth_event_count: 'right',
+  highest_growth_pct: 'right',
+  five_year_low: 'right',
+  purchase_limit: 'right',
+};
 
 function SortIcon({ direction }: { direction: SortDirection | null }) {
   if (!direction) {
-    return <span className="text-slate-600 ml-1">&#8597;</span>;
+    return <span className="text-[var(--text-muted)] ml-1 opacity-50">↕</span>;
   }
   return (
-    <span className="ml-1">
-      {direction === 'asc' ? '\u25B2' : '\u25BC'}
+    <span className="ml-1 text-[var(--accent-primary)]">
+      {direction === 'asc' ? '▲' : '▼'}
     </span>
   );
 }
@@ -52,7 +68,26 @@ export default function StockTable({
   onToggleFavorite,
   onDelete,
 }: StockTableProps) {
+  const [columns, setColumns] = useState<ColumnConfig[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('stockTableColumns');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch { /* ignore */ }
+      }
+    }
+    return DEFAULT_COLUMNS;
+  });
+
+  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('stockTableColumns', JSON.stringify(columns));
+  }, [columns]);
+
   const allSelected = stocks.length > 0 && selectedIds.size === stocks.length;
+  const visibleColumns = columns.filter((c) => c.visible);
 
   function getRowColorClass(score: number): string {
     const color = getScoreColor(score);
@@ -66,32 +101,43 @@ export default function StockTable({
     }
   }
 
-  function getScoreBadgeClass(score: number): string {
-    const color = getScoreColor(score);
-    switch (color) {
-      case 'green':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'orange':
-        return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-      case 'red':
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
-    }
+  function handleOpenSelectedInTabs() {
+    const selectedStocks = stocks.filter((s) => selectedIds.has(s.id));
+    // Open with a small delay between each to avoid popup blocker
+    selectedStocks.forEach((stock, index) => {
+      setTimeout(() => {
+        window.open(
+          `https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`,
+          '_blank',
+        );
+      }, index * 300);
+    });
   }
 
-  function renderCell(stock: Stock, key: keyof Stock) {
-    const value = stock[key];
+  function renderCell(stock: Stock, key: string) {
+    const value = stock[key as keyof Stock];
 
     switch (key) {
       case 'ticker':
         return (
-          <a
-            href={`https://www.google.com/search?q=${encodeURIComponent(String(value) + ' stock')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ticker-link font-mono"
-          >
-            {String(value)}
-          </a>
+          <div className="flex items-center gap-2">
+            <span className="text-sm">{getExchangeFlag(stock.exchange)}</span>
+            <a
+              href={`https://www.google.com/search?q=${encodeURIComponent(String(value) + ' stock')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ticker-link font-mono"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {String(value)}
+            </a>
+          </div>
+        );
+      case 'exchange':
+        return (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
+            {String(value || 'N/A')}
+          </span>
         );
       case 'current_price':
       case 'all_time_high':
@@ -112,9 +158,9 @@ export default function StockTable({
 
   if (stocks.length === 0) {
     return (
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-12 text-center">
-        <div className="text-slate-400 text-lg mb-2">No stocks found</div>
-        <p className="text-slate-500 text-sm">
+      <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-12 text-center">
+        <div className="text-[var(--text-secondary)] text-lg mb-2">No stocks found</div>
+        <p className="text-[var(--text-muted)] text-sm">
           Run a scan to detect stocks matching your criteria, or adjust your filters.
         </p>
       </div>
@@ -122,92 +168,117 @@ export default function StockTable({
   }
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="stock-table w-full text-sm">
-          <thead className="bg-slate-700/50">
-            <tr>
-              <th className="px-3 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={onToggleSelectAll}
-                  className="rounded bg-slate-700 border-slate-500"
-                />
-              </th>
-              <th className="px-2 py-3 text-center w-10"></th>
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => onSort(col.key)}
-                  className={`px-3 py-3 text-slate-300 font-medium text-xs uppercase tracking-wider ${
-                    col.align === 'right' ? 'text-right' : 'text-left'
-                  }`}
-                >
-                  {col.shortLabel}
-                  <SortIcon
-                    direction={sort.column === col.key ? sort.direction : null}
-                  />
-                </th>
-              ))}
-              <th className="px-3 py-3 w-10"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700/50">
-            {stocks.map((stock) => (
-              <tr
-                key={stock.id}
-                className={`${getRowColorClass(stock.score)} transition-colors`}
-              >
-                <td className="px-3 py-2.5">
+    <>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleOpenSelectedInTabs}
+              className="px-3 py-1.5 text-sm bg-[var(--accent-primary)] text-white rounded-lg hover:opacity-90 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Open {selectedIds.size} in Tabs
+            </button>
+          )}
+        </div>
+        <ColumnSettings columns={columns} onChange={setColumns} />
+      </div>
+
+      {/* Table */}
+      <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="stock-table w-full text-sm">
+            <thead className="bg-[var(--bg-tertiary)]">
+              <tr>
+                <th className="px-3 py-3 text-left w-10">
                   <input
                     type="checkbox"
-                    checked={selectedIds.has(stock.id)}
-                    onChange={() => onToggleSelect(stock.id)}
-                    className="rounded bg-slate-700 border-slate-500"
+                    checked={allSelected}
+                    onChange={onToggleSelectAll}
+                    className="rounded"
                   />
-                </td>
-                <td className="px-2 py-2.5 text-center">
-                  <button
-                    onClick={() => onToggleFavorite(stock.id)}
-                    className="star-btn text-lg"
-                    title="Toggle favorite (F)"
-                  >
-                    {stock.is_favorite ? (
-                      <span className="text-yellow-400">{'\u2605'}</span>
-                    ) : (
-                      <span className="text-slate-600 hover:text-yellow-400">{'\u2606'}</span>
-                    )}
-                  </button>
-                </td>
-                {columns.map((col) => (
-                  <td
+                </th>
+                <th className="px-2 py-3 text-center w-10"></th>
+                {visibleColumns.map((col) => (
+                  <th
                     key={col.key}
-                    className={`px-3 py-2.5 ${
-                      col.align === 'right' ? 'text-right font-mono' : ''
+                    onClick={() => onSort(col.key as keyof Stock)}
+                    className={`px-3 py-3 text-[var(--text-secondary)] font-medium text-xs uppercase tracking-wider cursor-pointer hover:bg-[var(--bg-secondary)] transition-colors ${
+                      COLUMN_ALIGNMENTS[col.key] === 'right' ? 'text-right' : 'text-left'
                     }`}
                   >
-                    {renderCell(stock, col.key)}
-                  </td>
+                    {col.label}
+                    <SortIcon
+                      direction={sort.column === col.key ? sort.direction : null}
+                    />
+                  </th>
                 ))}
-                <td className="px-3 py-2.5 text-center">
-                  <button
-                    onClick={() => onDelete(stock.id)}
-                    className="text-slate-500 hover:text-red-400 transition-colors"
-                    title="Delete (Del)"
-                  >
-                    {'\u2717'}
-                  </button>
-                </td>
+                <th className="px-3 py-3 w-10"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-color)]">
+              {stocks.map((stock) => (
+                <tr
+                  key={stock.id}
+                  onClick={() => setSelectedStock(stock)}
+                  className={`${getRowColorClass(stock.score)} transition-colors cursor-pointer`}
+                >
+                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(stock.id)}
+                      onChange={() => onToggleSelect(stock.id)}
+                      className="rounded"
+                    />
+                  </td>
+                  <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => onToggleFavorite(stock.id)}
+                      className="star-btn text-lg"
+                      title="Toggle favorite (F)"
+                    >
+                      {stock.is_favorite ? (
+                        <span className="text-yellow-400">★</span>
+                      ) : (
+                        <span className="text-[var(--text-muted)] hover:text-yellow-400">☆</span>
+                      )}
+                    </button>
+                  </td>
+                  {visibleColumns.map((col) => (
+                    <td
+                      key={col.key}
+                      className={`px-3 py-2.5 ${
+                        COLUMN_ALIGNMENTS[col.key] === 'right' ? 'text-right font-mono' : ''
+                      }`}
+                    >
+                      {renderCell(stock, col.key)}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => onDelete(stock.id)}
+                      className="text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-colors"
+                      title="Delete (Del)"
+                    >
+                      ✗
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2 bg-[var(--bg-tertiary)] text-sm text-[var(--text-muted)] flex justify-between">
+          <span>{stocks.length} stocks</span>
+          <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : ''}</span>
+        </div>
       </div>
-      <div className="px-4 py-2 bg-slate-700/30 text-sm text-slate-400 flex justify-between">
-        <span>{stocks.length} stocks</span>
-        <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : ''}</span>
-      </div>
-    </div>
+
+      {/* Detail Modal */}
+      <StockDetailModal stock={selectedStock} onClose={() => setSelectedStock(null)} />
+    </>
   );
 }

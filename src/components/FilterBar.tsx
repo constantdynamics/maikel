@@ -33,7 +33,7 @@ export default function FilterBar({
   }
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4 space-y-3">
+    <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-4 mb-4 space-y-3">
       {/* Top row: Search, actions, scan */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
@@ -42,14 +42,14 @@ export default function FilterBar({
             placeholder="Search ticker or company name..."
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
-            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 text-sm"
+            className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)] text-sm"
           />
         </div>
 
         <select
           value={filters.sectorFilter}
           onChange={(e) => updateFilter('sectorFilter', e.target.value)}
-          className="px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm focus:outline-none focus:border-blue-500"
+          className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--accent-primary)]"
         >
           <option value="">All Sectors</option>
           {sectors.map((s) => (
@@ -57,19 +57,19 @@ export default function FilterBar({
           ))}
         </select>
 
-        <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
           <input
             type="checkbox"
             checked={filters.showFavorites}
             onChange={(e) => updateFilter('showFavorites', e.target.checked)}
-            className="rounded bg-slate-700 border-slate-600"
+            className="rounded"
           />
           Favorites only
         </label>
 
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="px-3 py-2 text-sm text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+          className="px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-tertiary)] transition-colors"
         >
           {showAdvanced ? 'Hide Filters' : 'More Filters'}
         </button>
@@ -77,17 +77,17 @@ export default function FilterBar({
         <div className="flex items-center gap-2 ml-auto">
           {selectedCount > 0 && (
             <>
-              <span className="text-sm text-slate-400">{selectedCount} selected</span>
+              <span className="text-sm text-[var(--text-muted)]">{selectedCount} selected</span>
               <button
                 onClick={onBulkFavorite}
-                className="px-3 py-2 text-sm bg-yellow-600 hover:bg-yellow-700 rounded transition-colors"
+                className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors"
                 title="Mark as Favorite (F)"
               >
-                Mark Favorite
+                Favorite
               </button>
               <button
                 onClick={onBulkDelete}
-                className="px-3 py-2 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
+                className="px-3 py-2 text-sm bg-[var(--accent-red)] text-white hover:opacity-90 rounded transition-colors"
                 title="Delete Selected (Del)"
               >
                 Delete
@@ -97,7 +97,7 @@ export default function FilterBar({
 
           <button
             onClick={onExport}
-            className="px-3 py-2 text-sm bg-slate-600 hover:bg-slate-500 rounded transition-colors"
+            className="px-3 py-2 text-sm bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:opacity-90 rounded transition-colors"
           >
             Export CSV
           </button>
@@ -105,7 +105,7 @@ export default function FilterBar({
           <button
             onClick={onRunScan}
             disabled={scanRunning}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:text-slate-400 rounded font-medium transition-colors"
+            className="px-4 py-2 text-sm bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50 rounded font-medium transition-colors"
           >
             {scanRunning ? 'Scanning...' : 'Run Scan'}
           </button>
@@ -114,9 +114,9 @@ export default function FilterBar({
 
       {/* Advanced filters */}
       {showAdvanced && (
-        <div className="flex items-center gap-4 flex-wrap pt-2 border-t border-slate-700">
+        <div className="flex items-center gap-4 flex-wrap pt-2 border-t border-[var(--border-color)]">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">Score:</span>
+            <span className="text-sm text-[var(--text-muted)]">Score:</span>
             <input
               type="number"
               placeholder="Min"
@@ -124,9 +124,9 @@ export default function FilterBar({
               onChange={(e) =>
                 updateFilter('scoreMin', e.target.value ? Number(e.target.value) : null)
               }
-              className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              className="w-20 px-2 py-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm"
             />
-            <span className="text-slate-500">-</span>
+            <span className="text-[var(--text-muted)]">-</span>
             <input
               type="number"
               placeholder="Max"
@@ -134,12 +134,12 @@ export default function FilterBar({
               onChange={(e) =>
                 updateFilter('scoreMax', e.target.value ? Number(e.target.value) : null)
               }
-              className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              className="w-20 px-2 py-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm"
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">ATH% Decline:</span>
+            <span className="text-sm text-[var(--text-muted)]">ATH% Decline:</span>
             <input
               type="number"
               placeholder="Min"
@@ -147,9 +147,9 @@ export default function FilterBar({
               onChange={(e) =>
                 updateFilter('athDeclineMin', e.target.value ? Number(e.target.value) : null)
               }
-              className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              className="w-20 px-2 py-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm"
             />
-            <span className="text-slate-500">-</span>
+            <span className="text-[var(--text-muted)]">-</span>
             <input
               type="number"
               placeholder="Max"
@@ -157,7 +157,7 @@ export default function FilterBar({
               onChange={(e) =>
                 updateFilter('athDeclineMax', e.target.value ? Number(e.target.value) : null)
               }
-              className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              className="w-20 px-2 py-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm"
             />
           </div>
 
@@ -174,7 +174,7 @@ export default function FilterBar({
                 showArchived: false,
               })
             }
-            className="text-sm text-slate-400 hover:text-white transition-colors"
+            className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           >
             Reset All
           </button>
