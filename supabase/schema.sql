@@ -116,6 +116,20 @@ CREATE TABLE settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Backups: automatic data backups for protection
+CREATE TABLE backups (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  backup_type VARCHAR(20) DEFAULT 'auto',
+  stock_count INTEGER DEFAULT 0,
+  favorite_count INTEGER DEFAULT 0,
+  data JSONB NOT NULL,
+  size_bytes INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Keep only last 30 backups automatically
+CREATE INDEX idx_backups_created ON backups(created_at DESC);
+
 -- Insert default settings
 INSERT INTO settings (key, value) VALUES
   ('ath_decline_min', '95'),
@@ -150,6 +164,7 @@ ALTER TABLE error_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE health_checks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE archives ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE backups ENABLE ROW LEVEL SECURITY;
 
 -- Policies: allow all for authenticated users
 CREATE POLICY "Allow all for authenticated" ON stocks FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -160,6 +175,7 @@ CREATE POLICY "Allow all for authenticated" ON error_logs FOR ALL TO authenticat
 CREATE POLICY "Allow all for authenticated" ON health_checks FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for authenticated" ON archives FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for authenticated" ON settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all for authenticated" ON backups FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- Also allow service role (for cron jobs)
 CREATE POLICY "Allow service role" ON stocks FOR ALL TO service_role USING (true) WITH CHECK (true);
@@ -170,3 +186,4 @@ CREATE POLICY "Allow service role" ON error_logs FOR ALL TO service_role USING (
 CREATE POLICY "Allow service role" ON health_checks FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role" ON archives FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role" ON settings FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Allow service role" ON backups FOR ALL TO service_role USING (true) WITH CHECK (true);

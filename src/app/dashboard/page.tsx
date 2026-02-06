@@ -7,6 +7,8 @@ import FilterBar from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
+import FixedUI from '@/components/FixedUI';
+import ExportReminder from '@/components/ExportReminder';
 import { useStocks } from '@/hooks/useStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -193,6 +195,8 @@ export default function DashboardPage() {
   return (
     <AuthGuard>
       <div className="space-y-4">
+        <ExportReminder onExport={handleExport} />
+
         <div className="flex items-center justify-between flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">
             Dashboard
@@ -281,6 +285,8 @@ export default function DashboardPage() {
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
         />
+
+        <FixedUI />
       </div>
     </AuthGuard>
   );

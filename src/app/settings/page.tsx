@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '@/components/AuthGuard';
+import BackupStatus from '@/components/BackupStatus';
 import { supabase } from '@/lib/supabase';
 import type { Settings } from '@/lib/types';
 
@@ -274,6 +275,9 @@ export default function SettingsPage() {
             Schedule is configured in vercel.json. Manual scans can be triggered from the dashboard.
           </p>
         </section>
+
+        {/* Data Backup */}
+        <BackupStatus />
       </div>
     </AuthGuard>
   );

@@ -3,14 +3,19 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Recovery Radar',
+  title: 'Professor Zonnebloem',
   description: 'Automated detection of high-potential recovery opportunities',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 };
 
 const themeInitScript = `
   (function() {
     try {
-      var theme = localStorage.getItem('theme') || 'midnight';
+      var theme = localStorage.getItem('theme') || 'sunflower';
       document.documentElement.setAttribute('data-theme', theme);
     } catch (e) {}
   })();

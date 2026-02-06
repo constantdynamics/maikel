@@ -30,6 +30,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: 'ath_decline_pct', label: 'ATH%', visible: true },
   { key: 'score', label: 'Score', visible: true },
   { key: 'growth_event_count', label: 'Events', visible: true },
+  { key: 'sunflower_events', label: 'Growth', visible: true },
   { key: 'highest_growth_pct', label: 'Top Growth', visible: true },
   { key: 'five_year_low', label: '5Y Low', visible: false },
   { key: 'purchase_limit', label: 'Buy Limit', visible: false },
@@ -42,10 +43,50 @@ const COLUMN_ALIGNMENTS: Record<string, string> = {
   ath_decline_pct: 'right',
   score: 'right',
   growth_event_count: 'right',
+  sunflower_events: 'left',
   highest_growth_pct: 'right',
   five_year_low: 'right',
   purchase_limit: 'right',
 };
+
+// Get sunflower sizes based on growth events and score
+function getSunflowerIcons(eventCount: number, score: number, highestGrowthPct: number | null): React.ReactNode {
+  const count = Math.min(eventCount, 5);
+  if (count === 0) return <span className="text-[var(--text-muted)]">-</span>;
+
+  // Determine sizes based on score and growth percentage
+  const sizes: ('small' | 'medium' | 'large')[] = [];
+  const avgGrowth = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
+
+  for (let i = 0; i < count; i++) {
+    // First event uses highest growth %, others estimate decreasing sizes
+    const estimatedGrowth = i === 0 ? (highestGrowthPct || 200) : avgGrowth * (1 - i * 0.15);
+
+    if (estimatedGrowth >= 500) {
+      sizes.push('large');
+    } else if (estimatedGrowth >= 300) {
+      sizes.push('medium');
+    } else {
+      sizes.push('small');
+    }
+  }
+
+  // Sort by size (largest first)
+  sizes.sort((a, b) => {
+    const order = { large: 0, medium: 1, small: 2 };
+    return order[a] - order[b];
+  });
+
+  return (
+    <div className="sunflower-events">
+      {sizes.map((size, idx) => (
+        <span key={idx} className={`sunflower-icon sunflower-${size}`} title={`Growth event ${idx + 1}`}>
+          🌻
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function SortIcon({ direction }: { direction: SortDirection | null }) {
   if (!direction) {
@@ -149,6 +190,8 @@ export default function StockTable({
         return formatPercent(value as number | null);
       case 'score':
         return <RainbowScore score={stock.score} />;
+      case 'sunflower_events':
+        return getSunflowerIcons(stock.growth_event_count, stock.score, stock.highest_growth_pct);
       case 'detection_date':
         return formatDate(value as string | null);
       default:

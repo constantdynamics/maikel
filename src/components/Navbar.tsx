@@ -9,6 +9,7 @@ import packageJson from '../../package.json';
 const APP_VERSION = packageJson.version;
 
 const THEMES = [
+  { id: 'sunflower', name: 'Sunflower', icon: '🌻' },
   { id: 'midnight', name: 'Midnight', icon: '🌙' },
   { id: 'ocean', name: 'Ocean', icon: '🌊' },
   { id: 'forest', name: 'Forest', icon: '🌲' },
@@ -35,7 +36,7 @@ export default function Navbar() {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme') || 'midnight';
+    const saved = localStorage.getItem('theme') || 'sunflower';
     setTheme(saved);
     document.documentElement.setAttribute('data-theme', saved);
   }, []);
@@ -58,8 +59,9 @@ export default function Navbar() {
     <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="text-lg font-bold text-[var(--text-primary)] flex items-baseline gap-2">
-            <span className="text-[var(--accent-primary)]">v{APP_VERSION}</span>
+          <Link href="/dashboard" className="text-lg font-bold flex items-center gap-2">
+            <span className="text-2xl">🌻</span>
+            <span className="logo-text text-xl">Professor Zonnebloem</span>
           </Link>
           <div className="flex items-center gap-1">
             {navItems.map((item) => (
