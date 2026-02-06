@@ -34,6 +34,7 @@ export default function DashboardPage() {
     deleteStock,
     bulkFavorite,
     bulkDelete,
+    bulkArchive,
     refreshStocks,
   } = useStocks();
 
@@ -82,6 +83,12 @@ export default function DashboardPage() {
           setSelectedIds(new Set());
         }
       }
+      if (e.key === 'a' || e.key === 'A') {
+        if (selectedIds.size > 0) {
+          bulkArchive(selectedIds);
+          setSelectedIds(new Set());
+        }
+      }
       if (e.key === 'Delete') {
         if (selectedIds.size > 0) {
           requestBulkDelete();
@@ -91,7 +98,7 @@ export default function DashboardPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, bulkFavorite]);
+  }, [selectedIds, bulkFavorite, bulkArchive]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -156,6 +163,11 @@ export default function DashboardPage() {
 
   function handleBulkFavorite() {
     bulkFavorite(selectedIds);
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkArchive() {
+    bulkArchive(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -227,6 +239,7 @@ export default function DashboardPage() {
           scanRunning={scanRunning}
           selectedCount={selectedIds.size}
           onBulkFavorite={handleBulkFavorite}
+          onBulkArchive={handleBulkArchive}
           onBulkDelete={requestBulkDelete}
         />
 

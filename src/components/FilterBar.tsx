@@ -15,6 +15,7 @@ interface FilterBarProps {
   scanRunning: boolean;
   selectedCount: number;
   onBulkFavorite: () => void;
+  onBulkArchive: () => void;
   onBulkDelete: () => void;
 }
 
@@ -27,6 +28,7 @@ export default function FilterBar({
   scanRunning,
   selectedCount,
   onBulkFavorite,
+  onBulkArchive,
   onBulkDelete,
 }: FilterBarProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -96,6 +98,13 @@ export default function FilterBar({
                 title="Mark as Favorite (F)"
               >
                 Favorite
+              </button>
+              <button
+                onClick={onBulkArchive}
+                className="px-3 py-2 text-sm bg-blue-600 text-white hover:opacity-90 rounded transition-colors"
+                title="Archive Selected (A)"
+              >
+                Archive
               </button>
               <button
                 onClick={onBulkDelete}

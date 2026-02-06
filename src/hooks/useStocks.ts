@@ -165,6 +165,17 @@ export function useStocks() {
     }
   }
 
+  async function bulkArchive(ids: Set<string>) {
+    const { error } = await supabase
+      .from('stocks')
+      .update({ is_archived: true, archived_at: new Date().toISOString() })
+      .in('id', Array.from(ids));
+
+    if (!error) {
+      setStocks((prev) => prev.filter((s) => !ids.has(s.id)));
+    }
+  }
+
   return {
     stocks: filteredStocks,
     allStocks: stocks,
@@ -178,6 +189,7 @@ export function useStocks() {
     deleteStock,
     bulkFavorite,
     bulkDelete,
+    bulkArchive,
     refreshStocks: fetchStocks,
   };
 }
