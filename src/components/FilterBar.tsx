@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import type { FilterConfig } from '@/lib/types';
 import MarketSelector, { getSelectedMarkets } from './MarketSelector';
+import ApiStatus from './ApiStatus';
 
 interface FilterBarProps {
   filters: FilterConfig;
@@ -121,6 +122,8 @@ export default function FilterBar({
           >
             {scanRunning ? 'Scanning...' : 'Run Scan'}
           </button>
+
+          <ApiStatus />
         </div>
       </div>
 
