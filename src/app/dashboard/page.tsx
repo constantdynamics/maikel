@@ -6,9 +6,18 @@ import StockTable from '@/components/StockTable';
 import FilterBar from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import Pagination from '@/components/Pagination';
 import { useStocks } from '@/hooks/useStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+
+interface ScanSession {
+  id: string;
+  started_at: string;
+  stocks_found: number;
+}
+
+const ITEMS_PER_PAGE = 200;
 
 export default function DashboardPage() {
   const {
@@ -29,6 +38,8 @@ export default function DashboardPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [scanRunning, setScanRunning] = useState(false);
   const [scanTriggered, setScanTriggered] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sessions, setSessions] = useState<ScanSession[]>([]);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -37,6 +48,24 @@ export default function DashboardPage() {
     message: string;
     onConfirm: () => void;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
+
+  // Load scan sessions
+  useEffect(() => {
+    async function loadSessions() {
+      const { data } = await supabase
+        .from('scan_logs')
+        .select('id, started_at, stocks_found')
+        .eq('status', 'completed')
+        .gt('stocks_found', 0)
+        .order('started_at', { ascending: false })
+        .limit(20);
+
+      if (data) {
+        setSessions(data);
+      }
+    }
+    loadSessions();
+  }, [scanTriggered]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -62,6 +91,18 @@ export default function DashboardPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedIds, bulkFavorite]);
 
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, sort]);
+
+  // Pagination
+  const totalPages = Math.ceil(stocks.length / ITEMS_PER_PAGE);
+  const paginatedStocks = stocks.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
+  );
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -72,10 +113,10 @@ export default function DashboardPage() {
   }
 
   function toggleSelectAll() {
-    if (selectedIds.size === stocks.length) {
+    if (selectedIds.size === paginatedStocks.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(stocks.map((s) => s.id)));
+      setSelectedIds(new Set(paginatedStocks.map((s) => s.id)));
     }
   }
 
@@ -98,7 +139,6 @@ export default function DashboardPage() {
           ? { Authorization: `Bearer ${session.access_token}` }
           : {},
       });
-      // The ScanProgress component handles polling and completion
     } catch {
       setScanRunning(false);
     }
@@ -142,11 +182,29 @@ export default function DashboardPage() {
     });
   }
 
+  function handlePageChange(page: number) {
+    setCurrentPage(page);
+    setSelectedIds(new Set());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   return (
     <AuthGuard>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+            Dashboard
+            <span className="ml-3 text-sm font-normal text-[var(--text-muted)]">
+              {stocks.length} stocks total
+            </span>
+          </h1>
+
+          {/* Session info */}
+          {sessions.length > 0 && (
+            <div className="text-sm text-[var(--text-muted)]">
+              Last scan: {new Date(sessions[0]?.started_at).toLocaleDateString()} ({sessions[0]?.stocks_found} found)
+            </div>
+          )}
         </div>
 
         <ScanProgress
@@ -168,36 +226,48 @@ export default function DashboardPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="text-slate-400">Loading stocks...</div>
+            <div className="text-[var(--text-muted)]">Loading stocks...</div>
           </div>
         ) : stocks.length === 0 && !filters.search && !filters.sectorFilter ? (
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-16 text-center">
-            <h2 className="text-xl font-semibold mb-2">No Data Yet</h2>
-            <p className="text-slate-400 mb-4">
+          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
+            <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Data Yet</h2>
+            <p className="text-[var(--text-secondary)] mb-4">
               Click &ldquo;Run Scan&rdquo; to start scanning for high-potential recovery stocks.
             </p>
-            <p className="text-slate-500 text-sm mb-6">
+            <p className="text-[var(--text-muted)] text-sm mb-6">
               Scans for stocks with 85-100% ATH decline and multiple 200%+ growth events.
             </p>
             <button
               onClick={handleRunScan}
               disabled={scanRunning}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 rounded-lg font-medium transition-colors"
+              className="px-6 py-3 bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-50 rounded-lg font-medium text-white transition-colors"
             >
               {scanRunning ? 'Scanning...' : 'Run First Scan'}
             </button>
           </div>
         ) : (
-          <StockTable
-            stocks={stocks}
-            sort={sort}
-            onSort={handleSort}
-            selectedIds={selectedIds}
-            onToggleSelect={toggleSelect}
-            onToggleSelectAll={toggleSelectAll}
-            onToggleFavorite={toggleFavorite}
-            onDelete={requestDelete}
-          />
+          <>
+            <StockTable
+              stocks={paginatedStocks}
+              sort={sort}
+              onSort={handleSort}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onToggleFavorite={toggleFavorite}
+              onDelete={requestDelete}
+            />
+
+            {totalPages > 1 && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+                totalItems={stocks.length}
+                itemsPerPage={ITEMS_PER_PAGE}
+              />
+            )}
+          </>
         )}
 
         <ConfirmDialog
