@@ -49,9 +49,9 @@ const COLUMN_ALIGNMENTS: Record<string, string> = {
   purchase_limit: 'right',
 };
 
-// Get growth event dots with green gradient colors
+// Get growth event dots - max 10 in two rows, colors: green/yellow/white
 function getGrowthDots(eventCount: number, highestGrowthPct: number | null): React.ReactNode {
-  const count = Math.min(eventCount, 5);
+  const count = Math.min(eventCount, 10);
   if (count === 0) return <span className="text-[var(--text-muted)]">-</span>;
 
   // Determine sizes based on growth percentage
@@ -60,7 +60,7 @@ function getGrowthDots(eventCount: number, highestGrowthPct: number | null): Rea
 
   for (let i = 0; i < count; i++) {
     // First event uses highest growth %, others estimate decreasing sizes
-    const estimatedGrowth = i === 0 ? (highestGrowthPct || 200) : avgGrowth * (1 - i * 0.15);
+    const estimatedGrowth = i === 0 ? (highestGrowthPct || 200) : avgGrowth * (1 - i * 0.1);
 
     if (estimatedGrowth >= 500) {
       sizes.push('large');
@@ -77,23 +77,41 @@ function getGrowthDots(eventCount: number, highestGrowthPct: number | null): Rea
     return order[a] - order[b];
   });
 
-  // Color mapping: large=bright green, medium=medium green, small=light mint
+  // Color mapping: large=green, medium=yellow, small=white
   const colorMap = {
-    large: '#22c55e',   // Bright green
-    medium: '#4ade80',  // Medium green
-    small: '#86efac',   // Light mint green
+    large: '#22c55e',   // Green
+    medium: '#facc15',  // Yellow
+    small: '#ffffff',   // White
   };
 
+  // Split into two rows (max 5 per row)
+  const topRow = sizes.slice(0, 5);
+  const bottomRow = sizes.slice(5, 10);
+
   return (
-    <div className="flex items-center gap-1">
-      {sizes.map((size, idx) => (
-        <span
-          key={idx}
-          className="inline-block w-2.5 h-2.5 rounded-full"
-          style={{ backgroundColor: colorMap[size] }}
-          title={`${size === 'large' ? '500%+' : size === 'medium' ? '300-500%' : '<300%'} growth event`}
-        />
-      ))}
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-0.5">
+        {topRow.map((size, idx) => (
+          <span
+            key={idx}
+            className="inline-block w-2 h-2 rounded-full border border-gray-600"
+            style={{ backgroundColor: colorMap[size] }}
+            title={`${size === 'large' ? '500%+' : size === 'medium' ? '300-500%' : '<300%'} growth`}
+          />
+        ))}
+      </div>
+      {bottomRow.length > 0 && (
+        <div className="flex items-center gap-0.5">
+          {bottomRow.map((size, idx) => (
+            <span
+              key={idx + 5}
+              className="inline-block w-2 h-2 rounded-full border border-gray-600"
+              style={{ backgroundColor: colorMap[size] }}
+              title={`${size === 'large' ? '500%+' : size === 'medium' ? '300-500%' : '<300%'} growth`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -167,14 +185,15 @@ export default function StockTable({
 
   function handleOpenSelectedInTabs() {
     const selectedStocks = stocks.filter((s) => selectedIds.has(s.id));
-    // Open with a small delay between each to avoid popup blocker
-    selectedStocks.forEach((stock, index) => {
-      setTimeout(() => {
-        window.open(
-          `https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`,
-          '_blank',
-        );
-      }, index * 300);
+
+    // Open all tabs at once - browsers may block some, user needs to allow popups
+    // This works better than setTimeout which only allows the first one
+    selectedStocks.forEach((stock) => {
+      window.open(
+        `https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`,
+        '_blank',
+        'noopener,noreferrer',
+      );
     });
   }
 
