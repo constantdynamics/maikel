@@ -11,9 +11,10 @@ export interface ColumnConfig {
 interface ColumnSettingsProps {
   columns: ColumnConfig[];
   onChange: (columns: ColumnConfig[]) => void;
+  onReset?: () => void;
 }
 
-export default function ColumnSettings({ columns, onChange }: ColumnSettingsProps) {
+export default function ColumnSettings({ columns, onChange, onReset }: ColumnSettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -71,6 +72,15 @@ export default function ColumnSettings({ columns, onChange }: ColumnSettingsProp
             >
               Hide All
             </button>
+            {onReset && (
+              <button
+                onClick={() => { onReset(); setIsOpen(false); }}
+                className="flex-1 px-2 py-1 text-xs bg-[var(--accent-orange)] text-white rounded hover:opacity-80"
+                title="Reset to default columns"
+              >
+                Reset
+              </button>
+            )}
           </div>
           <div className="max-h-64 overflow-y-auto p-2">
             {columns.map((col) => (

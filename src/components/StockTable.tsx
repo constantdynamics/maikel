@@ -242,7 +242,14 @@ export default function StockTable({
             </button>
           )}
         </div>
-        <ColumnSettings columns={columns} onChange={setColumns} />
+        <ColumnSettings
+          columns={columns}
+          onChange={setColumns}
+          onReset={() => {
+            setColumns(DEFAULT_COLUMNS);
+            localStorage.removeItem('stockTableColumns');
+          }}
+        />
       </div>
 
       {/* Table */}
