@@ -85,41 +85,32 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
     return () => clearInterval(interval);
   }, [enabled, nextScan]);
 
-  // Auto-scan logic - checks API health before scanning
+  // Auto-scan logic - just run the scan directly
   const checkAndScan = useCallback(async () => {
-    if (scanRunning) return;
-
-    // Check API health first
-    try {
-      const response = await fetch('/api/health');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.yahoo_finance_status === 'ok' || data.yahoo_finance_status === 'unknown') {
-          // API is healthy or unknown, run scan
-          onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
-          // Schedule next scan
-          setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
-        }
-      }
-    } catch {
-      // API check failed, but still try to scan
-      onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
+    if (scanRunning) {
+      // Scan already running, reschedule
       setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
+      return;
     }
+
+    // Run the scan - the scan itself handles API errors gracefully
+    onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
+    // Schedule next scan
+    setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
   }, [scanRunning, onRunScan, selectedMarkets, intervalMinutes]);
 
-  // Schedule scans
+  // Schedule scans - check more frequently
   useEffect(() => {
     if (!enabled) return;
 
     const checkInterval = setInterval(() => {
-      if (nextScan && Date.now() >= nextScan.getTime()) {
+      if (nextScan && Date.now() >= nextScan.getTime() && !scanRunning) {
         checkAndScan();
       }
-    }, 10000); // Check every 10 seconds
+    }, 2000); // Check every 2 seconds for more responsive scanning
 
     return () => clearInterval(checkInterval);
-  }, [enabled, nextScan, checkAndScan]);
+  }, [enabled, nextScan, checkAndScan, scanRunning]);
 
   function toggleAutoScan() {
     const newEnabled = !enabled;
