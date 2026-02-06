@@ -211,7 +211,8 @@ export function getCountryFlag(country: string): string {
 
 export function getExchangeFlag(exchange: string | null): string {
   const countryCode = getCountryCode(exchange);
-  return COUNTRY_FLAGS[countryCode] || '🏳️';
+  // Return country code as text - emoji flags don't render well on all systems
+  return countryCode.toLowerCase();
 }
 
 // TradingView scanner endpoints for different markets

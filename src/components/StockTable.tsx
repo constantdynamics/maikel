@@ -114,7 +114,20 @@ export default function StockTable({
       const saved = localStorage.getItem('stockTableColumns');
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const savedColumns = JSON.parse(saved) as ColumnConfig[];
+          // Merge saved columns with defaults to include any new columns
+          const savedKeys = new Set(savedColumns.map(c => c.key));
+          const mergedColumns = [...savedColumns];
+
+          // Add any new columns from defaults that aren't in saved
+          for (const defaultCol of DEFAULT_COLUMNS) {
+            if (!savedKeys.has(defaultCol.key)) {
+              // Insert new column at the correct position
+              const defaultIndex = DEFAULT_COLUMNS.findIndex(c => c.key === defaultCol.key);
+              mergedColumns.splice(defaultIndex, 0, defaultCol);
+            }
+          }
+          return mergedColumns;
         } catch { /* ignore */ }
       }
     }
@@ -162,7 +175,9 @@ export default function StockTable({
       case 'ticker':
         return (
           <div className="flex items-center gap-2">
-            <span className="text-sm">{getExchangeFlag(stock.exchange)}</span>
+            <span className="country-badge text-[10px] font-bold uppercase px-1 py-0.5 rounded bg-[var(--accent-primary)] text-white opacity-80">
+              {getExchangeFlag(stock.exchange)}
+            </span>
             <a
               href={`https://www.google.com/search?q=${encodeURIComponent(String(value) + ' stock')}`}
               target="_blank"
