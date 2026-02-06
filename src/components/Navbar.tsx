@@ -59,9 +59,15 @@ export default function Navbar() {
     <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="text-lg font-bold flex items-center gap-2">
-            <span className="text-2xl">🌻</span>
-            <span className="logo-text text-xl">Professor Zonnebloem</span>
+          <Link href="/dashboard" className="flex items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.png"
+              alt="Professor Zonnebloem"
+              width={40}
+              height={40}
+              className="rounded-lg"
+            />
           </Link>
           <div className="flex items-center gap-1">
             {navItems.map((item) => (

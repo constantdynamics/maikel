@@ -26,7 +26,6 @@ export default function FixedUI() {
       {/* Version badge - bottom left */}
       <div className="fixed-version">
         <span className="text-[var(--accent-primary)]">v{APP_VERSION}</span>
-        <span className="ml-2 opacity-60">Professor Zonnebloem</span>
       </div>
 
       {/* Scroll to top button - bottom right */}
