@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import BackupStatus from '@/components/BackupStatus';
 import { supabase } from '@/lib/supabase';
-import type { Settings } from '@/lib/types';
-import { DEFAULT_VOLATILE_SECTORS } from '@/lib/types';
+import type { Settings, MarketCapCategory } from '@/lib/types';
+import { DEFAULT_VOLATILE_SECTORS, MARKET_CAP_CATEGORIES } from '@/lib/types';
 
 const SECTORS = [
   'Technology',
@@ -21,15 +21,6 @@ const SECTORS = [
   'Utilities',
 ];
 
-// Market cap presets in millions
-const MARKET_CAP_PRESETS = [
-  { label: 'Micro (<$300M)', min: null, max: 300 },
-  { label: 'Small ($300M-$2B)', min: 300, max: 2000 },
-  { label: 'Mid ($2B-$10B)', min: 2000, max: 10000 },
-  { label: 'Large ($10B+)', min: 10000, max: null },
-  { label: 'All sizes', min: null, max: null },
-];
-
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     ath_decline_min: 85,
@@ -41,9 +32,8 @@ export default function SettingsPage() {
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
     excluded_sectors: [],
-    excluded_volatile_sectors: [...DEFAULT_VOLATILE_SECTORS],
-    market_cap_min: null,
-    market_cap_max: null,
+    included_volatile_sectors: [],  // Empty = don't scan volatile sectors
+    market_cap_categories: ['micro', 'small', 'mid', 'large'],  // All selected by default
     auto_scan_interval_minutes: 5,
   });
   const [loading, setLoading] = useState(true);
@@ -117,25 +107,30 @@ export default function SettingsPage() {
     });
   }
 
-  function toggleVolatileSectorExclusion(sector: string) {
+  function toggleVolatileSectorInclusion(sector: string) {
     setSettings((prev) => {
-      const excluded = [...prev.excluded_volatile_sectors];
-      const idx = excluded.indexOf(sector);
+      const included = [...prev.included_volatile_sectors];
+      const idx = included.indexOf(sector);
       if (idx >= 0) {
-        excluded.splice(idx, 1);
+        included.splice(idx, 1);
       } else {
-        excluded.push(sector);
+        included.push(sector);
       }
-      return { ...prev, excluded_volatile_sectors: excluded };
+      return { ...prev, included_volatile_sectors: included };
     });
   }
 
-  function setMarketCapPreset(min: number | null, max: number | null) {
-    setSettings((prev) => ({
-      ...prev,
-      market_cap_min: min ? min * 1000000 : null,
-      market_cap_max: max ? max * 1000000 : null,
-    }));
+  function toggleMarketCapCategory(category: string) {
+    setSettings((prev) => {
+      const categories = [...prev.market_cap_categories];
+      const idx = categories.indexOf(category);
+      if (idx >= 0) {
+        categories.splice(idx, 1);
+      } else {
+        categories.push(category);
+      }
+      return { ...prev, market_cap_categories: categories };
+    });
   }
 
   if (loading) {
@@ -300,7 +295,8 @@ export default function SettingsPage() {
         <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
           <h2 className="text-lg font-semibold">Volatile Sectors</h2>
           <p className="text-sm text-slate-400">
-            These sectors are known for extreme volatility. Checked sectors will be excluded from scanning.
+            These sectors are known for extreme volatility. Check the ones you <strong>want to include</strong> in scanning.
+            Unchecked sectors will be skipped.
           </p>
           <div className="grid grid-cols-2 gap-2">
             {DEFAULT_VOLATILE_SECTORS.map((sector) => (
@@ -310,8 +306,8 @@ export default function SettingsPage() {
               >
                 <input
                   type="checkbox"
-                  checked={settings.excluded_volatile_sectors.includes(sector)}
-                  onChange={() => toggleVolatileSectorExclusion(sector)}
+                  checked={settings.included_volatile_sectors.includes(sector)}
+                  onChange={() => toggleVolatileSectorInclusion(sector)}
                   className="rounded bg-slate-700 border-slate-500"
                 />
                 {sector}
@@ -320,72 +316,70 @@ export default function SettingsPage() {
           </div>
           <div className="flex gap-2 pt-2">
             <button
-              onClick={() => setSettings(prev => ({ ...prev, excluded_volatile_sectors: [...DEFAULT_VOLATILE_SECTORS] }))}
+              onClick={() => setSettings(prev => ({ ...prev, included_volatile_sectors: [...DEFAULT_VOLATILE_SECTORS] }))}
+              className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded transition-colors"
+            >
+              Include All
+            </button>
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, included_volatile_sectors: [] }))}
               className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
             >
               Exclude All
             </button>
-            <button
-              onClick={() => setSettings(prev => ({ ...prev, excluded_volatile_sectors: [] }))}
-              className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
-            >
-              Include All
-            </button>
           </div>
+          <p className="text-xs text-slate-500">
+            Currently: {settings.included_volatile_sectors.length === 0
+              ? 'All volatile sectors excluded'
+              : `${settings.included_volatile_sectors.length} volatile sector(s) included`}
+          </p>
         </section>
 
         {/* Market Cap Filter */}
         <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
           <h2 className="text-lg font-semibold">Market Cap Filter</h2>
           <p className="text-sm text-slate-400">
-            Only scan stocks within this market capitalization range.
+            Check the market cap categories you want to include in scanning. Multiple selections allowed.
           </p>
 
-          <div className="flex flex-wrap gap-2">
-            {MARKET_CAP_PRESETS.map((preset) => (
-              <button
-                key={preset.label}
-                onClick={() => setMarketCapPreset(preset.min, preset.max)}
-                className={`px-3 py-1.5 text-sm rounded transition-colors ${
-                  (settings.market_cap_min === (preset.min ? preset.min * 1000000 : null) &&
-                   settings.market_cap_max === (preset.max ? preset.max * 1000000 : null))
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                }`}
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.entries(MARKET_CAP_CATEGORIES) as [MarketCapCategory, typeof MARKET_CAP_CATEGORIES[MarketCapCategory]][]).map(([key, cat]) => (
+              <label
+                key={key}
+                className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white"
               >
-                {preset.label}
-              </button>
+                <input
+                  type="checkbox"
+                  checked={settings.market_cap_categories.includes(key)}
+                  onChange={() => toggleMarketCapCategory(key)}
+                  className="rounded bg-slate-700 border-slate-500"
+                />
+                {cat.label}
+              </label>
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Min Market Cap (millions $)
-              </label>
-              <input
-                type="number"
-                value={settings.market_cap_min ? settings.market_cap_min / 1000000 : ''}
-                onChange={(e) => updateSetting('market_cap_min', e.target.value ? Number(e.target.value) * 1000000 : null)}
-                placeholder="No minimum"
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-                min={0}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Max Market Cap (millions $)
-              </label>
-              <input
-                type="number"
-                value={settings.market_cap_max ? settings.market_cap_max / 1000000 : ''}
-                onChange={(e) => updateSetting('market_cap_max', e.target.value ? Number(e.target.value) * 1000000 : null)}
-                placeholder="No maximum"
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
-                min={0}
-              />
-            </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, market_cap_categories: ['micro', 'small', 'mid', 'large'] }))}
+              className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded transition-colors"
+            >
+              Select All
+            </button>
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, market_cap_categories: [] }))}
+              className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+            >
+              Clear All
+            </button>
           </div>
+          <p className="text-xs text-slate-500">
+            {settings.market_cap_categories.length === 0
+              ? 'Warning: No market caps selected - nothing will be scanned!'
+              : settings.market_cap_categories.length === 4
+                ? 'All market cap sizes included'
+                : `${settings.market_cap_categories.length} category(s) selected`}
+          </p>
         </section>
 
         {/* Auto-Scan Settings */}

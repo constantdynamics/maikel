@@ -129,9 +129,8 @@ export interface Settings {
   purchase_limit_multiplier: number;
   scan_times: string[];
   excluded_sectors: string[];
-  excluded_volatile_sectors: string[];
-  market_cap_min: number | null;
-  market_cap_max: number | null;
+  included_volatile_sectors: string[];  // Changed: sectors to INCLUDE (empty = scan all non-volatile)
+  market_cap_categories: string[];      // Changed: array of selected categories ['micro', 'small', 'mid', 'large']
   auto_scan_interval_minutes: number;
 }
 
@@ -149,6 +148,16 @@ export const DEFAULT_VOLATILE_SECTORS = [
   'Gambling',
   'Adult Entertainment',
 ];
+
+// Market cap categories with ranges
+export const MARKET_CAP_CATEGORIES = {
+  micro: { label: 'Micro (<$300M)', min: 0, max: 300_000_000 },
+  small: { label: 'Small ($300M-$2B)', min: 300_000_000, max: 2_000_000_000 },
+  mid: { label: 'Mid ($2B-$10B)', min: 2_000_000_000, max: 10_000_000_000 },
+  large: { label: 'Large ($10B+)', min: 10_000_000_000, max: Infinity },
+} as const;
+
+export type MarketCapCategory = keyof typeof MARKET_CAP_CATEGORIES;
 
 export interface StockQuote {
   ticker: string;
