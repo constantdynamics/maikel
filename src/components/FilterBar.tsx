@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import type { FilterConfig } from '@/lib/types';
+import MarketSelector, { getSelectedMarkets } from './MarketSelector';
 
 interface FilterBarProps {
   filters: FilterConfig;
   onFilterChange: (filters: FilterConfig) => void;
   sectors: string[];
   onExport: () => void;
-  onRunScan: () => void;
+  onRunScan: (markets: string[]) => void;
   scanRunning: boolean;
   selectedCount: number;
   onBulkFavorite: () => void;
@@ -27,9 +28,18 @@ export default function FilterBar({
   onBulkDelete,
 }: FilterBarProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selectedMarkets, setSelectedMarkets] = useState<string[]>(getSelectedMarkets);
+
+  const handleMarketsChange = useCallback((markets: string[]) => {
+    setSelectedMarkets(markets);
+  }, []);
 
   function updateFilter(key: keyof FilterConfig, value: unknown) {
     onFilterChange({ ...filters, [key]: value });
+  }
+
+  function handleRunScan() {
+    onRunScan(selectedMarkets);
   }
 
   return (
@@ -102,8 +112,10 @@ export default function FilterBar({
             Export CSV
           </button>
 
+          <MarketSelector onChange={handleMarketsChange} />
+
           <button
-            onClick={onRunScan}
+            onClick={handleRunScan}
             disabled={scanRunning}
             className="px-4 py-2 text-sm bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50 rounded font-medium transition-colors"
           >

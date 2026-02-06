@@ -127,7 +127,7 @@ export default function DashboardPage() {
     }
   }, [stocks]);
 
-  async function handleRunScan() {
+  async function handleRunScan(markets: string[]) {
     setScanRunning(true);
     setScanTriggered(true);
 
@@ -135,9 +135,11 @@ export default function DashboardPage() {
       const { data: { session } } = await supabase.auth.getSession();
       await fetch('/api/scan', {
         method: 'POST',
-        headers: session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {},
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ markets }),
       });
     } catch {
       setScanRunning(false);
@@ -238,7 +240,7 @@ export default function DashboardPage() {
               Scans for stocks with 85-100% ATH decline and multiple 200%+ growth events.
             </p>
             <button
-              onClick={handleRunScan}
+              onClick={() => handleRunScan(['us', 'ca'])}
               disabled={scanRunning}
               className="px-6 py-3 bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-50 rounded-lg font-medium text-white transition-colors"
             >

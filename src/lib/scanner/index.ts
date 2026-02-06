@@ -1,5 +1,5 @@
 import { createServiceClient } from '../supabase';
-import { fetchTopLosers, fetchHighDeclineStocks, fetchCanadianLosers, fetchCanadianHighDecline } from './tradingview';
+import { fetchMultiMarketLosers, fetchMultiMarketHighDecline, MARKETS, DEFAULT_MARKETS } from './tradingview';
 import type { TradingViewStock } from './tradingview';
 import * as yahoo from './yahoo';
 import * as alphavantage from './alphavantage';
@@ -13,9 +13,24 @@ import {
 import { sleep } from '../utils';
 import type { Settings, StockScanDetail } from '../types';
 
+// All exchanges we support across all markets
 const ALLOWED_EXCHANGES = new Set([
+  // US
   'NYSE', 'NASDAQ', 'AMEX', 'NYSE ARCA', 'NYSE MKT',
+  // Canada
   'TSX', 'TSXV', 'NEO',
+  // UK
+  'LSE',
+  // Germany
+  'XETR', 'FWB',
+  // France
+  'EURONEXT',
+  // Hong Kong
+  'HKEX',
+  // South Korea
+  'KRX', 'KOSDAQ',
+  // South Africa
+  'JSE',
 ]);
 
 /** Hard timeout for entire scan - must finish before Vercel kills us (60s limit on Hobby) */
@@ -70,6 +85,7 @@ interface ScanResult {
   durationSeconds: number;
   apiCallsYahoo: number;
   apiCallsAlphaVantage: number;
+  markets: string[];
 }
 
 async function getSettings(supabase: ReturnType<typeof createServiceClient>): Promise<Settings> {
@@ -103,7 +119,6 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   }
 
   // Hard override: always use 85-100 range regardless of DB values
-  // (prevents stale DB settings from overriding intended behavior)
   defaults.ath_decline_min = 85;
   defaults.ath_decline_max = 100;
 
@@ -121,7 +136,6 @@ async function updateProgress(
 
 /**
  * Deep scan a single stock: fetch Yahoo history, analyze growth events, save to DB if match.
- * Returns the scan detail entry.
  */
 async function deepScanStock(
   tvStock: TradingViewStock,
@@ -345,7 +359,11 @@ async function deepScanStock(
   };
 }
 
-export async function runScan(): Promise<ScanResult> {
+/**
+ * Run a scan for specified markets.
+ * @param selectedMarkets - Array of market IDs to scan (e.g., ['us', 'ca', 'uk'])
+ */
+export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
   const startTime = Date.now();
   const supabase = createServiceClient();
   const errors: string[] = [];
@@ -356,6 +374,27 @@ export async function runScan(): Promise<ScanResult> {
   let candidatesAfterPreFilter = 0;
   let apiCallsYahoo = 0;
   let apiCallsAlphaVantage = 0;
+
+  // Validate and filter markets
+  const markets = (selectedMarkets && selectedMarkets.length > 0 ? selectedMarkets : DEFAULT_MARKETS)
+    .filter((m) => MARKETS[m]);
+
+  if (markets.length === 0) {
+    return {
+      status: 'failed',
+      stocksScanned: 0,
+      stocksFound: 0,
+      stocksFromSource: 0,
+      candidatesAfterPreFilter: 0,
+      errors: ['No valid markets selected'],
+      durationSeconds: 0,
+      apiCallsYahoo: 0,
+      apiCallsAlphaVantage: 0,
+      markets: [],
+    };
+  }
+
+  const marketNames = markets.map((m) => MARKETS[m].name).join(', ');
 
   const { data: scanLog } = await supabase
     .from('scan_logs')
@@ -390,37 +429,35 @@ export async function runScan(): Promise<ScanResult> {
     const settings = await getSettings(supabase);
 
     // =========================================================
-    // PHASE 1: Fetch candidates from TradingView (USA + Canada)
+    // PHASE 1: Fetch candidates from TradingView (selected markets)
     // =========================================================
-    console.log('Phase 1: Fetching candidates from TradingView (US + Canada)...');
+    console.log(`Phase 1: Fetching candidates from TradingView (${marketNames})...`);
     await updateProgress(supabase, scanId, { status: 'running', stocks_scanned: 0, stocks_found: 0 });
 
-    const [topLosers, highDecline, canadianLosers, canadianHighDecline] = await Promise.all([
-      fetchTopLosers(300),
-      fetchHighDeclineStocks(settings.ath_decline_min, 500),
-      fetchCanadianLosers(200),
-      fetchCanadianHighDecline(settings.ath_decline_min, 300),
+    const [losers, highDecline] = await Promise.all([
+      fetchMultiMarketLosers(markets, 200),
+      fetchMultiMarketHighDecline(markets, settings.ath_decline_min, 300),
     ]);
 
     const sourceMap = new Map<string, 'tradingview_losers' | 'tradingview_high_decline' | 'both'>();
-    for (const stock of [...topLosers, ...canadianLosers]) {
+    for (const stock of losers) {
       sourceMap.set(stock.ticker, 'tradingview_losers');
     }
-    for (const stock of [...highDecline, ...canadianHighDecline]) {
+    for (const stock of highDecline) {
       sourceMap.set(stock.ticker, sourceMap.has(stock.ticker) ? 'both' : 'tradingview_high_decline');
     }
 
     const candidateMap = new Map<string, TradingViewStock>();
-    for (const stock of [...topLosers, ...highDecline, ...canadianLosers, ...canadianHighDecline]) {
+    for (const stock of [...losers, ...highDecline]) {
       if (!candidateMap.has(stock.ticker)) candidateMap.set(stock.ticker, stock);
     }
 
     const allCandidates = Array.from(candidateMap.values());
     stocksFromSource = allCandidates.length;
-    console.log(`TradingView: ${topLosers.length} US losers + ${highDecline.length} US decline + ${canadianLosers.length} CA losers + ${canadianHighDecline.length} CA decline = ${stocksFromSource} unique`);
+    console.log(`TradingView: ${losers.length} losers + ${highDecline.length} high-decline = ${stocksFromSource} unique from ${marketNames}`);
 
     if (stocksFromSource === 0) {
-      errors.push('TradingView returned 0 candidates');
+      errors.push(`TradingView returned 0 candidates from ${marketNames}`);
     }
 
     // =========================================================
@@ -435,7 +472,7 @@ export async function runScan(): Promise<ScanResult> {
       const tvDecline = tvATH && tvATH > 0 ? ((tvATH - stock.close) / tvATH) * 100 : null;
 
       const ex = stock.exchange.toUpperCase();
-      if (!ALLOWED_EXCHANGES.has(ex) && !ex.includes('NYSE') && !ex.includes('NASDAQ') && !ex.includes('AMEX') && !ex.includes('TSX')) {
+      if (!ALLOWED_EXCHANGES.has(ex)) {
         scanDetails.push({ ticker: stock.ticker, name: stock.name, source, tvPrice: stock.close, tvChange: stock.change, tvATH, tvDeclineFromATH: tvDecline, sector: stock.sector, phase: 'pre_filter', result: 'rejected', rejectReason: `Exchange not supported: ${stock.exchange}` });
         continue;
       }
@@ -477,12 +514,10 @@ export async function runScan(): Promise<ScanResult> {
 
     // =========================================================
     // PHASE 3: Deep scan with time-boxed parallel processing
-    // Process in batches of 3 to stay within time limits
     // =========================================================
     const BATCH_SIZE = 3;
 
     for (let i = 0; i < preFiltered.length; i += BATCH_SIZE) {
-      // Check time limit before each batch
       if (isTimedOut()) {
         const timeoutMsg = `Time limit reached after ${stocksScanned}/${preFiltered.length} stocks (${Math.round((Date.now() - startTime) / 1000)}s). Results saved.`;
         console.warn(timeoutMsg);
@@ -493,7 +528,6 @@ export async function runScan(): Promise<ScanResult> {
       const batch = preFiltered.slice(i, i + BATCH_SIZE);
       console.log(`[${stocksScanned + 1}-${stocksScanned + batch.length}/${preFiltered.length}] Deep scanning batch...`);
 
-      // Process batch in parallel
       const results = await Promise.allSettled(
         batch.map((stock) =>
           deepScanStock(stock, sourceMap.get(stock.ticker) || 'tradingview_losers', settings, supabase)
@@ -531,16 +565,13 @@ export async function runScan(): Promise<ScanResult> {
         }
       }
 
-      // Save progress every SAVE_INTERVAL stocks
       if (stocksScanned % SAVE_INTERVAL < BATCH_SIZE) {
         await saveProgress();
       }
 
-      // Small delay between batches to avoid hammering Yahoo
       await sleep(100);
     }
 
-    // Final save
     await saveProgress(true);
 
     if (errors.length > 0) {
@@ -559,11 +590,11 @@ export async function runScan(): Promise<ScanResult> {
       durationSeconds: Math.round((Date.now() - startTime) / 1000),
       apiCallsYahoo,
       apiCallsAlphaVantage,
+      markets,
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
 
-    // Emergency save - make sure we don't lose data
     if (scanId) {
       await supabase.from('scan_logs').update({
         completed_at: new Date().toISOString(),
@@ -586,6 +617,7 @@ export async function runScan(): Promise<ScanResult> {
       durationSeconds: Math.round((Date.now() - startTime) / 1000),
       apiCallsYahoo,
       apiCallsAlphaVantage,
+      markets,
     };
   }
 }
