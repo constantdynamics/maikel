@@ -58,13 +58,13 @@ export default function ApiStatus() {
   function getStatusText(status: string) {
     switch (status) {
       case 'ok':
-        return 'API Ready';
+        return 'API OK';
       case 'limited':
         return 'Rate Limited';
       case 'down':
         return 'API Down';
       default:
-        return 'Checking...';
+        return 'API...';
     }
   }
 

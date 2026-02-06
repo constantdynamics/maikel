@@ -23,9 +23,9 @@ const THEMES = [
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/scan-log', label: 'Scan Log' },
-  { href: '/recycle-bin', label: 'Recycle Bin' },
   { href: '/archive', label: 'Archive' },
   { href: '/status', label: 'Status' },
+  { href: '/recycle-bin', label: 'Recycle Bin' },
   { href: '/settings', label: 'Settings' },
 ];
 
@@ -90,9 +90,9 @@ export default function Navbar() {
             <button
               onClick={() => setThemeMenuOpen(!themeMenuOpen)}
               className="flex items-center gap-2 px-3 py-1.5 rounded text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+              title={currentTheme.name}
             >
               <span>{currentTheme.icon}</span>
-              <span className="hidden sm:inline">{currentTheme.name}</span>
             </button>
             {themeMenuOpen && (
               <>

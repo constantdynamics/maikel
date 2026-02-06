@@ -63,7 +63,7 @@ export default function FilterBar({
         <select
           value={filters.sectorFilter}
           onChange={(e) => updateFilter('sectorFilter', e.target.value)}
-          className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--accent-primary)]"
+          className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--accent-primary)] cursor-pointer [&>option]:bg-[#1a1a2e] [&>option]:text-white"
         >
           <option value="">All Sectors</option>
           {sectors.map((s) => (
