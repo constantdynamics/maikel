@@ -2,25 +2,199 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ============================================
+   THEME SYSTEM - 8 Color Themes
+   ============================================ */
+
+:root,
+[data-theme="midnight"] {
   --bg-primary: #0f172a;
   --bg-secondary: #1e293b;
   --bg-tertiary: #334155;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
-  --accent-blue: #3b82f6;
+  --text-muted: #64748b;
+  --accent-primary: #3b82f6;
+  --accent-secondary: #60a5fa;
   --accent-green: #22c55e;
   --accent-orange: #f97316;
   --accent-red: #ef4444;
   --border-color: #334155;
+  --card-bg: #1e293b;
+  --input-bg: #334155;
 }
+
+[data-theme="ocean"] {
+  --bg-primary: #0c1929;
+  --bg-secondary: #122a42;
+  --bg-tertiary: #1a3a5c;
+  --text-primary: #e0f2fe;
+  --text-secondary: #7dd3fc;
+  --text-muted: #38bdf8;
+  --accent-primary: #0ea5e9;
+  --accent-secondary: #38bdf8;
+  --accent-green: #2dd4bf;
+  --accent-orange: #fb923c;
+  --accent-red: #f87171;
+  --border-color: #1a3a5c;
+  --card-bg: #122a42;
+  --input-bg: #1a3a5c;
+}
+
+[data-theme="forest"] {
+  --bg-primary: #0f1a14;
+  --bg-secondary: #162419;
+  --bg-tertiary: #1f3322;
+  --text-primary: #ecfdf5;
+  --text-secondary: #86efac;
+  --text-muted: #4ade80;
+  --accent-primary: #22c55e;
+  --accent-secondary: #4ade80;
+  --accent-green: #34d399;
+  --accent-orange: #fbbf24;
+  --accent-red: #f87171;
+  --border-color: #1f3322;
+  --card-bg: #162419;
+  --input-bg: #1f3322;
+}
+
+[data-theme="sunset"] {
+  --bg-primary: #1a0f0f;
+  --bg-secondary: #2d1515;
+  --bg-tertiary: #451a1a;
+  --text-primary: #fff7ed;
+  --text-secondary: #fdba74;
+  --text-muted: #fb923c;
+  --accent-primary: #f97316;
+  --accent-secondary: #fb923c;
+  --accent-green: #a3e635;
+  --accent-orange: #fbbf24;
+  --accent-red: #ef4444;
+  --border-color: #451a1a;
+  --card-bg: #2d1515;
+  --input-bg: #451a1a;
+}
+
+[data-theme="lavender"] {
+  --bg-primary: #1a1625;
+  --bg-secondary: #251f35;
+  --bg-tertiary: #352d4a;
+  --text-primary: #f5f3ff;
+  --text-secondary: #c4b5fd;
+  --text-muted: #a78bfa;
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #a78bfa;
+  --accent-green: #4ade80;
+  --accent-orange: #fbbf24;
+  --accent-red: #f87171;
+  --border-color: #352d4a;
+  --card-bg: #251f35;
+  --input-bg: #352d4a;
+}
+
+[data-theme="rose"] {
+  --bg-primary: #1a0f14;
+  --bg-secondary: #2d151f;
+  --bg-tertiary: #451a2c;
+  --text-primary: #fff1f2;
+  --text-secondary: #fda4af;
+  --text-muted: #fb7185;
+  --accent-primary: #f43f5e;
+  --accent-secondary: #fb7185;
+  --accent-green: #4ade80;
+  --accent-orange: #fbbf24;
+  --accent-red: #ef4444;
+  --border-color: #451a2c;
+  --card-bg: #2d151f;
+  --input-bg: #451a2c;
+}
+
+[data-theme="cyber"] {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-tertiary: #1f1f1f;
+  --text-primary: #4ade80;
+  --text-secondary: #22c55e;
+  --text-muted: #16a34a;
+  --accent-primary: #22c55e;
+  --accent-secondary: #4ade80;
+  --accent-green: #4ade80;
+  --accent-orange: #fbbf24;
+  --accent-red: #ef4444;
+  --border-color: #22c55e33;
+  --card-bg: #141414;
+  --input-bg: #1f1f1f;
+}
+
+[data-theme="arctic"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #e2e8f0;
+  --bg-tertiary: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --accent-primary: #0284c7;
+  --accent-secondary: #0ea5e9;
+  --accent-green: #16a34a;
+  --accent-orange: #ea580c;
+  --accent-red: #dc2626;
+  --border-color: #cbd5e1;
+  --card-bg: #e2e8f0;
+  --input-bg: #f1f5f9;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Score row colors */
+/* Navbar background */
+.navbar-bg {
+  background-color: var(--bg-secondary);
+}
+
+/* ============================================
+   RAINBOW SCORE BAR
+   ============================================ */
+
+.rainbow-score {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.rainbow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--bg-tertiary);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.rainbow-dot.active {
+  transform: scale(1.1);
+}
+
+.rainbow-dot.score-1 { background-color: #ef4444; }
+.rainbow-dot.score-2 { background-color: #f97316; }
+.rainbow-dot.score-3 { background-color: #eab308; }
+.rainbow-dot.score-4 { background-color: #a3e635; }
+.rainbow-dot.score-5 { background-color: #22c55e; }
+.rainbow-dot.score-6 { background-color: #10b981; }
+.rainbow-dot.score-7 { background-color: #14b8a6; }
+.rainbow-dot.score-8 { background-color: #06b6d4; }
+.rainbow-dot.score-9 { background-color: #0ea5e9; }
+.rainbow-dot.score-10 { background-color: #3b82f6; }
+
+/* ============================================
+   SCORE ROW COLORS
+   ============================================ */
+
 .row-score-green {
   background-color: rgba(34, 197, 94, 0.08);
 }
@@ -42,7 +216,10 @@ body {
   background-color: rgba(239, 68, 68, 0.15);
 }
 
-/* Custom scrollbar */
+/* ============================================
+   CUSTOM SCROLLBAR
+   ============================================ */
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -58,10 +235,13 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--text-muted);
 }
 
-/* Table styles */
+/* ============================================
+   TABLE STYLES
+   ============================================ */
+
 .stock-table th {
   cursor: pointer;
   user-select: none;
@@ -76,7 +256,10 @@ body {
   white-space: nowrap;
 }
 
-/* Favorite star animation */
+/* ============================================
+   FAVORITE STAR ANIMATION
+   ============================================ */
+
 .star-btn {
   transition: transform 0.15s ease;
 }
@@ -85,4 +268,54 @@ body {
 }
 .star-btn:active {
   transform: scale(0.9);
+}
+
+/* ============================================
+   TICKER LINK STYLES
+   ============================================ */
+
+.ticker-link {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.ticker-link:hover {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+}
+
+/* ============================================
+   CARD & BUTTON THEMING
+   ============================================ */
+
+.card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.btn-primary {
+  background-color: var(--accent-primary);
+  color: white;
+  transition: opacity 0.15s ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.input-themed {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.input-themed:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+.input-themed::placeholder {
+  color: var(--text-muted);
 }

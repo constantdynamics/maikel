@@ -177,8 +177,7 @@ export default function DashboardPage() {
               Click &ldquo;Run Scan&rdquo; to start scanning for high-potential recovery stocks.
             </p>
             <p className="text-slate-500 text-sm mb-6">
-              The scanner fetches the biggest losers from TradingView, then deep-scans
-              each one for 95-99% ATH decline with multiple 200%+ growth events.
+              Scans for stocks with 85-100% ATH decline and multiple 200%+ growth events.
             </p>
             <button
               onClick={handleRunScan}

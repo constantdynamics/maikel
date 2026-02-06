@@ -3,6 +3,7 @@
 import type { Stock, SortConfig, SortDirection } from '@/lib/types';
 import { getScoreColor } from '@/lib/types';
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils';
+import RainbowScore from './RainbowScore';
 
 interface StockTableProps {
   stocks: Stock[];
@@ -83,9 +84,14 @@ export default function StockTable({
     switch (key) {
       case 'ticker':
         return (
-          <span className="font-mono font-semibold text-blue-400">
+          <a
+            href={`https://www.google.com/search?q=${encodeURIComponent(String(value) + ' stock')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ticker-link font-mono"
+          >
             {String(value)}
-          </span>
+          </a>
         );
       case 'current_price':
       case 'all_time_high':
@@ -96,15 +102,7 @@ export default function StockTable({
       case 'highest_growth_pct':
         return formatPercent(value as number | null);
       case 'score':
-        return (
-          <span
-            className={`inline-block px-2 py-0.5 rounded border text-xs font-semibold ${getScoreBadgeClass(
-              stock.score,
-            )}`}
-          >
-            {value}
-          </span>
-        );
+        return <RainbowScore score={stock.score} />;
       case 'detection_date':
         return formatDate(value as string | null);
       default:
@@ -152,9 +150,6 @@ export default function StockTable({
                   />
                 </th>
               ))}
-              <th className="px-3 py-3 text-center text-slate-300 font-medium text-xs uppercase tracking-wider">
-                Link
-              </th>
               <th className="px-3 py-3 w-10"></th>
             </tr>
           </thead>
@@ -195,18 +190,6 @@ export default function StockTable({
                     {renderCell(stock, col.key)}
                   </td>
                 ))}
-                <td className="px-3 py-2.5 text-center">
-                  <a
-                    href={`https://www.google.com/search?q=${encodeURIComponent(
-                      stock.ticker + ' stock',
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 text-xs"
-                  >
-                    Search
-                  </a>
-                </td>
                 <td className="px-3 py-2.5 text-center">
                   <button
                     onClick={() => onDelete(stock.id)}

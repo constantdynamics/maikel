@@ -304,7 +304,16 @@ export default function ScanLogPage() {
                                 d.result === 'error' ? 'bg-red-900/20' : ''
                               }`}
                             >
-                              <td className="px-3 py-2 font-mono font-bold">{d.ticker}</td>
+                              <td className="px-3 py-2 font-mono font-bold">
+                                <a
+                                  href={`https://www.google.com/search?q=${encodeURIComponent(d.ticker + ' stock')}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ticker-link"
+                                >
+                                  {d.ticker}
+                                </a>
+                              </td>
                               <td className="px-3 py-2 max-w-[200px] truncate" title={d.name}>{d.name}</td>
                               <td className="px-3 py-2">
                                 <span className={`text-xs px-1.5 py-0.5 rounded ${
