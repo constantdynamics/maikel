@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Stock, SortConfig, FilterConfig } from '@/lib/types';
+import { VOLATILE_SECTORS } from '@/lib/types';
 
 const defaultFilters: FilterConfig = {
   search: '',
@@ -13,6 +14,9 @@ const defaultFilters: FilterConfig = {
   athDeclineMax: null,
   showFavorites: false,
   showArchived: false,
+  hideVolatileSectors: false,
+  marketCapMin: null,
+  marketCapMax: null,
 };
 
 const defaultSort: SortConfig = {
@@ -86,6 +90,27 @@ export function useStocks() {
     if (filters.athDeclineMax !== null) {
       result = result.filter(
         (s) => s.ath_decline_pct !== null && s.ath_decline_pct <= filters.athDeclineMax!,
+      );
+    }
+
+    // Filter volatile sectors
+    if (filters.hideVolatileSectors) {
+      result = result.filter(
+        (s) => !s.sector || !VOLATILE_SECTORS.some(vs =>
+          s.sector?.toLowerCase().includes(vs.toLowerCase())
+        ),
+      );
+    }
+
+    // Market cap filter
+    if (filters.marketCapMin !== null) {
+      result = result.filter(
+        (s) => s.market_cap !== null && s.market_cap >= filters.marketCapMin!,
+      );
+    }
+    if (filters.marketCapMax !== null) {
+      result = result.filter(
+        (s) => s.market_cap !== null && s.market_cap <= filters.marketCapMax!,
       );
     }
 

@@ -9,7 +9,7 @@ interface AutoScannerProps {
 }
 
 const AUTO_SCAN_KEY = 'autoScanEnabled';
-const SCAN_INTERVAL_MINUTES = 60; // Scan every hour when enabled
+const SCAN_INTERVAL_MINUTES = 5; // Scan every 5 minutes when enabled
 
 export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }: AutoScannerProps) {
   const [enabled, setEnabled] = useState(false);

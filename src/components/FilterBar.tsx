@@ -6,6 +6,8 @@ import MarketSelector, { getSelectedMarkets } from './MarketSelector';
 import ApiStatus from './ApiStatus';
 import AutoScanner from './AutoScanner';
 
+export type QuickSelectType = 'top5' | 'top10' | 'score10' | 'scoreMin8' | 'scoreMin6' | 'none';
+
 interface FilterBarProps {
   filters: FilterConfig;
   onFilterChange: (filters: FilterConfig) => void;
@@ -17,6 +19,7 @@ interface FilterBarProps {
   onBulkFavorite: () => void;
   onBulkArchive: () => void;
   onBulkDelete: () => void;
+  onQuickSelect: (type: QuickSelectType) => void;
 }
 
 export default function FilterBar({
@@ -30,7 +33,9 @@ export default function FilterBar({
   onBulkFavorite,
   onBulkArchive,
   onBulkDelete,
+  onQuickSelect,
 }: FilterBarProps) {
+  const [showQuickSelect, setShowQuickSelect] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>(getSelectedMarkets);
 
@@ -58,6 +63,61 @@ export default function FilterBar({
             onChange={(e) => updateFilter('search', e.target.value)}
             className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)] text-sm"
           />
+        </div>
+
+        {/* Quick Select dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowQuickSelect(!showQuickSelect)}
+            className="px-3 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-tertiary)] transition-colors"
+          >
+            Select ▾
+          </button>
+          {showQuickSelect && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowQuickSelect(false)} />
+              <div className="absolute left-0 top-full mt-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg shadow-xl z-20 min-w-[160px] py-1">
+                <button
+                  onClick={() => { onQuickSelect('top5'); setShowQuickSelect(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  Top 5
+                </button>
+                <button
+                  onClick={() => { onQuickSelect('top10'); setShowQuickSelect(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  Top 10
+                </button>
+                <div className="border-t border-[var(--border-color)] my-1" />
+                <button
+                  onClick={() => { onQuickSelect('score10'); setShowQuickSelect(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  Score = 10
+                </button>
+                <button
+                  onClick={() => { onQuickSelect('scoreMin8'); setShowQuickSelect(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  Score ≥ 8
+                </button>
+                <button
+                  onClick={() => { onQuickSelect('scoreMin6'); setShowQuickSelect(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  Score ≥ 6
+                </button>
+                <div className="border-t border-[var(--border-color)] my-1" />
+                <button
+                  onClick={() => { onQuickSelect('none'); setShowQuickSelect(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <select
@@ -192,6 +252,41 @@ export default function FilterBar({
             />
           </div>
 
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-[var(--text-muted)]">Market Cap (M):</span>
+            <input
+              type="number"
+              placeholder="Min"
+              value={filters.marketCapMin ? filters.marketCapMin / 1000000 : ''}
+              onChange={(e) =>
+                updateFilter('marketCapMin', e.target.value ? Number(e.target.value) * 1000000 : null)
+              }
+              className="w-20 px-2 py-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm"
+            />
+            <span className="text-[var(--text-muted)]">-</span>
+            <input
+              type="number"
+              placeholder="Max"
+              value={filters.marketCapMax ? filters.marketCapMax / 1000000 : ''}
+              onChange={(e) =>
+                updateFilter('marketCapMax', e.target.value ? Number(e.target.value) * 1000000 : null)
+              }
+              className="w-20 px-2 py-1 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.hideVolatileSectors}
+              onChange={(e) => updateFilter('hideVolatileSectors', e.target.checked)}
+              className="rounded"
+            />
+            <span title="Hide: Biotechnology, Pharmaceuticals, Cannabis, etc.">
+              Hide volatile sectors
+            </span>
+          </label>
+
           <button
             onClick={() =>
               onFilterChange({
@@ -203,6 +298,9 @@ export default function FilterBar({
                 athDeclineMax: null,
                 showFavorites: false,
                 showArchived: false,
+                hideVolatileSectors: false,
+                marketCapMin: null,
+                marketCapMax: null,
               })
             }
             className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"

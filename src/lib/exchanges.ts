@@ -183,6 +183,48 @@ const COUNTRY_FLAGS: Record<string, string> = {
   PE: '🇵🇪',
 };
 
+// Ticker suffix to country code mapping
+const TICKER_SUFFIX_COUNTRY: Record<string, string> = {
+  '.DE': 'DE',  // Germany
+  '.L': 'GB',   // London/UK
+  '.PA': 'FR',  // Paris/France
+  '.AS': 'NL',  // Amsterdam/Netherlands
+  '.BR': 'BE',  // Brussels/Belgium
+  '.MI': 'IT',  // Milan/Italy
+  '.MC': 'ES',  // Madrid/Spain
+  '.SW': 'CH',  // Switzerland
+  '.VI': 'AT',  // Vienna/Austria
+  '.ST': 'SE',  // Stockholm/Sweden
+  '.OL': 'NO',  // Oslo/Norway
+  '.CO': 'DK',  // Copenhagen/Denmark
+  '.HE': 'FI',  // Helsinki/Finland
+  '.WA': 'PL',  // Warsaw/Poland
+  '.PR': 'CZ',  // Prague/Czech
+  '.IS': 'TR',  // Istanbul/Turkey
+  '.TA': 'IL',  // Tel Aviv/Israel
+  '.AX': 'AU',  // Australia
+  '.NZ': 'NZ',  // New Zealand
+  '.T': 'JP',   // Tokyo/Japan
+  '.HK': 'HK',  // Hong Kong
+  '.KS': 'KR',  // Korea
+  '.KQ': 'KR',  // Korea KOSDAQ
+  '.TW': 'TW',  // Taiwan
+  '.SI': 'SG',  // Singapore
+  '.JK': 'ID',  // Jakarta/Indonesia
+  '.KL': 'MY',  // Kuala Lumpur/Malaysia
+  '.BK': 'TH',  // Bangkok/Thailand
+  '.NS': 'IN',  // NSE India
+  '.BO': 'IN',  // BSE India
+  '.SA': 'BR',  // Sao Paulo/Brazil
+  '.MX': 'MX',  // Mexico
+  '.BA': 'AR',  // Buenos Aires/Argentina
+  '.SN': 'CL',  // Santiago/Chile
+  '.JO': 'ZA',  // Johannesburg/South Africa
+  '.ME': 'RU',  // Moscow/Russia
+  '.TO': 'CA',  // Toronto/Canada
+  '.V': 'CA',   // TSX Venture/Canada
+};
+
 export function getExchangeInfo(exchange: string | null): ExchangeInfo | null {
   if (!exchange) return null;
   const upperExchange = exchange.toUpperCase();
@@ -194,9 +236,24 @@ export function getExchangeCountry(exchange: string | null): string {
   return info?.country || 'Unknown';
 }
 
-export function getCountryCode(exchange: string | null): string {
+export function getCountryCode(exchange: string | null, ticker?: string | null): string {
   const info = getExchangeInfo(exchange);
-  return info?.countryCode || 'XX';
+  if (info) return info.countryCode;
+
+  // Try to extract country from ticker suffix
+  if (ticker) {
+    for (const [suffix, countryCode] of Object.entries(TICKER_SUFFIX_COUNTRY)) {
+      if (ticker.toUpperCase().endsWith(suffix.toUpperCase())) {
+        return countryCode;
+      }
+    }
+    // If no suffix, assume US stock
+    if (!ticker.includes('.')) {
+      return 'US';
+    }
+  }
+
+  return 'XX';
 }
 
 export function getCountryFlag(country: string): string {
@@ -209,8 +266,8 @@ export function getCountryFlag(country: string): string {
   return '🏳️';
 }
 
-export function getExchangeFlag(exchange: string | null): string {
-  const countryCode = getCountryCode(exchange);
+export function getExchangeFlag(exchange: string | null, ticker?: string | null): string {
+  const countryCode = getCountryCode(exchange, ticker);
   // Return country code as text - emoji flags don't render well on all systems
   return countryCode.toLowerCase();
 }

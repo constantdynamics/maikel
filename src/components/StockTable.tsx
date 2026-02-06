@@ -205,7 +205,7 @@ export default function StockTable({
         return (
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-600 text-white">
-              {getExchangeFlag(stock.exchange)}
+              {getExchangeFlag(stock.exchange, stock.ticker)}
             </span>
             <a
               href={`https://www.google.com/search?q=${encodeURIComponent(String(value) + ' stock')}`}

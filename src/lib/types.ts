@@ -168,7 +168,21 @@ export interface FilterConfig {
   athDeclineMax: number | null;
   showFavorites: boolean;
   showArchived: boolean;
+  hideVolatileSectors: boolean;
+  marketCapMin: number | null;
+  marketCapMax: number | null;
 }
+
+// Sectors known to be extremely volatile
+export const VOLATILE_SECTORS = [
+  'Biotechnology',
+  'Pharmaceuticals',
+  'Cannabis',
+  'Cryptocurrency',
+  'SPACs',
+  'Junior Mining',
+  'Penny Stocks',
+];
 
 export type ScoreColor = 'green' | 'orange' | 'red';
 

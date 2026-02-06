@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import StockTable from '@/components/StockTable';
-import FilterBar from '@/components/FilterBar';
+import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
@@ -204,6 +204,36 @@ export default function DashboardPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function handleQuickSelect(type: QuickSelectType) {
+    if (type === 'none') {
+      setSelectedIds(new Set());
+      return;
+    }
+
+    let toSelect: string[] = [];
+    const pageStocks = paginatedStocks;
+
+    switch (type) {
+      case 'top5':
+        toSelect = pageStocks.slice(0, 5).map((s) => s.id);
+        break;
+      case 'top10':
+        toSelect = pageStocks.slice(0, 10).map((s) => s.id);
+        break;
+      case 'score10':
+        toSelect = pageStocks.filter((s) => s.score === 10).map((s) => s.id);
+        break;
+      case 'scoreMin8':
+        toSelect = pageStocks.filter((s) => s.score >= 8).map((s) => s.id);
+        break;
+      case 'scoreMin6':
+        toSelect = pageStocks.filter((s) => s.score >= 6).map((s) => s.id);
+        break;
+    }
+
+    setSelectedIds(new Set(toSelect));
+  }
+
   return (
     <AuthGuard>
       <div className="space-y-4">
@@ -241,6 +271,7 @@ export default function DashboardPage() {
           onBulkFavorite={handleBulkFavorite}
           onBulkArchive={handleBulkArchive}
           onBulkDelete={requestBulkDelete}
+          onQuickSelect={handleQuickSelect}
         />
 
         {loading ? (
