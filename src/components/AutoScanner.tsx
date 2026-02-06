@@ -58,26 +58,28 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
     return () => clearInterval(interval);
   }, [enabled, nextScan]);
 
-  // Auto-scan logic
+  // Auto-scan logic - checks API health before scanning
   const checkAndScan = useCallback(async () => {
-    if (!enabled || scanRunning) return;
+    if (scanRunning) return;
 
     // Check API health first
     try {
       const response = await fetch('/api/health');
       if (response.ok) {
         const data = await response.json();
-        if (data.yahoo_finance_status === 'ok') {
-          // API is healthy, run scan
+        if (data.yahoo_finance_status === 'ok' || data.yahoo_finance_status === 'unknown') {
+          // API is healthy or unknown, run scan
           onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
           // Schedule next scan
           setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
         }
       }
     } catch {
-      // API check failed, try again later
+      // API check failed, but still try to scan
+      onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
+      setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
     }
-  }, [enabled, scanRunning, onRunScan, selectedMarkets]);
+  }, [scanRunning, onRunScan, selectedMarkets]);
 
   // Schedule scans
   useEffect(() => {
@@ -105,7 +107,10 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
   }
 
   function scanNow() {
-    checkAndScan();
+    if (!scanRunning) {
+      onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
+      setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
+    }
   }
 
   return (

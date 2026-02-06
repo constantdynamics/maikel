@@ -22,8 +22,8 @@ const SECTORS = [
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
-    ath_decline_min: 95,
-    ath_decline_max: 99,
+    ath_decline_min: 85,
+    ath_decline_max: 100,
     growth_threshold_pct: 200,
     min_growth_events: 2,
     min_consecutive_days: 5,

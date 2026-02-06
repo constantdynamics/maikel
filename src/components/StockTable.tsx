@@ -49,12 +49,12 @@ const COLUMN_ALIGNMENTS: Record<string, string> = {
   purchase_limit: 'right',
 };
 
-// Get sunflower sizes based on growth events and score
-function getSunflowerIcons(eventCount: number, score: number, highestGrowthPct: number | null): React.ReactNode {
+// Get growth event dots with green gradient colors
+function getGrowthDots(eventCount: number, highestGrowthPct: number | null): React.ReactNode {
   const count = Math.min(eventCount, 5);
   if (count === 0) return <span className="text-[var(--text-muted)]">-</span>;
 
-  // Determine sizes based on score and growth percentage
+  // Determine sizes based on growth percentage
   const sizes: ('small' | 'medium' | 'large')[] = [];
   const avgGrowth = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
 
@@ -77,12 +77,22 @@ function getSunflowerIcons(eventCount: number, score: number, highestGrowthPct: 
     return order[a] - order[b];
   });
 
+  // Color mapping: large=bright green, medium=medium green, small=light mint
+  const colorMap = {
+    large: '#22c55e',   // Bright green
+    medium: '#4ade80',  // Medium green
+    small: '#86efac',   // Light mint green
+  };
+
   return (
-    <div className="sunflower-events">
+    <div className="flex items-center gap-1">
       {sizes.map((size, idx) => (
-        <span key={idx} className={`sunflower-icon sunflower-${size}`} title={`Growth event ${idx + 1}`}>
-          🌻
-        </span>
+        <span
+          key={idx}
+          className="inline-block w-2.5 h-2.5 rounded-full"
+          style={{ backgroundColor: colorMap[size] }}
+          title={`${size === 'large' ? '500%+' : size === 'medium' ? '300-500%' : '<300%'} growth event`}
+        />
       ))}
     </div>
   );
@@ -175,7 +185,7 @@ export default function StockTable({
       case 'ticker':
         return (
           <div className="flex items-center gap-2">
-            <span className="country-badge text-[10px] font-bold uppercase px-1 py-0.5 rounded bg-[var(--accent-primary)] text-white opacity-80">
+            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-600 text-white">
               {getExchangeFlag(stock.exchange)}
             </span>
             <a
@@ -206,7 +216,7 @@ export default function StockTable({
       case 'score':
         return <RainbowScore score={stock.score} />;
       case 'sunflower_events':
-        return getSunflowerIcons(stock.growth_event_count, stock.score, stock.highest_growth_pct);
+        return getGrowthDots(stock.growth_event_count, stock.highest_growth_pct);
       case 'detection_date':
         return formatDate(value as string | null);
       default:

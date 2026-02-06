@@ -132,8 +132,8 @@ CREATE INDEX idx_backups_created ON backups(created_at DESC);
 
 -- Insert default settings
 INSERT INTO settings (key, value) VALUES
-  ('ath_decline_min', '95'),
-  ('ath_decline_max', '99'),
+  ('ath_decline_min', '85'),
+  ('ath_decline_max', '100'),
   ('growth_threshold_pct', '200'),
   ('min_growth_events', '2'),
   ('min_consecutive_days', '5'),
