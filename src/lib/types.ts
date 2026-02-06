@@ -129,7 +129,26 @@ export interface Settings {
   purchase_limit_multiplier: number;
   scan_times: string[];
   excluded_sectors: string[];
+  excluded_volatile_sectors: string[];
+  market_cap_min: number | null;
+  market_cap_max: number | null;
+  auto_scan_interval_minutes: number;
 }
+
+// Default volatile sectors list
+export const DEFAULT_VOLATILE_SECTORS = [
+  'Biotechnology',
+  'Pharmaceuticals',
+  'Drug Manufacturers',
+  'Cannabis',
+  'Cryptocurrency',
+  'SPACs',
+  'Shell Companies',
+  'Junior Mining',
+  'Penny Stocks',
+  'Gambling',
+  'Adult Entertainment',
+];
 
 export interface StockQuote {
   ticker: string;

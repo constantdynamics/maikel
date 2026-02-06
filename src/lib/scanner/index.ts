@@ -101,6 +101,14 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
     excluded_sectors: [],
+    excluded_volatile_sectors: [
+      'Biotechnology', 'Pharmaceuticals', 'Drug Manufacturers', 'Cannabis',
+      'Cryptocurrency', 'SPACs', 'Shell Companies', 'Junior Mining',
+      'Penny Stocks', 'Gambling', 'Adult Entertainment',
+    ],
+    market_cap_min: null,
+    market_cap_max: null,
+    auto_scan_interval_minutes: 5,
   };
 
   if (!data) return defaults;
@@ -109,9 +117,14 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
     const key = row.key as keyof Settings;
     if (key in defaults) {
       try {
-        (defaults as unknown as Record<string, unknown>)[key] = typeof defaults[key] === 'number'
-          ? Number(row.value)
-          : JSON.parse(String(row.value));
+        const val = row.value;
+        if (typeof defaults[key] === 'number') {
+          (defaults as unknown as Record<string, unknown>)[key] = Number(val);
+        } else if (defaults[key] === null && (key === 'market_cap_min' || key === 'market_cap_max')) {
+          (defaults as unknown as Record<string, unknown>)[key] = val === 'null' || val === '' ? null : Number(val);
+        } else {
+          (defaults as unknown as Record<string, unknown>)[key] = JSON.parse(String(val));
+        }
       } catch {
         // Keep default
       }
@@ -484,6 +497,24 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
       if (stock.sector && settings.excluded_sectors.includes(stock.sector)) {
         scanDetails.push({ ticker: stock.ticker, name: stock.name, source, tvPrice: stock.close, tvChange: stock.change, tvATH, tvDeclineFromATH: tvDecline, sector: stock.sector, phase: 'pre_filter', result: 'rejected', rejectReason: `Excluded sector: ${stock.sector}` });
+        continue;
+      }
+
+      // Check volatile sectors
+      if (stock.sector && settings.excluded_volatile_sectors.some(vs =>
+        stock.sector?.toLowerCase().includes(vs.toLowerCase())
+      )) {
+        scanDetails.push({ ticker: stock.ticker, name: stock.name, source, tvPrice: stock.close, tvChange: stock.change, tvATH, tvDeclineFromATH: tvDecline, sector: stock.sector, phase: 'pre_filter', result: 'rejected', rejectReason: `Volatile sector excluded: ${stock.sector}` });
+        continue;
+      }
+
+      // Check market cap
+      if (settings.market_cap_min !== null && stock.marketCap !== null && stock.marketCap < settings.market_cap_min) {
+        scanDetails.push({ ticker: stock.ticker, name: stock.name, source, tvPrice: stock.close, tvChange: stock.change, tvATH, tvDeclineFromATH: tvDecline, sector: stock.sector, phase: 'pre_filter', result: 'rejected', rejectReason: `Market cap $${(stock.marketCap / 1e6).toFixed(0)}M below minimum $${(settings.market_cap_min / 1e6).toFixed(0)}M` });
+        continue;
+      }
+      if (settings.market_cap_max !== null && stock.marketCap !== null && stock.marketCap > settings.market_cap_max) {
+        scanDetails.push({ ticker: stock.ticker, name: stock.name, source, tvPrice: stock.close, tvChange: stock.change, tvATH, tvDeclineFromATH: tvDecline, sector: stock.sector, phase: 'pre_filter', result: 'rejected', rejectReason: `Market cap $${(stock.marketCap / 1e6).toFixed(0)}M above maximum $${(settings.market_cap_max / 1e6).toFixed(0)}M` });
         continue;
       }
 

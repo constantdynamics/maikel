@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 
 interface AutoScannerProps {
   onRunScan: (markets: string[]) => void;
@@ -9,21 +10,47 @@ interface AutoScannerProps {
 }
 
 const AUTO_SCAN_KEY = 'autoScanEnabled';
-const SCAN_INTERVAL_MINUTES = 5; // Scan every 5 minutes when enabled
+const AUTO_SCAN_INTERVAL_KEY = 'autoScanIntervalMinutes';
+const DEFAULT_INTERVAL_MINUTES = 5;
 
 export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }: AutoScannerProps) {
   const [enabled, setEnabled] = useState(false);
   const [nextScan, setNextScan] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState<string>('');
+  const [intervalMinutes, setIntervalMinutes] = useState(DEFAULT_INTERVAL_MINUTES);
+
+  // Load interval setting from database
+  useEffect(() => {
+    async function loadInterval() {
+      const { data } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'auto_scan_interval_minutes')
+        .single();
+
+      if (data?.value) {
+        const mins = Number(data.value);
+        if (mins > 0) {
+          setIntervalMinutes(mins);
+          localStorage.setItem(AUTO_SCAN_INTERVAL_KEY, String(mins));
+        }
+      } else {
+        // Fallback to localStorage
+        const cached = localStorage.getItem(AUTO_SCAN_INTERVAL_KEY);
+        if (cached) setIntervalMinutes(Number(cached));
+      }
+    }
+    loadInterval();
+  }, []);
 
   // Load saved state
   useEffect(() => {
     const saved = localStorage.getItem(AUTO_SCAN_KEY);
     if (saved === 'true') {
       setEnabled(true);
-      setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
+      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
     }
-  }, []);
+  }, [intervalMinutes]);
 
   // Save state changes
   useEffect(() => {
@@ -71,15 +98,15 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
           // API is healthy or unknown, run scan
           onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
           // Schedule next scan
-          setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
+          setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
         }
       }
     } catch {
       // API check failed, but still try to scan
       onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
-      setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
+      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
     }
-  }, [scanRunning, onRunScan, selectedMarkets]);
+  }, [scanRunning, onRunScan, selectedMarkets, intervalMinutes]);
 
   // Schedule scans
   useEffect(() => {
@@ -100,7 +127,7 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
 
     if (newEnabled) {
       // Set next scan time
-      setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
+      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
     } else {
       setNextScan(null);
     }
@@ -109,7 +136,7 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
   function scanNow() {
     if (!scanRunning) {
       onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
-      setNextScan(new Date(Date.now() + SCAN_INTERVAL_MINUTES * 60 * 1000));
+      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
     }
   }
 
