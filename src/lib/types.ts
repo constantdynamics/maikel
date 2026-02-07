@@ -152,6 +152,117 @@ export interface OHLCData {
   volume: number;
 }
 
+// ============================================================
+// Professor Zonnebloem types
+// ============================================================
+
+export interface ZonnebloemStock {
+  id: string;
+  ticker: string;
+  company_name: string;
+  sector: string | null;
+  exchange: string | null;
+  market: string | null;
+  country: string | null;
+  current_price: number | null;
+  base_price_median: number | null;
+  price_12m_ago: number | null;
+  price_change_12m_pct: number | null;
+  spike_count: number;
+  highest_spike_pct: number | null;
+  highest_spike_date: string | null;
+  spike_score: number;
+  avg_volume_30d: number | null;
+  market_cap: number | null;
+  detection_date: string;
+  last_updated: string;
+  is_favorite: boolean;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  needs_review: boolean;
+  review_reason: string | null;
+  created_at: string;
+}
+
+export interface ZonnebloemSpikeEvent {
+  id: string;
+  ticker: string;
+  start_date: string;
+  peak_date: string;
+  end_date: string;
+  base_price: number;
+  peak_price: number;
+  spike_pct: number;
+  duration_days: number;
+  is_valid: boolean;
+  created_at: string;
+}
+
+export interface ZonnebloemScanLog {
+  id: string;
+  started_at: string;
+  completed_at: string | null;
+  status: 'running' | 'completed' | 'failed' | 'partial';
+  markets_scanned: string[];
+  candidates_found: number;
+  stocks_deep_scanned: number;
+  stocks_matched: number;
+  new_stocks_found: number;
+  errors: string[];
+  duration_seconds: number | null;
+  api_calls_yahoo: number;
+  created_at: string;
+}
+
+export interface ZonnebloemSettings {
+  zb_min_spike_pct: number;
+  zb_min_spike_duration_days: number;
+  zb_min_spike_count: number;
+  zb_lookback_months: number;
+  zb_max_price_decline_12m_pct: number;
+  zb_max_base_decline_pct: number;
+  zb_min_avg_volume: number;
+  zb_min_price: number;
+  zb_markets: string[];
+  zb_excluded_sectors: string[];
+  zb_excluded_countries: string[];
+  zb_scan_times: string[];
+}
+
+export const ZONNEBLOEM_DEFAULTS: ZonnebloemSettings = {
+  zb_min_spike_pct: 100,
+  zb_min_spike_duration_days: 4,
+  zb_min_spike_count: 1,
+  zb_lookback_months: 24,
+  zb_max_price_decline_12m_pct: 20,
+  zb_max_base_decline_pct: 30,
+  zb_min_avg_volume: 50000,
+  zb_min_price: 0.10,
+  zb_markets: ['america', 'europe', 'uk', 'canada', 'australia', 'germany', 'hongkong', 'japan'],
+  zb_excluded_sectors: [],
+  zb_excluded_countries: ['Russia', 'North Korea', 'Iran', 'Syria', 'Belarus', 'Myanmar', 'Venezuela', 'Cuba'],
+  zb_scan_times: ['11:00', '16:00'],
+};
+
+export interface ZonnebloemScanDetail {
+  ticker: string;
+  name: string;
+  market: string;
+  price: number;
+  high52w: number | null;
+  low52w: number | null;
+  rangeRatio: number | null;
+  sector: string | null;
+  phase: 'candidate' | 'pre_filter' | 'deep_scan';
+  result: 'match' | 'rejected' | 'error';
+  rejectReason?: string;
+  errorMessage?: string;
+  spikeCount?: number;
+  spikeScore?: number;
+  highestSpikePct?: number;
+  priceChange12m?: number;
+}
+
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortConfig {
