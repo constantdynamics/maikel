@@ -253,8 +253,8 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
     const deepScanStartTime = Date.now();
     console.log(`ZB Phase 3: Deep scanning up to ${prioritized.length} candidates (${TIME_BUDGET_MS / 1000}s budget)...`);
 
-    // Process in parallel batches of 5
-    const batchSize = 5;
+    // Process in parallel batches of 10
+    const batchSize = 10;
 
     for (let batchStart = 0; batchStart < prioritized.length; batchStart += batchSize) {
       // CHECK TIME BUDGET before starting each batch
@@ -321,7 +321,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       });
 
       // Small delay between batches to be polite to Yahoo
-      await sleep(150);
+      await sleep(50);
     }
 
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
