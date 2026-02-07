@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import BackupStatus from '@/components/BackupStatus';
 import { supabase } from '@/lib/supabase';
-import type { Settings, MarketCapCategory } from '@/lib/types';
-import { DEFAULT_VOLATILE_SECTORS, MARKET_CAP_CATEGORIES } from '@/lib/types';
+import type { Settings, MarketCapCategory, ZonnebloemSettings } from '@/lib/types';
+import { DEFAULT_VOLATILE_SECTORS, MARKET_CAP_CATEGORIES, ZONNEBLOEM_DEFAULTS } from '@/lib/types';
 
 const SECTORS = [
   'Technology',
@@ -43,6 +43,7 @@ export default function SettingsPage() {
     // Scanner variety
     skip_recently_scanned_hours: 0,
   });
+  const [zbSettings, setZbSettings] = useState<ZonnebloemSettings>({ ...ZONNEBLOEM_DEFAULTS });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -69,6 +70,26 @@ export default function SettingsPage() {
         }
       }
       setSettings(newSettings);
+
+      // Load Zonnebloem settings
+      const zbData = data?.filter(row => (row.key as string).startsWith('zb_'));
+      if (zbData && zbData.length > 0) {
+        const newZb = { ...ZONNEBLOEM_DEFAULTS };
+        for (const row of zbData) {
+          const key = row.key as keyof ZonnebloemSettings;
+          if (key in newZb) {
+            try {
+              const val = typeof newZb[key] === 'number'
+                ? Number(row.value)
+                : typeof row.value === 'string'
+                  ? JSON.parse(row.value)
+                  : row.value;
+              (newZb as Record<string, unknown>)[key] = val;
+            } catch { /* keep default */ }
+          }
+        }
+        setZbSettings(newZb);
+      }
     }
     setLoading(false);
   }, []);
@@ -83,6 +104,18 @@ export default function SettingsPage() {
 
     const entries = Object.entries(settings);
     for (const [key, value] of entries) {
+      const storeValue = typeof value === 'number' ? String(value) : JSON.stringify(value);
+      await supabase
+        .from('settings')
+        .upsert(
+          { key, value: storeValue, updated_at: new Date().toISOString() },
+          { onConflict: 'key' },
+        );
+    }
+
+    // Save Zonnebloem settings
+    const zbEntries = Object.entries(zbSettings);
+    for (const [key, value] of zbEntries) {
       const storeValue = typeof value === 'number' ? String(value) : JSON.stringify(value);
       await supabase
         .from('settings')
@@ -611,6 +644,119 @@ export default function SettingsPage() {
           <p className="text-xs text-slate-500 mt-2">
             Schedule is configured in vercel.json. Manual scans can be triggered from the dashboard.
           </p>
+        </section>
+
+        {/* ===== Professor Zonnebloem Settings ===== */}
+        <section className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-purple-300">Professor Zonnebloem Settings</h2>
+          <p className="text-sm text-slate-400">
+            Zonnebloem finds stocks with a stable base price and occasional explosive upward spikes.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Spike % Above Base</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_spike_pct}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_spike_pct: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={25}
+              />
+              <p className="text-xs text-slate-500 mt-1">E.g. 75 = spike must be 75% above base price</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Spike Duration (days)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_spike_duration_days}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_spike_duration_days: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Spike Count</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_spike_count}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_spike_count: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Lookback (months)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_lookback_months}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_lookback_months: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={6}
+                max={60}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Max Price Decline 12m (%)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_max_price_decline_12m_pct}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_max_price_decline_12m_pct: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={5}
+                max={80}
+              />
+              <p className="text-xs text-slate-500 mt-1">Reject stocks that dropped more than this</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Max Base Decline (%)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_max_base_decline_pct}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_max_base_decline_pct: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={5}
+                max={80}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Avg Volume (30d)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_avg_volume}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_avg_volume: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Price ($)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_price}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_price: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+                step={0.01}
+              />
+            </div>
+          </div>
+
+          <div className="bg-purple-900/30 rounded p-3 text-sm">
+            <p className="text-purple-300 font-medium">Cron Schedule</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Zonnebloem scans run automatically at 4:00 PM UTC on weekdays via Vercel Cron.
+            </p>
+          </div>
         </section>
 
         {/* Data Backup */}
