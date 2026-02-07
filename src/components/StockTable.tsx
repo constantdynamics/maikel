@@ -141,6 +141,7 @@ export default function StockTable({
   onToggleFavorite,
   onDelete,
 }: StockTableProps) {
+  const [favAnimating, setFavAnimating] = useState<string | null>(null);
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('stockTableColumns');
@@ -185,6 +186,12 @@ export default function StockTable({
       case 'red':
         return 'row-score-red';
     }
+  }
+
+  function handleFavoriteClick(id: string) {
+    setFavAnimating(id);
+    onToggleFavorite(id);
+    setTimeout(() => setFavAnimating(null), 300);
   }
 
   function handleOpenSelectedInTabs() {
@@ -310,8 +317,8 @@ export default function StockTable({
       </div>
 
       {/* Table */}
-      <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg overflow-hidden animate-card">
+        <div className="table-container-mobile overflow-x-auto">
           <table className="stock-table w-full text-sm">
             <thead className="bg-[var(--bg-tertiary)]">
               <tr>
@@ -328,7 +335,9 @@ export default function StockTable({
                   <th
                     key={col.key}
                     onClick={() => onSort(col.key as keyof Stock)}
-                    className={`px-3 py-3 text-[var(--text-secondary)] font-medium text-xs uppercase tracking-wider cursor-pointer hover:bg-[var(--bg-secondary)] transition-colors ${
+                    className={`px-3 py-3 text-[var(--text-secondary)] font-medium text-xs uppercase tracking-wider cursor-pointer hover:bg-[var(--bg-secondary)] color-transition ${
+                      col.key === 'company_name' ? 'hidden md:table-cell' : ''
+                    } ${
                       COLUMN_ALIGNMENTS[col.key] === 'right' ? 'text-right' : 'text-left'
                     }`}
                   >
@@ -342,11 +351,12 @@ export default function StockTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-color)]">
-              {stocks.map((stock) => (
+              {stocks.map((stock, index) => (
                 <tr
                   key={stock.id}
                   onClick={() => setSelectedStock(stock)}
-                  className={`${getRowColorClass(stock.score)} transition-colors cursor-pointer`}
+                  className={`${getRowColorClass(stock.score)} animate-row color-transition cursor-pointer`}
+                  style={{ animationDelay: `${Math.min(index * 0.02, 0.3)}s` }}
                 >
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
@@ -358,8 +368,8 @@ export default function StockTable({
                   </td>
                   <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
-                      onClick={() => onToggleFavorite(stock.id)}
-                      className="star-btn text-lg"
+                      onClick={() => handleFavoriteClick(stock.id)}
+                      className={`star-btn text-lg ${favAnimating === stock.id ? 'star-pop' : ''}`}
                       title="Toggle favorite (F)"
                     >
                       {stock.is_favorite ? (
@@ -373,6 +383,8 @@ export default function StockTable({
                     <td
                       key={col.key}
                       className={`px-3 py-2.5 ${
+                        col.key === 'company_name' ? 'hidden md:table-cell' : ''
+                      } ${
                         COLUMN_ALIGNMENTS[col.key] === 'right' ? 'text-right font-mono' : ''
                       }`}
                     >
@@ -382,7 +394,7 @@ export default function StockTable({
                   <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => onDelete(stock.id)}
-                      className="text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-colors"
+                      className="text-[var(--text-muted)] hover:text-[var(--accent-red)] color-transition btn-press"
                       title="Delete (Del)"
                     >
                       ✗
@@ -393,7 +405,7 @@ export default function StockTable({
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 bg-[var(--bg-tertiary)] text-sm text-[var(--text-muted)] flex justify-between">
+        <div className="px-4 py-2 bg-[var(--bg-tertiary)] text-sm text-[var(--text-muted)] flex justify-between flex-wrap gap-2">
           <span>{stocks.length} stocks</span>
           <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : ''}</span>
         </div>
