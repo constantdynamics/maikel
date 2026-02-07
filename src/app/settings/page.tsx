@@ -35,6 +35,13 @@ export default function SettingsPage() {
     included_volatile_sectors: [],  // Empty = don't scan volatile sectors
     market_cap_categories: ['micro', 'small', 'mid', 'large'],  // All selected by default
     auto_scan_interval_minutes: 5,
+    // NovaBay-type filter settings
+    enable_stable_spike_filter: false,
+    stable_max_decline_pct: 10,
+    stable_min_spike_pct: 100,
+    stable_lookback_months: 12,
+    // Scanner variety
+    skip_recently_scanned_hours: 0,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -382,6 +389,141 @@ export default function SettingsPage() {
           </p>
         </section>
 
+        {/* NovaBay-Type Filter: Stable with Spikes */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Stable with Spikes Filter (NovaBay-type)</h2>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.enable_stable_spike_filter}
+                onChange={(e) => updateSetting('enable_stable_spike_filter', e.target.checked)}
+                className="rounded bg-slate-700 border-slate-500"
+              />
+              <span className="text-sm text-slate-300">Enable</span>
+            </label>
+          </div>
+          <p className="text-sm text-slate-400">
+            Find stocks like NovaBay: stable base price with occasional large upward spikes.
+            These are stocks that haven&apos;t declined much but have shown explosive growth potential.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Max Decline from Average (%)
+              </label>
+              <input
+                type="number"
+                value={settings.stable_max_decline_pct}
+                onChange={(e) => updateSetting('stable_max_decline_pct', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+                max={50}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                E.g., 10 = stock can&apos;t drop more than 10% below its average
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Min Spike Above Average (%)
+              </label>
+              <input
+                type="number"
+                value={settings.stable_min_spike_pct}
+                onChange={(e) => updateSetting('stable_min_spike_pct', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={50}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                E.g., 100 = require at least 2x spike above average
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Lookback Period (months)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={settings.stable_lookback_months}
+                onChange={(e) => updateSetting('stable_lookback_months', Math.max(1, Number(e.target.value)))}
+                className="w-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+                max={24}
+              />
+              <div className="flex gap-2">
+                {[3, 6, 12, 18, 24].map((months) => (
+                  <button
+                    key={months}
+                    onClick={() => updateSetting('stable_lookback_months', months)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      settings.stable_lookback_months === months
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {months}m
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-700/50 rounded p-3 text-sm">
+            <p className="text-slate-300 font-medium">Example: NovaBay</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Stayed around $0.75 for most of 2024, but spiked to $4.22 (Sept) and $19 (Jan).
+              With max decline 10% and min spike 100%, this stock would be flagged.
+            </p>
+          </div>
+        </section>
+
+        {/* Scanner Variety Settings */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Scanner Variety</h2>
+          <p className="text-sm text-slate-400">
+            Configure how the scanner prioritizes new stocks over recently scanned ones.
+          </p>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Skip Recently Scanned (hours)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={settings.skip_recently_scanned_hours}
+                onChange={(e) => updateSetting('skip_recently_scanned_hours', Math.max(0, Number(e.target.value)))}
+                className="w-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+                max={168}
+              />
+              <div className="flex gap-2">
+                {[0, 4, 12, 24, 48].map((hours) => (
+                  <button
+                    key={hours}
+                    onClick={() => updateSetting('skip_recently_scanned_hours', hours)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      settings.skip_recently_scanned_hours === hours
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {hours === 0 ? 'Off' : `${hours}h`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Set to 0 to disable. Higher values = more new stocks per scan, lower = more updates to existing stocks.
+            </p>
+          </div>
+        </section>
+
         {/* Auto-Scan Settings */}
         <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
           <h2 className="text-lg font-semibold">Auto-Scan Settings</h2>
@@ -424,11 +566,43 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Background Scanning Info */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Background Scanning</h2>
+          <div className="bg-amber-900/30 border border-amber-700/50 rounded p-3">
+            <p className="text-amber-300 text-sm font-medium">Browser Limitations</p>
+            <p className="text-amber-200/80 text-xs mt-1">
+              When you switch tabs or close your laptop, browsers pause JavaScript to save battery.
+              The auto-scan countdown is preserved and will resume when you return.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm text-slate-300 font-medium">For true background scanning:</p>
+            <ul className="text-sm text-slate-400 space-y-1 pl-4 list-disc">
+              <li>
+                <strong className="text-slate-300">Server-side cron jobs</strong> run automatically even when your browser is closed
+              </li>
+              <li>Scans run on weekdays at 10:30 AM and 3:00 PM EST via Vercel Cron</li>
+              <li>These scans happen on the server and don&apos;t require your browser</li>
+            </ul>
+          </div>
+
+          <div className="bg-slate-700/50 rounded p-3 text-xs text-slate-400">
+            <p className="font-medium text-slate-300">How the auto-scan timer works:</p>
+            <ul className="mt-1 space-y-1 list-disc pl-4">
+              <li>Timer is saved to your browser storage</li>
+              <li>When you return to the tab, it picks up where it left off</li>
+              <li>If the timer expired while you were away, scan starts automatically</li>
+            </ul>
+          </div>
+        </section>
+
         {/* Scan Schedule Info */}
         <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-2">
-          <h2 className="text-lg font-semibold">Scan Schedule</h2>
+          <h2 className="text-lg font-semibold">Server Scan Schedule</h2>
           <p className="text-sm text-slate-400">
-            Scans run automatically on weekdays via Vercel Cron:
+            Scans run automatically on weekdays via Vercel Cron (even when your browser is closed):
           </p>
           <ul className="text-sm text-slate-300 space-y-1 pl-4 list-disc">
             <li>10:30 AM EST - 1 hour after market open</li>

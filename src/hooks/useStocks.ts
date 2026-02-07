@@ -17,6 +17,7 @@ const defaultFilters: FilterConfig = {
   hideVolatileSectors: false,
   marketCapMin: null,
   marketCapMax: null,
+  showStableWithSpikes: false,
 };
 
 const defaultSort: SortConfig = {
@@ -112,6 +113,11 @@ export function useStocks() {
       result = result.filter(
         (s) => s.market_cap !== null && s.market_cap <= filters.marketCapMax!,
       );
+    }
+
+    // NovaBay-type filter (stable with spikes)
+    if (filters.showStableWithSpikes) {
+      result = result.filter((s) => s.is_stable_with_spikes === true);
     }
 
     // Sort

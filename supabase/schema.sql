@@ -31,6 +31,14 @@ CREATE TABLE stocks (
   ipo_date DATE,
   market_cap DECIMAL(20, 2),
   created_at TIMESTAMPTZ DEFAULT NOW(),
+  -- Scan tracking
+  scan_number INTEGER DEFAULT 1,
+  scan_date DATE,
+  -- NovaBay-type analysis: stable with spikes
+  twelve_month_low DECIMAL(12, 4),
+  twelve_month_max_decline_pct DECIMAL(8, 4),
+  twelve_month_max_spike_pct DECIMAL(12, 4),
+  is_stable_with_spikes BOOLEAN DEFAULT FALSE,
   UNIQUE(ticker)
 );
 

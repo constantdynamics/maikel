@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface AutoScannerProps {
@@ -11,6 +11,7 @@ interface AutoScannerProps {
 
 const AUTO_SCAN_KEY = 'autoScanEnabled';
 const AUTO_SCAN_INTERVAL_KEY = 'autoScanIntervalMinutes';
+const AUTO_SCAN_NEXT_TIME_KEY = 'autoScanNextTime';
 const DEFAULT_INTERVAL_MINUTES = 5;
 
 export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }: AutoScannerProps) {
@@ -18,6 +19,7 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
   const [nextScan, setNextScan] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState<string>('');
   const [intervalMinutes, setIntervalMinutes] = useState(DEFAULT_INTERVAL_MINUTES);
+  const visibilityRef = useRef<boolean>(true);
 
   // Load interval setting from database
   useEffect(() => {
@@ -43,19 +45,72 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
     loadInterval();
   }, []);
 
-  // Load saved state
+  // Load saved state (including persisted next scan time)
   useEffect(() => {
-    const saved = localStorage.getItem(AUTO_SCAN_KEY);
-    if (saved === 'true') {
+    const savedEnabled = localStorage.getItem(AUTO_SCAN_KEY);
+    const savedNextTime = localStorage.getItem(AUTO_SCAN_NEXT_TIME_KEY);
+
+    if (savedEnabled === 'true') {
       setEnabled(true);
-      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
+
+      // Restore persisted next scan time if it's still in the future
+      if (savedNextTime) {
+        const savedDate = new Date(savedNextTime);
+        if (savedDate.getTime() > Date.now()) {
+          setNextScan(savedDate);
+        } else {
+          // Time has passed, schedule a new scan
+          const newNext = new Date(Date.now() + intervalMinutes * 60 * 1000);
+          setNextScan(newNext);
+          localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, newNext.toISOString());
+        }
+      } else {
+        const newNext = new Date(Date.now() + intervalMinutes * 60 * 1000);
+        setNextScan(newNext);
+        localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, newNext.toISOString());
+      }
     }
   }, [intervalMinutes]);
 
-  // Save state changes
+  // Save enabled state
   useEffect(() => {
     localStorage.setItem(AUTO_SCAN_KEY, enabled.toString());
+    if (!enabled) {
+      localStorage.removeItem(AUTO_SCAN_NEXT_TIME_KEY);
+    }
   }, [enabled]);
+
+  // Persist nextScan time to localStorage
+  useEffect(() => {
+    if (nextScan && enabled) {
+      localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, nextScan.toISOString());
+    }
+  }, [nextScan, enabled]);
+
+  // Handle visibility changes (tab switches)
+  useEffect(() => {
+    function handleVisibilityChange() {
+      const isVisible = document.visibilityState === 'visible';
+      visibilityRef.current = isVisible;
+
+      if (isVisible && enabled) {
+        // When tab becomes visible again, restore the persisted time
+        const savedNextTime = localStorage.getItem(AUTO_SCAN_NEXT_TIME_KEY);
+        if (savedNextTime) {
+          const savedDate = new Date(savedNextTime);
+          if (savedDate.getTime() > Date.now()) {
+            setNextScan(savedDate);
+          } else if (!scanRunning) {
+            // Time has passed while tab was hidden, run scan now
+            setNextScan(new Date(Date.now() + 2000)); // Run in 2 seconds
+          }
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [enabled, scanRunning]);
 
   // Countdown timer
   useEffect(() => {
@@ -89,14 +144,18 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
   const checkAndScan = useCallback(async () => {
     if (scanRunning) {
       // Scan already running, reschedule
-      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
+      const newNext = new Date(Date.now() + intervalMinutes * 60 * 1000);
+      setNextScan(newNext);
+      localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, newNext.toISOString());
       return;
     }
 
     // Run the scan - the scan itself handles API errors gracefully
     onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
     // Schedule next scan
-    setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
+    const newNext = new Date(Date.now() + intervalMinutes * 60 * 1000);
+    setNextScan(newNext);
+    localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, newNext.toISOString());
   }, [scanRunning, onRunScan, selectedMarkets, intervalMinutes]);
 
   // Schedule scans - check more frequently
@@ -118,16 +177,21 @@ export default function AutoScanner({ onRunScan, scanRunning, selectedMarkets }:
 
     if (newEnabled) {
       // Set next scan time
-      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
+      const newNext = new Date(Date.now() + intervalMinutes * 60 * 1000);
+      setNextScan(newNext);
+      localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, newNext.toISOString());
     } else {
       setNextScan(null);
+      localStorage.removeItem(AUTO_SCAN_NEXT_TIME_KEY);
     }
   }
 
   function scanNow() {
     if (!scanRunning) {
       onRunScan(selectedMarkets.length > 0 ? selectedMarkets : ['us', 'ca']);
-      setNextScan(new Date(Date.now() + intervalMinutes * 60 * 1000));
+      const newNext = new Date(Date.now() + intervalMinutes * 60 * 1000);
+      setNextScan(newNext);
+      localStorage.setItem(AUTO_SCAN_NEXT_TIME_KEY, newNext.toISOString());
     }
   }
 

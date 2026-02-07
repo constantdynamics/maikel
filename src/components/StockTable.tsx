@@ -35,6 +35,8 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: 'five_year_low', label: '5Y Low', visible: false },
   { key: 'purchase_limit', label: 'Buy Limit', visible: false },
   { key: 'detection_date', label: 'Detected', visible: true },
+  { key: 'scan_info', label: 'Scan #', visible: true },
+  { key: 'is_stable_with_spikes', label: 'Stable+Spike', visible: false },
 ];
 
 const COLUMN_ALIGNMENTS: Record<string, string> = {
@@ -47,6 +49,8 @@ const COLUMN_ALIGNMENTS: Record<string, string> = {
   highest_growth_pct: 'right',
   five_year_low: 'right',
   purchase_limit: 'right',
+  scan_info: 'center',
+  is_stable_with_spikes: 'center',
 };
 
 // Get growth event dots - max 10 in two rows, colors: green/yellow/white
@@ -238,6 +242,30 @@ export default function StockTable({
         return getGrowthDots(stock.growth_event_count, stock.highest_growth_pct);
       case 'detection_date':
         return formatDate(value as string | null);
+      case 'scan_info':
+        // Show scan date with scan number (e.g., "07 Feb #2")
+        if (!stock.scan_date) return '-';
+        const scanDate = new Date(stock.scan_date);
+        const dayMonth = scanDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+        const scanNum = stock.scan_number || 1;
+        return (
+          <span className="text-xs whitespace-nowrap">
+            {dayMonth} <span className="text-[var(--accent-primary)]">#{scanNum}</span>
+          </span>
+        );
+      case 'is_stable_with_spikes':
+        // Show indicator for NovaBay-type stocks
+        if (stock.is_stable_with_spikes) {
+          return (
+            <span
+              className="text-green-400 text-lg"
+              title={`Stable base (max ${stock.twelve_month_max_decline_pct?.toFixed(0)}% decline) with ${stock.twelve_month_max_spike_pct?.toFixed(0)}% spike`}
+            >
+              ⚡
+            </span>
+          );
+        }
+        return <span className="text-[var(--text-muted)]">-</span>;
       default:
         return String(value ?? '-');
     }

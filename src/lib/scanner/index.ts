@@ -3,7 +3,7 @@ import { fetchMultiMarketLosers, fetchMultiMarketHighDecline, MARKETS, DEFAULT_M
 import type { TradingViewStock } from './tradingview';
 import * as yahoo from './yahoo';
 import * as alphavantage from './alphavantage';
-import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow } from './scorer';
+import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow, analyzeStableWithSpikes } from './scorer';
 import {
   validateStockData,
   validatePriceHistory,
@@ -105,6 +105,13 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
     included_volatile_sectors: [],  // Empty = don't scan any volatile sectors
     market_cap_categories: ['micro', 'small', 'mid', 'large'],  // All by default
     auto_scan_interval_minutes: 5,
+    // NovaBay-type filter defaults
+    enable_stable_spike_filter: false,
+    stable_max_decline_pct: 10,    // Max 10% decline allowed
+    stable_min_spike_pct: 100,     // Require 100% spike (2x)
+    stable_lookback_months: 12,    // Look back 12 months
+    // Scanner variety
+    skip_recently_scanned_hours: 0, // Don't skip by default
   };
 
   if (!data) return defaults;
@@ -114,7 +121,9 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
     if (key in defaults) {
       try {
         const val = row.value;
-        if (typeof defaults[key] === 'number') {
+        if (typeof defaults[key] === 'boolean') {
+          (defaults as unknown as Record<string, unknown>)[key] = val === 'true' || val === true;
+        } else if (typeof defaults[key] === 'number') {
           (defaults as unknown as Record<string, unknown>)[key] = Number(val);
         } else if (Array.isArray(defaults[key])) {
           (defaults as unknown as Record<string, unknown>)[key] = JSON.parse(String(val));
@@ -130,6 +139,38 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   defaults.ath_decline_max = 100;
 
   return defaults;
+}
+
+/**
+ * Get the scan number for today (1st scan = 1, 2nd = 2, etc.)
+ */
+async function getTodayScanNumber(supabase: ReturnType<typeof createServiceClient>): Promise<number> {
+  const today = new Date().toISOString().split('T')[0];
+  const { count } = await supabase
+    .from('scan_logs')
+    .select('*', { count: 'exact', head: true })
+    .gte('started_at', `${today}T00:00:00Z`)
+    .lt('started_at', `${today}T23:59:59Z`);
+
+  return (count || 0) + 1;
+}
+
+/**
+ * Get recently scanned tickers to skip
+ */
+async function getRecentlyScannedTickers(
+  supabase: ReturnType<typeof createServiceClient>,
+  hoursAgo: number,
+): Promise<Set<string>> {
+  if (hoursAgo <= 0) return new Set();
+
+  const cutoff = new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from('stocks')
+    .select('ticker')
+    .gte('last_updated', cutoff);
+
+  return new Set((data || []).map(s => s.ticker));
 }
 
 async function updateProgress(
@@ -149,6 +190,7 @@ async function deepScanStock(
   source: 'tradingview_losers' | 'tradingview_high_decline' | 'both',
   settings: Settings,
   supabase: ReturnType<typeof createServiceClient>,
+  scanNumber: number = 1,
 ): Promise<{ detail: StockScanDetail; isMatch: boolean; apiCallsYahoo: number; apiCallsAlphaVantage: number }> {
   const ticker = tvStock.ticker;
   const tvATH = tvStock.allTimeHigh;
@@ -312,6 +354,16 @@ async function deepScanStock(
   if (validation.warnings.length > 0) { needsReview = true; reviewReason = validation.warnings.join('; '); }
   if (growthAnalysis.highestGrowthPct > 1000) { needsReview = true; reviewReason = `Extreme growth: ${growthAnalysis.highestGrowthPct.toFixed(0)}%`; }
 
+  // NovaBay-type analysis: stable base with upward spikes
+  const stableSpikeAnalysis = analyzeStableWithSpikes(
+    history,
+    settings.stable_max_decline_pct,
+    settings.stable_min_spike_pct,
+    settings.stable_lookback_months,
+  );
+
+  const today = new Date().toISOString().split('T')[0];
+
   await supabase.from('stocks').upsert({
     ticker,
     company_name: tvStock.name || ticker,
@@ -331,6 +383,14 @@ async function deepScanStock(
     review_reason: reviewReason,
     exchange: tvStock.exchange,
     market_cap: tvStock.marketCap,
+    // Scan tracking
+    scan_number: scanNumber,
+    scan_date: today,
+    // NovaBay-type analysis
+    twelve_month_low: stableSpikeAnalysis.twelveMontLow > 0 ? stableSpikeAnalysis.twelveMontLow : null,
+    twelve_month_max_decline_pct: stableSpikeAnalysis.maxDeclineFromAverage,
+    twelve_month_max_spike_pct: stableSpikeAnalysis.maxSpikeAboveAverage,
+    is_stable_with_spikes: stableSpikeAnalysis.isStableWithSpikes,
   }, { onConflict: 'ticker' });
 
   await supabase.from('growth_events').delete().eq('ticker', ticker);
@@ -435,6 +495,16 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
   try {
     const settings = await getSettings(supabase);
 
+    // Get scan number for today (1st, 2nd, 3rd scan, etc.)
+    const scanNumber = await getTodayScanNumber(supabase);
+    console.log(`Starting scan #${scanNumber} for today`);
+
+    // Get recently scanned tickers to skip (for more variety)
+    const recentlyScanned = await getRecentlyScannedTickers(supabase, settings.skip_recently_scanned_hours);
+    if (recentlyScanned.size > 0) {
+      console.log(`Skipping ${recentlyScanned.size} recently scanned stocks for variety`);
+    }
+
     // =========================================================
     // PHASE 1: Fetch candidates from TradingView (selected markets)
     // =========================================================
@@ -456,6 +526,8 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
     const candidateMap = new Map<string, TradingViewStock>();
     for (const stock of [...losers, ...highDecline]) {
+      // Skip recently scanned stocks for variety
+      if (recentlyScanned.has(stock.ticker)) continue;
       if (!candidateMap.has(stock.ticker)) candidateMap.set(stock.ticker, stock);
     }
 
@@ -567,7 +639,7 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
       const results = await Promise.allSettled(
         batch.map((stock) =>
-          deepScanStock(stock, sourceMap.get(stock.ticker) || 'tradingview_losers', settings, supabase)
+          deepScanStock(stock, sourceMap.get(stock.ticker) || 'tradingview_losers', settings, supabase, scanNumber)
         ),
       );
 

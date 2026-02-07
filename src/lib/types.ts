@@ -28,6 +28,13 @@ export interface Stock {
   ipo_date: string | null;
   market_cap: number | null;
   created_at: string;
+  scan_number: number | null;  // Which scan of the day found this stock (1, 2, 3, etc.)
+  scan_date: string | null;    // Date of the scan that found/updated this stock
+  // NovaBay-type analysis fields
+  twelve_month_low: number | null;
+  twelve_month_max_decline_pct: number | null;
+  twelve_month_max_spike_pct: number | null;
+  is_stable_with_spikes: boolean;
 }
 
 export interface PriceHistory {
@@ -132,6 +139,13 @@ export interface Settings {
   included_volatile_sectors: string[];  // Changed: sectors to INCLUDE (empty = scan all non-volatile)
   market_cap_categories: string[];      // Changed: array of selected categories ['micro', 'small', 'mid', 'large']
   auto_scan_interval_minutes: number;
+  // NovaBay-type filter: stable stocks with upward spikes
+  enable_stable_spike_filter: boolean;
+  stable_max_decline_pct: number;       // Max decline allowed in last 12 months (e.g., 10%)
+  stable_min_spike_pct: number;         // Min spike required above base (e.g., 100%)
+  stable_lookback_months: number;       // How far back to look (default: 12)
+  // Scanner variety settings
+  skip_recently_scanned_hours: number;  // Skip stocks scanned within X hours (0 = don't skip)
 }
 
 // Default volatile sectors list
@@ -199,6 +213,7 @@ export interface FilterConfig {
   hideVolatileSectors: boolean;
   marketCapMin: number | null;
   marketCapMax: number | null;
+  showStableWithSpikes: boolean;  // Filter for NovaBay-type stocks
 }
 
 // Sectors known to be extremely volatile

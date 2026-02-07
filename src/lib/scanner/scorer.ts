@@ -220,3 +220,99 @@ export function calculateFiveYearLow(history: OHLCData[]): {
 
   return minPrice < Infinity ? { price: minPrice, date: minDate } : null;
 }
+
+/**
+ * NovaBay-type analysis: Find stocks with stable base and upward spikes
+ *
+ * A "stable with spikes" stock:
+ * 1. Has not declined more than X% from its average price in the lookback period
+ * 2. Has had at least one significant spike above the average
+ *
+ * Example: NovaBay stayed around $0.75 for most of 2024, but spiked to $4.22 (Sept) and $19 (Jan)
+ */
+export interface StableSpikeAnalysis {
+  isStableWithSpikes: boolean;
+  averagePrice: number;
+  twelveMontLow: number;
+  maxDeclineFromAverage: number;  // How much it dropped below average (as %)
+  maxSpikeAboveAverage: number;   // Highest spike above average (as %)
+  spikeCount: number;             // Number of significant spikes
+  spikeDates: string[];           // Dates of significant spikes
+}
+
+export function analyzeStableWithSpikes(
+  history: OHLCData[],
+  maxDeclinePct: number = 10,      // Max allowed decline from average (e.g., 10%)
+  minSpikePct: number = 100,       // Min spike above average to count (e.g., 100% = 2x)
+  lookbackMonths: number = 12,
+): StableSpikeAnalysis {
+  const result: StableSpikeAnalysis = {
+    isStableWithSpikes: false,
+    averagePrice: 0,
+    twelveMontLow: 0,
+    maxDeclineFromAverage: 0,
+    maxSpikeAboveAverage: 0,
+    spikeCount: 0,
+    spikeDates: [],
+  };
+
+  if (history.length < 20) return result;
+
+  // Filter to lookback period
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - lookbackMonths);
+  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+  const recentHistory = history.filter(d => d.date >= cutoffStr);
+  if (recentHistory.length < 20) return result;
+
+  // Calculate average close price (median is more robust to spikes)
+  const closePrices = recentHistory.map(d => d.close).filter(p => p > 0).sort((a, b) => a - b);
+  if (closePrices.length === 0) return result;
+
+  // Use median as the "base" price - this is more resistant to spike outliers
+  const medianPrice = closePrices[Math.floor(closePrices.length / 2)];
+  result.averagePrice = medianPrice;
+
+  // Find low and calculate max decline from median
+  let minLow = Infinity;
+  let maxHigh = 0;
+  const spikeDates: string[] = [];
+
+  for (const day of recentHistory) {
+    if (day.low > 0 && day.low < minLow) {
+      minLow = day.low;
+    }
+    if (day.high > maxHigh) {
+      maxHigh = day.high;
+    }
+
+    // Check if this day had a significant spike
+    const spikeAboveMedian = ((day.high - medianPrice) / medianPrice) * 100;
+    if (spikeAboveMedian >= minSpikePct) {
+      spikeDates.push(day.date);
+    }
+  }
+
+  result.twelveMontLow = minLow;
+
+  // Calculate decline from median (how stable is the base?)
+  const declineFromMedian = ((medianPrice - minLow) / medianPrice) * 100;
+  result.maxDeclineFromAverage = declineFromMedian;
+
+  // Calculate max spike above median
+  const spikeAboveMedian = ((maxHigh - medianPrice) / medianPrice) * 100;
+  result.maxSpikeAboveAverage = spikeAboveMedian;
+
+  result.spikeCount = spikeDates.length;
+  result.spikeDates = spikeDates.slice(0, 10); // Keep max 10 spike dates
+
+  // Determine if this is a "stable with spikes" stock
+  // 1. Base didn't drop more than maxDeclinePct below median
+  // 2. Had at least one spike above minSpikePct
+  result.isStableWithSpikes =
+    declineFromMedian <= maxDeclinePct &&
+    spikeAboveMedian >= minSpikePct;
+
+  return result;
+}

@@ -287,6 +287,18 @@ export default function FilterBar({
             </span>
           </label>
 
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.showStableWithSpikes}
+              onChange={(e) => updateFilter('showStableWithSpikes', e.target.checked)}
+              className="rounded"
+            />
+            <span title="NovaBay-type: Stable base with upward spikes" className="flex items-center gap-1">
+              Stable+Spikes <span className="text-green-400">⚡</span>
+            </span>
+          </label>
+
           <button
             onClick={() =>
               onFilterChange({
@@ -301,6 +313,7 @@ export default function FilterBar({
                 hideVolatileSectors: false,
                 marketCapMin: null,
                 marketCapMax: null,
+                showStableWithSpikes: false,
               })
             }
             className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
