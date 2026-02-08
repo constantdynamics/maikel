@@ -194,6 +194,52 @@ export interface OHLCData {
   volume: number;
 }
 
+// ============================================================
+// Professor Zonnebloem types
+// ============================================================
+
+export interface ZonnebloemStock {
+  id: string;
+  ticker: string;
+  company_name: string;
+  sector: string | null;
+  exchange: string | null;
+  market: string | null;
+  country: string | null;
+  current_price: number | null;
+  base_price_median: number | null;
+  price_12m_ago: number | null;
+  price_change_12m_pct: number | null;
+  spike_count: number;
+  highest_spike_pct: number | null;
+  highest_spike_date: string | null;
+  spike_score: number;
+  avg_volume_30d: number | null;
+  market_cap: number | null;
+  detection_date: string;
+  last_updated: string;
+  is_favorite: boolean;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  needs_review: boolean;
+  review_reason: string | null;
+  created_at: string;
+}
+
+export interface ZonnebloemSpikeEvent {
+  id: string;
+  ticker: string;
+  start_date: string;
+  peak_date: string;
+  end_date: string;
+  base_price: number;
+  peak_price: number;
+  spike_pct: number;
+  duration_days: number;
+  is_valid: boolean;
+  created_at: string;
+}
+
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortConfig {
