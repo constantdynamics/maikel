@@ -3,15 +3,14 @@
  *
  * Scans global markets for stocks with:
  * - Stable base price (not declining significantly)
- * - Explosive upward spikes (100%+ from base, lasting 4+ days)
+ * - Explosive upward spikes (75%+ from base, lasting 4+ days)
  * - Stock exists 3+ years
  * - Tradeable on recognized exchanges
  *
- * Key difference from Kuifje: searches for "stable base + explosive spikes"
- * instead of "crashed stocks with recovery potential".
- *
- * IMPORTANT: Uses a rotation system to ensure NEW stocks are scanned
- * each cycle, tracking which stocks have been deep-scanned before.
+ * IMPORTANT: Uses a TIME BUDGET to stay within Vercel's 300s limit.
+ * Each invocation deep-scans as many stocks as possible within ~240s,
+ * then saves progress. The rotation system ensures the next invocation
+ * continues with new stocks.
  */
 
 import { createServiceClient } from '../supabase';
@@ -22,6 +21,9 @@ import { validatePriceHistory, detectStockSplit } from '../scanner/validator';
 import { sleep } from '../utils';
 import type { ZonnebloemSettings, ZonnebloemScanDetail, OHLCData } from '../types';
 import { ZONNEBLOEM_DEFAULTS } from '../types';
+
+// Hard time budget: stop deep scanning after this many ms to stay within Vercel limits
+const TIME_BUDGET_MS = 240_000; // 240 seconds (leaving 60s buffer for Phase 1 + DB ops)
 
 interface ZBScanResult {
   status: 'completed' | 'failed' | 'partial';
@@ -71,10 +73,6 @@ async function updateProgress(
   await supabase.from('zonnebloem_scan_logs').update(fields).eq('id', scanId);
 }
 
-/**
- * Get tickers that have already been deep-scanned, ordered by
- * oldest scan first. This allows us to prioritize never-scanned tickers.
- */
 async function getScannedTickers(
   supabase: ReturnType<typeof createServiceClient>,
 ): Promise<Map<string, { lastScanned: Date; scanCount: number; lastResult: string }>> {
@@ -95,56 +93,35 @@ async function getScannedTickers(
   return map;
 }
 
-/**
- * Record that a ticker has been deep-scanned.
- */
 async function recordScanHistory(
   supabase: ReturnType<typeof createServiceClient>,
   ticker: string,
   market: string,
   result: string,
 ) {
-  await supabase.from('zonnebloem_scan_history').upsert(
-    {
-      ticker,
-      market,
-      last_scanned_at: new Date().toISOString(),
-      scan_count: 1,
-      last_result: result,
-    },
-    { onConflict: 'ticker' },
-  );
-
-  // If the ticker already existed, increment the count
-  const { data } = await supabase
+  // Use a single upsert with raw SQL increment for scan_count
+  const { data: existing } = await supabase
     .from('zonnebloem_scan_history')
     .select('scan_count')
     .eq('ticker', ticker)
     .single();
 
-  if (data && data.scan_count > 0) {
-    await supabase
-      .from('zonnebloem_scan_history')
-      .update({
-        scan_count: data.scan_count + 1,
-        last_scanned_at: new Date().toISOString(),
-        last_result: result,
-        market,
-      })
-      .eq('ticker', ticker);
-  }
+  await supabase.from('zonnebloem_scan_history').upsert(
+    {
+      ticker,
+      market,
+      last_scanned_at: new Date().toISOString(),
+      scan_count: (existing?.scan_count || 0) + 1,
+      last_result: result,
+    },
+    { onConflict: 'ticker' },
+  );
 }
 
-/**
- * Prioritize candidates: never-scanned first, then oldest-scanned first.
- * Also randomize within groups to add variety each scan.
- */
 function prioritizeCandidates(
   candidates: ZBCandidate[],
   scannedHistory: Map<string, { lastScanned: Date; scanCount: number; lastResult: string }>,
-  maxDeepScans: number,
 ): ZBCandidate[] {
-  // Split into never-scanned and previously-scanned
   const neverScanned: ZBCandidate[] = [];
   const previouslyScanned: ZBCandidate[] = [];
 
@@ -156,10 +133,8 @@ function prioritizeCandidates(
     }
   }
 
-  // Shuffle both groups for variety
   shuffleArray(neverScanned);
 
-  // Sort previously-scanned by oldest first (re-check stale data)
   previouslyScanned.sort((a, b) => {
     const aHistory = scannedHistory.get(a.ticker);
     const bHistory = scannedHistory.get(b.ticker);
@@ -167,14 +142,13 @@ function prioritizeCandidates(
     return aHistory.lastScanned.getTime() - bHistory.lastScanned.getTime();
   });
 
-  // Combine: never-scanned first, then oldest previously-scanned
   const combined = [...neverScanned, ...previouslyScanned];
 
   console.log(
-    `ZB: Prioritized ${neverScanned.length} new + ${previouslyScanned.length} re-scan candidates (limit: ${maxDeepScans})`,
+    `ZB: Prioritized ${neverScanned.length} new + ${previouslyScanned.length} re-scan candidates`,
   );
 
-  return combined.slice(0, maxDeepScans);
+  return combined;
 }
 
 function shuffleArray<T>(arr: T[]): void {
@@ -189,7 +163,7 @@ function shuffleArray<T>(arr: T[]): void {
  *
  * Phase 1: Fetch candidates from multiple global markets via TradingView
  * Phase 2: Pre-filter and prioritize (never-scanned first)
- * Phase 3: Deep scan with Yahoo Finance historical data
+ * Phase 3: Deep scan with Yahoo Finance (TIME-BUDGETED)
  */
 export async function runZonnebloemScan(): Promise<ZBScanResult> {
   const startTime = Date.now();
@@ -200,6 +174,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
   let stocksMatched = 0;
   let newStocksFound = 0;
   let apiCallsYahoo = 0;
+  let timeBudgetExceeded = false;
 
   // Create scan log
   const { data: scanLog } = await supabase
@@ -229,7 +204,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
 
     const allCandidates = await fetchCandidatesFromAllMarkets(
       settings.zb_markets,
-      3.0, // Min range ratio (52W High / 52W Low >= 3)
+      2.0, // Lowered from 3.0 - range ratio (52W High / 52W Low >= 2.0)
       settings.zb_min_avg_volume,
       settings.zb_min_price,
       500,
@@ -247,36 +222,24 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
     // =========================================================
     console.log('ZB Phase 2: Pre-filtering and prioritizing...');
 
-    // Filter excluded countries
     const excludedCountries = new Set(
       settings.zb_excluded_countries.map((c) => c.toLowerCase()),
     );
 
     const preFiltered = allCandidates.filter((c) => {
-      // Skip excluded countries
       if (c.country && excludedCountries.has(c.country.toLowerCase())) {
         return false;
       }
-
-      // Skip excluded sectors
       if (c.sector && settings.zb_excluded_sectors.includes(c.sector)) {
         return false;
       }
-
       return true;
     });
 
     console.log(`ZB Phase 2: ${preFiltered.length} after pre-filter (excluded ${candidatesFound - preFiltered.length})`);
 
-    // Get scan history for rotation
     const scannedHistory = await getScannedTickers(supabase);
-
-    // Determine max deep scans based on time budget
-    // ~300ms per Yahoo call + processing, 5 minute limit = ~800 max
-    // But be conservative to leave room for DB operations
-    const maxDeepScans = 400;
-
-    const prioritized = prioritizeCandidates(preFiltered, scannedHistory, maxDeepScans);
+    const prioritized = prioritizeCandidates(preFiltered, scannedHistory);
 
     await updateProgress(supabase, scanId, {
       candidates_found: candidatesFound,
@@ -285,20 +248,27 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
     });
 
     // =========================================================
-    // PHASE 3: Deep scan each candidate
+    // PHASE 3: Deep scan each candidate (TIME-BUDGETED)
     // =========================================================
-    console.log(`ZB Phase 3: Deep scanning ${prioritized.length} candidates...`);
+    const deepScanStartTime = Date.now();
+    console.log(`ZB Phase 3: Deep scanning up to ${prioritized.length} candidates (${TIME_BUDGET_MS / 1000}s budget)...`);
 
-    // Process in parallel batches of 5
-    const batchSize = 5;
+    // Process in parallel batches of 10
+    const batchSize = 10;
 
     for (let batchStart = 0; batchStart < prioritized.length; batchStart += batchSize) {
+      // CHECK TIME BUDGET before starting each batch
+      const elapsed = Date.now() - deepScanStartTime;
+      if (elapsed >= TIME_BUDGET_MS) {
+        console.log(`ZB: Time budget exceeded after ${stocksDeepScanned} stocks (${Math.round(elapsed / 1000)}s)`);
+        timeBudgetExceeded = true;
+        break;
+      }
+
       const batch = prioritized.slice(batchStart, batchStart + batchSize);
 
       const batchResults = await Promise.allSettled(
-        batch.map(async (candidate) => {
-          return deepScanCandidate(candidate, settings, supabase);
-        }),
+        batch.map((candidate) => deepScanCandidate(candidate, settings, supabase)),
       );
 
       for (let j = 0; j < batchResults.length; j++) {
@@ -317,7 +287,6 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
             scanDetails.push(detail);
           }
 
-          // Record in scan history
           await recordScanHistory(
             supabase,
             candidate.ticker,
@@ -345,20 +314,18 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       }
 
       // Update progress every batch
-      if (stocksDeepScanned % 10 === 0 || batchStart + batchSize >= prioritized.length) {
-        await updateProgress(supabase, scanId, {
-          stocks_deep_scanned: stocksDeepScanned,
-          stocks_matched: stocksMatched,
-          new_stocks_found: newStocksFound,
-        });
-      }
+      await updateProgress(supabase, scanId, {
+        stocks_deep_scanned: stocksDeepScanned,
+        stocks_matched: stocksMatched,
+        new_stocks_found: newStocksFound,
+      });
 
       // Small delay between batches to be polite to Yahoo
-      await sleep(200);
+      await sleep(50);
     }
 
     const durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    const status = errors.length === 0 ? 'completed' : 'partial';
+    const status = timeBudgetExceeded ? 'partial' : errors.length === 0 ? 'completed' : 'partial';
 
     // Final update
     if (scanId) {
@@ -388,7 +355,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
     }
 
     console.log(
-      `ZB Scan complete: ${stocksMatched} matches (${newStocksFound} new) from ${stocksDeepScanned} deep-scanned in ${durationSeconds}s`,
+      `ZB Scan ${status}: ${stocksMatched} matches (${newStocksFound} new) from ${stocksDeepScanned} deep-scanned in ${durationSeconds}s${timeBudgetExceeded ? ' (time budget reached)' : ''}`,
     );
 
     return {
@@ -476,7 +443,7 @@ async function deepScanCandidate(
       return { matched: false, isNew: false, detail, error: detail.errorMessage };
     }
 
-    // Validate price history
+    // Validate price history (relaxed - only check for actual errors, not warnings)
     const historyValidation = validatePriceHistory(history);
     if (!historyValidation.isValid) {
       detail.result = 'error';
@@ -484,13 +451,10 @@ async function deepScanCandidate(
       return { matched: false, isNew: false, detail, error: null };
     }
 
-    // Check minimum age (3 years of data)
-    const threeYearsAgo = new Date();
-    threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
-    const oldestDate = new Date(history[0].date);
-    if (oldestDate > threeYearsAgo) {
+    // Check minimum age (3 years of data) - relaxed to 2.5 years (630 trading days)
+    if (history.length < 630) {
       detail.result = 'rejected';
-      detail.rejectReason = `Less than 3 years of history (oldest: ${history[0].date})`;
+      detail.rejectReason = `Only ${history.length} data points (need ~630 for 2.5 years)`;
       return { matched: false, isNew: false, detail, error: null };
     }
 
@@ -517,7 +481,7 @@ async function deepScanCandidate(
       return { matched: false, isNew: false, detail, error: null };
     }
 
-    // Check 12-month price stability
+    // Check 12-month price stability (relaxed)
     if (spikeAnalysis.priceChange12m !== null) {
       if (spikeAnalysis.priceChange12m < -settings.zb_max_price_decline_12m_pct) {
         detail.result = 'rejected';
@@ -526,7 +490,7 @@ async function deepScanCandidate(
       }
     }
 
-    // Check base price stability
+    // Check base price stability (relaxed)
     if (spikeAnalysis.baseDeclinePct !== null) {
       if (spikeAnalysis.baseDeclinePct < -settings.zb_max_base_decline_pct) {
         detail.result = 'rejected';

@@ -32,9 +32,9 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-slate-900">
       <div className="w-full max-w-md p-8 bg-slate-800 rounded-lg border border-slate-700">
-        <h1 className="text-2xl font-bold text-center mb-2">Stock Screener</h1>
-        <p className="text-slate-400 text-center mb-8 text-sm">
-          Automated high-potential stock detection
+        <h1 className="text-2xl font-bold text-center mb-2 text-[var(--text-primary)]">Welcome Back</h1>
+        <p className="text-[var(--text-secondary)] text-center mb-8 text-sm">
+          Sign in to continue
         </p>
 
         <form onSubmit={handleLogin} className="space-y-4">

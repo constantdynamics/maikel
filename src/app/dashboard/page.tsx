@@ -3,30 +3,75 @@
 import { useState, useCallback, useEffect } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import StockTable from '@/components/StockTable';
-import ZonnebloemTable from '@/components/ZonnebloemTable';
-import FilterBar from '@/components/FilterBar';
+import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ZonnebloemScanProgress from '@/components/ZonnebloemScanProgress';
+import ZonnebloemTable from '@/components/ZonnebloemTable';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import Pagination from '@/components/Pagination';
+import FixedUI from '@/components/FixedUI';
+import ExportReminder from '@/components/ExportReminder';
 import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
-export default function DashboardPage() {
-  const [activeScanner, setActiveScanner] = useState<'kuifje' | 'zonnebloem'>('kuifje');
+type ScannerTab = 'kuifje' | 'zonnebloem';
 
-  const kuifje = useStocks();
-  const zonnebloem = useZonnebloemStocks();
+interface ScanSession {
+  id: string;
+  started_at: string;
+  stocks_found: number;
+}
+
+const ITEMS_PER_PAGE = 200;
+
+export default function DashboardPage() {
+  const [activeTab, setActiveTab] = useState<ScannerTab>('kuifje');
+
+  // Kuifje state
+  const {
+    stocks,
+    loading,
+    filters,
+    setFilters,
+    sort,
+    handleSort,
+    sectors,
+    toggleFavorite,
+    deleteStock,
+    bulkFavorite,
+    bulkDelete,
+    bulkArchive,
+    refreshStocks,
+  } = useStocks();
+
+  // Zonnebloem state
+  const {
+    stocks: zbStocks,
+    loading: zbLoading,
+    filters: zbFilters,
+    setFilters: setZbFilters,
+    sort: zbSort,
+    handleSort: zbHandleSort,
+    sectors: zbSectors,
+    markets: zbMarkets,
+    toggleFavorite: zbToggleFavorite,
+    deleteStock: zbDeleteStock,
+    bulkFavorite: zbBulkFavorite,
+    bulkDelete: zbBulkDelete,
+    refreshStocks: zbRefreshStocks,
+  } = useZonnebloemStocks();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  const [kuifjeScanRunning, setKuifjeScanRunning] = useState(false);
-  const [kuifjeScanTriggered, setKuifjeScanTriggered] = useState(false);
-
+  const [scanRunning, setScanRunning] = useState(false);
+  const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
   const [zbScanTriggered, setZbScanTriggered] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sessions, setSessions] = useState<ScanSession[]>([]);
 
+  // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title: string;
@@ -34,27 +79,68 @@ export default function DashboardPage() {
     onConfirm: () => void;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
+  // Load scan sessions
   useEffect(() => {
-    setSelectedIds(new Set());
-  }, [activeScanner]);
+    async function loadSessions() {
+      const { data } = await supabase
+        .from('scan_logs')
+        .select('id, started_at, stocks_found')
+        .eq('status', 'completed')
+        .gt('stocks_found', 0)
+        .order('started_at', { ascending: false })
+        .limit(20);
 
+      if (data) {
+        setSessions(data);
+      }
+    }
+    loadSessions();
+  }, [scanTriggered]);
+
+  // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
       if (e.key === 'f' || e.key === 'F') {
         if (selectedIds.size > 0) {
-          if (activeScanner === 'kuifje') kuifje.bulkFavorite(selectedIds);
-          else zonnebloem.bulkFavorite(selectedIds);
+          if (activeTab === 'kuifje') bulkFavorite(selectedIds);
+          else zbBulkFavorite(selectedIds);
           setSelectedIds(new Set());
         }
       }
-      if (e.key === 'Delete' && selectedIds.size > 0) {
-        requestBulkDelete();
+      if (e.key === 'a' || e.key === 'A') {
+        if (selectedIds.size > 0 && activeTab === 'kuifje') {
+          bulkArchive(selectedIds);
+          setSelectedIds(new Set());
+        }
+      }
+      if (e.key === 'Delete') {
+        if (selectedIds.size > 0) {
+          requestBulkDelete();
+        }
       }
     }
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, activeScanner, kuifje.bulkFavorite, zonnebloem.bulkFavorite]);
+  }, [selectedIds, bulkFavorite, bulkArchive, zbBulkFavorite, activeTab]);
+
+  // Reset page when filters/tab change
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedIds(new Set());
+  }, [filters, sort, zbFilters, zbSort, activeTab]);
+
+  // Pagination for active tab
+  const activeStocks = activeTab === 'kuifje' ? stocks : zbStocks;
+  const totalPages = Math.ceil(activeStocks.length / ITEMS_PER_PAGE);
+  const paginatedStocks = activeStocks.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
+  );
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -66,56 +152,78 @@ export default function DashboardPage() {
   }
 
   function toggleSelectAll() {
-    const stocks = activeScanner === 'kuifje' ? kuifje.stocks : zonnebloem.stocks;
-    if (selectedIds.size === stocks.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(stocks.map((s) => s.id)));
+    if (selectedIds.size === paginatedStocks.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedStocks.map((s) => s.id)));
+    }
   }
 
-  async function handleRunKuifjeScan() {
-    setKuifjeScanRunning(true);
-    setKuifjeScanTriggered(true);
+  const handleExport = useCallback(() => {
+    const csv = stocksToCSV(stocks as unknown as Record<string, unknown>[]);
+    if (csv) {
+      downloadCSV(csv, generateCsvFilename());
+    }
+  }, [stocks]);
+
+  async function handleRunScan(markets: string[]) {
+    setScanRunning(true);
+    setScanTriggered(true);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       await fetch('/api/scan', {
         method: 'POST',
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ markets }),
       });
-    } catch { setKuifjeScanRunning(false); }
-  }
-
-  function handleKuifjeScanComplete() {
-    setKuifjeScanRunning(false);
-    setKuifjeScanTriggered(false);
-    kuifje.refreshStocks();
+    } catch {
+      setScanRunning(false);
+    }
   }
 
   async function handleRunZbScan() {
     setZbScanRunning(true);
     setZbScanTriggered(true);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       await fetch('/api/zonnebloem/scan', {
         method: 'POST',
-        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({}),
       });
-    } catch { setZbScanRunning(false); }
+    } catch {
+      setZbScanRunning(false);
+    }
+  }
+
+  function handleScanComplete() {
+    setScanRunning(false);
+    setScanTriggered(false);
+    refreshStocks();
   }
 
   function handleZbScanComplete() {
     setZbScanRunning(false);
     setZbScanTriggered(false);
-    zonnebloem.refreshStocks();
+    zbRefreshStocks();
   }
 
-  const handleExport = useCallback(() => {
-    const stocks = activeScanner === 'kuifje' ? kuifje.stocks : zonnebloem.stocks;
-    const csv = stocksToCSV(stocks as unknown as Record<string, unknown>[]);
-    if (csv) downloadCSV(csv, generateCsvFilename(activeScanner === 'kuifje' ? 'Kuifje' : 'Zonnebloem'));
-  }, [activeScanner, kuifje.stocks, zonnebloem.stocks]);
-
   function handleBulkFavorite() {
-    if (activeScanner === 'kuifje') kuifje.bulkFavorite(selectedIds);
-    else zonnebloem.bulkFavorite(selectedIds);
+    if (activeTab === 'kuifje') bulkFavorite(selectedIds);
+    else zbBulkFavorite(selectedIds);
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkArchive() {
+    bulkArchive(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -124,10 +232,10 @@ export default function DashboardPage() {
     setConfirmDialog({
       open: true,
       title: `Delete ${count} stock${count !== 1 ? 's' : ''}?`,
-      message: `${count} stock${count !== 1 ? 's' : ''} will be moved to the recycle bin.`,
+      message: `${count} stock${count !== 1 ? 's' : ''} will be moved to the recycle bin. You can restore them later.`,
       onConfirm: () => {
-        if (activeScanner === 'kuifje') kuifje.bulkDelete(selectedIds);
-        else zonnebloem.bulkDelete(selectedIds);
+        if (activeTab === 'kuifje') bulkDelete(selectedIds);
+        else zbBulkDelete(selectedIds);
         setSelectedIds(new Set());
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
@@ -135,216 +243,303 @@ export default function DashboardPage() {
   }
 
   function requestDelete(id: string) {
-    const stock = activeScanner === 'kuifje'
-      ? kuifje.stocks.find((s) => s.id === id)
-      : zonnebloem.stocks.find((s) => s.id === id);
+    const allStocks = activeTab === 'kuifje' ? stocks : zbStocks;
+    const stock = allStocks.find((s) => s.id === id);
     setConfirmDialog({
       open: true,
       title: `Delete ${stock?.ticker || 'stock'}?`,
-      message: 'This stock will be moved to the recycle bin.',
+      message: `This stock will be moved to the recycle bin. You can restore it later.`,
       onConfirm: () => {
-        if (activeScanner === 'kuifje') kuifje.deleteStock(id);
-        else zonnebloem.deleteStock(id);
+        if (activeTab === 'kuifje') deleteStock(id);
+        else zbDeleteStock(id);
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
     });
   }
 
+  function handlePageChange(page: number) {
+    setCurrentPage(page);
+    setSelectedIds(new Set());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function handleQuickSelect(type: QuickSelectType) {
+    if (type === 'none') {
+      setSelectedIds(new Set());
+      return;
+    }
+
+    let toSelect: string[] = [];
+    const pageStocks = paginatedStocks;
+
+    switch (type) {
+      case 'top5':
+        toSelect = pageStocks.slice(0, 5).map((s) => s.id);
+        break;
+      case 'top10':
+        toSelect = pageStocks.slice(0, 10).map((s) => s.id);
+        break;
+      case 'score10':
+        toSelect = pageStocks.filter((s) => 'score' in s && (s as { score: number }).score === 10).map((s) => s.id);
+        break;
+      case 'scoreMin8':
+        toSelect = pageStocks.filter((s) => 'score' in s && (s as { score: number }).score >= 8).map((s) => s.id);
+        break;
+      case 'scoreMin6':
+        toSelect = pageStocks.filter((s) => 'score' in s && (s as { score: number }).score >= 6).map((s) => s.id);
+        break;
+    }
+
+    setSelectedIds(new Set(toSelect));
+  }
+
   return (
     <AuthGuard>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-        </div>
+        <ExportReminder onExport={handleExport} />
 
-        {/* Scanner Tabs */}
-        <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
+        {/* Scanner tabs */}
+        <div className="flex items-center gap-4 border-b border-[var(--border-color)]">
           <button
-            onClick={() => setActiveScanner('kuifje')}
-            className={`flex-1 px-4 py-2.5 rounded text-sm font-medium transition-colors ${
-              activeScanner === 'kuifje'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
+            onClick={() => setActiveTab('kuifje')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'kuifje'
+                ? 'border-[var(--accent-primary)] text-[var(--accent-primary)]'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
             }`}
           >
             Kuifje
-            <span className="ml-2 text-xs opacity-70">ATH Recovery</span>
-            {kuifje.allStocks.length > 0 && (
-              <span className="ml-2 bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded text-xs">
-                {kuifje.allStocks.length}
-              </span>
-            )}
+            <span className="ml-2 text-xs text-[var(--text-muted)]">({stocks.length})</span>
           </button>
           <button
-            onClick={() => setActiveScanner('zonnebloem')}
-            className={`flex-1 px-4 py-2.5 rounded text-sm font-medium transition-colors ${
-              activeScanner === 'zonnebloem'
-                ? 'bg-purple-600 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
+            onClick={() => setActiveTab('zonnebloem')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === 'zonnebloem'
+                ? 'border-purple-500 text-purple-400'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
             }`}
           >
             Prof. Zonnebloem
-            <span className="ml-2 text-xs opacity-70">Spike Scanner</span>
-            {zonnebloem.allStocks.length > 0 && (
-              <span className="ml-2 bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded text-xs">
-                {zonnebloem.allStocks.length}
-              </span>
-            )}
+            <span className="ml-2 text-xs text-[var(--text-muted)]">({zbStocks.length})</span>
           </button>
         </div>
 
-        {/* KUIFJE VIEW */}
-        {activeScanner === 'kuifje' && (
+        {/* Kuifje Tab */}
+        {activeTab === 'kuifje' && (
           <>
-            <ScanProgress scanTriggered={kuifjeScanTriggered} onScanComplete={handleKuifjeScanComplete} />
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                Dashboard
+                <span className="ml-3 text-sm font-normal text-[var(--text-muted)]">
+                  {stocks.length} stocks total
+                </span>
+              </h1>
 
-            <FilterBar
-              filters={kuifje.filters}
-              onFilterChange={kuifje.setFilters}
-              sectors={kuifje.sectors}
-              onExport={handleExport}
-              onRunScan={handleRunKuifjeScan}
-              scanRunning={kuifjeScanRunning}
-              selectedCount={selectedIds.size}
-              onBulkFavorite={handleBulkFavorite}
-              onBulkDelete={requestBulkDelete}
+              {sessions.length > 0 && (
+                <div className="text-sm text-[var(--text-muted)]">
+                  Last scan: {new Date(sessions[0]?.started_at).toLocaleDateString()} ({sessions[0]?.stocks_found} found)
+                </div>
+              )}
+            </div>
+
+            <ScanProgress
+              scanTriggered={scanTriggered}
+              onScanComplete={handleScanComplete}
             />
 
-            {kuifje.loading ? (
+            <FilterBar
+              filters={filters}
+              onFilterChange={setFilters}
+              sectors={sectors}
+              onExport={handleExport}
+              onRunScan={handleRunScan}
+              scanRunning={scanRunning}
+              selectedCount={selectedIds.size}
+              onBulkFavorite={handleBulkFavorite}
+              onBulkArchive={handleBulkArchive}
+              onBulkDelete={requestBulkDelete}
+              onQuickSelect={handleQuickSelect}
+            />
+
+            {loading ? (
               <div className="flex items-center justify-center py-20">
-                <div className="text-slate-400">Loading stocks...</div>
+                <div className="text-[var(--text-muted)]">Loading stocks...</div>
               </div>
-            ) : kuifje.stocks.length === 0 && !kuifje.filters.search && !kuifje.filters.sectorFilter ? (
-              <div className="bg-slate-800 border border-slate-700 rounded-lg p-16 text-center">
-                <h2 className="text-xl font-semibold mb-2">No Kuifje Data Yet</h2>
-                <p className="text-slate-400 mb-4">
+            ) : stocks.length === 0 && !filters.search && !filters.sectorFilter ? (
+              <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
+                <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Data Yet</h2>
+                <p className="text-[var(--text-secondary)] mb-4">
                   Click &ldquo;Run Scan&rdquo; to start scanning for high-potential recovery stocks.
                 </p>
+                <p className="text-[var(--text-muted)] text-sm mb-6">
+                  Scans for stocks with 85-100% ATH decline and multiple 200%+ growth events.
+                </p>
                 <button
-                  onClick={handleRunKuifjeScan}
-                  disabled={kuifjeScanRunning}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 rounded-lg font-medium transition-colors"
+                  onClick={() => handleRunScan(['us', 'ca'])}
+                  disabled={scanRunning}
+                  className="px-6 py-3 bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-50 rounded-lg font-medium text-white transition-colors"
                 >
-                  {kuifjeScanRunning ? 'Scanning...' : 'Run Kuifje Scan'}
+                  {scanRunning ? 'Scanning...' : 'Run First Scan'}
                 </button>
               </div>
             ) : (
-              <StockTable
-                stocks={kuifje.stocks}
-                sort={kuifje.sort}
-                onSort={kuifje.handleSort}
-                selectedIds={selectedIds}
-                onToggleSelect={toggleSelect}
-                onToggleSelectAll={toggleSelectAll}
-                onToggleFavorite={kuifje.toggleFavorite}
-                onDelete={requestDelete}
-              />
+              <>
+                <StockTable
+                  stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
+                  sort={sort}
+                  onSort={handleSort}
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectAll}
+                  onToggleFavorite={toggleFavorite}
+                  onDelete={requestDelete}
+                />
+
+                {totalPages > 1 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    totalItems={stocks.length}
+                    itemsPerPage={ITEMS_PER_PAGE}
+                  />
+                )}
+              </>
             )}
           </>
         )}
 
-        {/* ZONNEBLOEM VIEW */}
-        {activeScanner === 'zonnebloem' && (
+        {/* Zonnebloem Tab */}
+        {activeTab === 'zonnebloem' && (
           <>
-            <ZonnebloemScanProgress scanTriggered={zbScanTriggered} onScanComplete={handleZbScanComplete} />
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                Prof. Zonnebloem
+                <span className="ml-3 text-sm font-normal text-[var(--text-muted)]">
+                  {zbStocks.length} stocks total — stable base + explosive spikes
+                </span>
+              </h1>
 
-            <div className="bg-slate-800 border border-purple-700/30 rounded-lg p-4 mb-4 space-y-3">
+              <button
+                onClick={handleRunZbScan}
+                disabled={zbScanRunning}
+                className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
+              >
+                {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
+              </button>
+            </div>
+
+            <ZonnebloemScanProgress
+              scanTriggered={zbScanTriggered}
+              onScanComplete={handleZbScanComplete}
+            />
+
+            {/* Zonnebloem filters */}
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-4 mb-4 space-y-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex-1 min-w-[200px]">
                   <input
                     type="text"
-                    placeholder="Search ticker or company..."
-                    value={zonnebloem.filters.search}
-                    onChange={(e) => zonnebloem.setFilters({ ...zonnebloem.filters, search: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-400 focus:outline-none focus:border-purple-500 text-sm"
+                    placeholder="Search ticker or company name..."
+                    value={zbFilters.search}
+                    onChange={(e) => setZbFilters({ ...zbFilters, search: e.target.value })}
+                    className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-purple-500 text-sm"
                   />
                 </div>
 
                 <select
-                  value={zonnebloem.filters.marketFilter}
-                  onChange={(e) => zonnebloem.setFilters({ ...zonnebloem.filters, marketFilter: e.target.value })}
-                  className="px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                  value={zbFilters.marketFilter}
+                  onChange={(e) => setZbFilters({ ...zbFilters, marketFilter: e.target.value })}
+                  className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none cursor-pointer [&>option]:bg-[#1a1a2e] [&>option]:text-white"
                 >
                   <option value="">All Markets</option>
-                  {zonnebloem.markets.map((m) => (
+                  {zbMarkets.map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
 
                 <select
-                  value={zonnebloem.filters.sectorFilter}
-                  onChange={(e) => zonnebloem.setFilters({ ...zonnebloem.filters, sectorFilter: e.target.value })}
-                  className="px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                  value={zbFilters.sectorFilter}
+                  onChange={(e) => setZbFilters({ ...zbFilters, sectorFilter: e.target.value })}
+                  className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none cursor-pointer [&>option]:bg-[#1a1a2e] [&>option]:text-white"
                 >
                   <option value="">All Sectors</option>
-                  {zonnebloem.sectors.map((s) => (
+                  {zbSectors.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
 
-                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={zonnebloem.filters.showFavorites}
-                    onChange={(e) => zonnebloem.setFilters({ ...zonnebloem.filters, showFavorites: e.target.checked })}
-                    className="rounded bg-slate-700 border-slate-600"
+                    checked={zbFilters.showFavorites}
+                    onChange={(e) => setZbFilters({ ...zbFilters, showFavorites: e.target.checked })}
+                    className="rounded"
                   />
                   Favorites
                 </label>
 
-                <div className="flex items-center gap-2 ml-auto">
-                  {selectedIds.size > 0 && (
-                    <>
-                      <span className="text-sm text-slate-400">{selectedIds.size} selected</span>
-                      <button onClick={handleBulkFavorite} className="px-3 py-2 text-sm bg-yellow-600 hover:bg-yellow-700 rounded transition-colors">Favorite</button>
-                      <button onClick={requestBulkDelete} className="px-3 py-2 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors">Delete</button>
-                    </>
-                  )}
-                  <button onClick={handleExport} className="px-3 py-2 text-sm bg-slate-600 hover:bg-slate-500 rounded transition-colors">Export CSV</button>
-                  <button
-                    onClick={handleRunZbScan}
-                    disabled={zbScanRunning}
-                    className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:text-slate-400 rounded font-medium transition-colors"
-                  >
-                    {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
-                  </button>
-                </div>
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
+                    <button
+                      onClick={handleBulkFavorite}
+                      className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors"
+                    >
+                      Favorite
+                    </button>
+                    <button
+                      onClick={requestBulkDelete}
+                      className="px-3 py-2 text-sm bg-[var(--accent-red)] text-white hover:opacity-90 rounded transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            {zonnebloem.loading ? (
+            {zbLoading ? (
               <div className="flex items-center justify-center py-20">
-                <div className="text-slate-400">Loading Zonnebloem stocks...</div>
+                <div className="text-[var(--text-muted)]">Loading Zonnebloem stocks...</div>
               </div>
-            ) : zonnebloem.stocks.length === 0 && !zonnebloem.filters.search ? (
-              <div className="bg-slate-800 border border-purple-700/30 rounded-lg p-16 text-center">
-                <h2 className="text-xl font-semibold mb-2 text-purple-300">No Zonnebloem Data Yet</h2>
-                <p className="text-slate-400 mb-4">
-                  Click &ldquo;Run Zonnebloem Scan&rdquo; to find stocks with stable bases and explosive spikes.
-                </p>
-                <p className="text-slate-500 text-sm mb-6">
-                  Scans 8+ global markets for stocks where 52W High is 3x+ the 52W Low,
-                  then deep-scans for 100%+ spikes lasting 4+ days from a stable base.
+            ) : zbStocks.length === 0 ? (
+              <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
+                <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Zonnebloem Stocks Yet</h2>
+                <p className="text-[var(--text-secondary)] mb-4">
+                  Click &ldquo;Run Zonnebloem Scan&rdquo; to find stocks with stable base prices and explosive upward spikes.
                 </p>
                 <button
                   onClick={handleRunZbScan}
                   disabled={zbScanRunning}
-                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 rounded-lg font-medium transition-colors"
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg font-medium text-white transition-colors"
                 >
                   {zbScanRunning ? 'Scanning...' : 'Run First Zonnebloem Scan'}
                 </button>
               </div>
             ) : (
-              <ZonnebloemTable
-                stocks={zonnebloem.stocks}
-                sort={zonnebloem.sort}
-                onSort={zonnebloem.handleSort}
-                selectedIds={selectedIds}
-                onToggleSelect={toggleSelect}
-                onToggleSelectAll={toggleSelectAll}
-                onToggleFavorite={zonnebloem.toggleFavorite}
-                onDelete={requestDelete}
-              />
+              <>
+                <ZonnebloemTable
+                  stocks={paginatedStocks as Parameters<typeof ZonnebloemTable>[0]['stocks']}
+                  sort={zbSort}
+                  onSort={zbHandleSort}
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectAll}
+                  onToggleFavorite={zbToggleFavorite}
+                  onDelete={requestDelete}
+                />
+
+                {totalPages > 1 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    totalItems={zbStocks.length}
+                    itemsPerPage={ITEMS_PER_PAGE}
+                  />
+                )}
+              </>
             )}
           </>
         )}
@@ -358,6 +553,8 @@ export default function DashboardPage() {
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
         />
+
+        <FixedUI />
       </div>
     </AuthGuard>
   );

@@ -3,9 +3,23 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Stock Screener',
-  description: 'Automated stock screening for high-potential recovery plays',
+  title: 'Professor Zonnebloem',
+  description: 'Automated detection of high-potential recovery opportunities',
+  icons: {
+    icon: '/favicon.png',
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
+  },
 };
+
+const themeInitScript = `
+  (function() {
+    try {
+      var theme = localStorage.getItem('theme') || 'sunflower';
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) {}
+  })();
+`;
 
 export default function RootLayout({
   children,
@@ -13,8 +27,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-900 text-slate-100">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="min-h-screen">
         <ErrorBoundary>{children}</ErrorBoundary>
       </body>
     </html>

@@ -45,7 +45,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!authenticated) return null;
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="min-h-screen bg-[var(--bg-primary)]">
       <Navbar />
       <main className="max-w-screen-2xl mx-auto p-4">{children}</main>
     </div>

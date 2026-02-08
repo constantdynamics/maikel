@@ -7,7 +7,7 @@
  *
  * Algorithm:
  * 1. Calculate the rolling median base price (60-day window)
- * 2. Identify periods where price exceeds base by threshold (e.g. 100%)
+ * 2. Identify periods where price exceeds base by threshold (e.g. 75%)
  * 3. Validate each spike lasts at least N days (default 4)
  * 4. Check that the base price itself is stable (not declining)
  */
@@ -35,9 +35,6 @@ export interface SpikeAnalysis {
   baseDeclinePct: number | null;
 }
 
-/**
- * Calculate the median of an array of numbers.
- */
 function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -54,7 +51,7 @@ function median(values: number[]): number {
 function calculateBasePrice(
   history: OHLCData[],
   windowDays: number = 60,
-  spikeThresholdMultiple: number = 1.5,
+  spikeThresholdMultiple: number = 2.0,
 ): number[] {
   const basePrices: number[] = [];
 
@@ -65,7 +62,7 @@ function calculateBasePrice(
     // First pass: get rough median
     const roughMedian = median(windowPrices);
 
-    // Second pass: exclude prices that are clearly spikes (> 1.5x median)
+    // Second pass: exclude prices that are clearly spikes (> 2x median)
     const nonSpikePrices = windowPrices.filter(
       (p) => p <= roughMedian * spikeThresholdMultiple,
     );
@@ -83,7 +80,7 @@ function calculateBasePrice(
  */
 export function analyzeSpikeEvents(
   history: OHLCData[],
-  spikeThresholdPct: number = 100,
+  spikeThresholdPct: number = 75,
   minDurationDays: number = 4,
   lookbackMonths: number = 24,
 ): SpikeAnalysis {
@@ -115,6 +112,8 @@ export function analyzeSpikeEvents(
 
   // Detect spike events
   const events: SpikeEvent[] = [];
+  // Use a lower entry threshold (50% of spike threshold) to catch more spikes
+  const entryThresholdPct = spikeThresholdPct * 0.5;
   let i = 0;
 
   while (i < recentHistory.length) {
@@ -127,32 +126,31 @@ export function analyzeSpikeEvents(
     const currentPrice = recentHistory[i].close;
     const spikePct = ((currentPrice - basePrice) / basePrice) * 100;
 
-    if (spikePct >= spikeThresholdPct) {
-      // Found start of potential spike - track it
+    if (spikePct >= entryThresholdPct) {
+      // Found start of potential spike zone - track it
       const spikeStart = i;
+      // Use the base price from just before the spike starts
+      const spikeBasePrice = basePrices[Math.max(0, spikeStart - 1)];
       let peakPrice = currentPrice;
       let peakDate = recentHistory[i].date;
-      let peakIdx = i;
-      let daysAboveThreshold = 1;
+      let daysInSpikeZone = 1;
+      let peakSpikePct = spikePct;
 
       // Track the spike forward
       let j = i + 1;
       while (j < recentHistory.length) {
         const price = recentHistory[j].close;
-        const base = basePrices[Math.min(spikeStart, basePrices.length - 1)]; // Use base from before spike
-        const pct = ((price - base) / base) * 100;
+        const pct = ((price - spikeBasePrice) / spikeBasePrice) * 100;
 
         if (price > peakPrice) {
           peakPrice = price;
           peakDate = recentHistory[j].date;
-          peakIdx = j;
+          peakSpikePct = pct;
         }
 
-        if (pct >= spikeThresholdPct * 0.5) {
-          // Still in spike zone (using 50% of threshold as "in spike")
-          if (pct >= spikeThresholdPct) {
-            daysAboveThreshold++;
-          }
+        if (pct >= entryThresholdPct * 0.5) {
+          // Still in extended spike zone (>= 25% of original threshold)
+          daysInSpikeZone++;
           j++;
         } else {
           break; // Spike is over
@@ -160,9 +158,10 @@ export function analyzeSpikeEvents(
       }
 
       const spikeEndIdx = j - 1;
-      const actualSpikePct = ((peakPrice - basePrice) / basePrice) * 100;
+      const actualSpikePct = ((peakPrice - spikeBasePrice) / spikeBasePrice) * 100;
 
-      if (daysAboveThreshold >= minDurationDays && actualSpikePct >= spikeThresholdPct) {
+      // FIXED: count ALL days in the spike zone, not just days above the full threshold
+      if (daysInSpikeZone >= minDurationDays && actualSpikePct >= spikeThresholdPct) {
         // Check this doesn't overlap with a previous event
         const overlaps = events.some(
           (e) =>
@@ -175,10 +174,10 @@ export function analyzeSpikeEvents(
             start_date: recentHistory[spikeStart].date,
             peak_date: peakDate,
             end_date: recentHistory[spikeEndIdx].date,
-            base_price: basePrice,
+            base_price: spikeBasePrice,
             peak_price: peakPrice,
             spike_pct: actualSpikePct,
-            duration_days: daysAboveThreshold,
+            duration_days: daysInSpikeZone,
             is_valid: true,
           });
         }
@@ -193,7 +192,6 @@ export function analyzeSpikeEvents(
   // Calculate spike score
   let spikeScore = 0;
   for (const event of events) {
-    // Score = (spike_percentage / 100) * (duration / minDuration)
     const pctFactor = event.spike_pct / 100;
     const durationFactor = event.duration_days / minDurationDays;
     spikeScore += pctFactor * durationFactor;
@@ -209,12 +207,11 @@ export function analyzeSpikeEvents(
     }
   }
 
-  // Calculate 12-month price change
+  // Calculate 12-month price change (spike-aware)
   const twelveMonthsAgo = new Date();
   twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
   const twelveMonthStr = twelveMonthsAgo.toISOString().split('T')[0];
 
-  // Find price closest to 12 months ago
   let price12mAgo: number | null = null;
   for (const day of recentHistory) {
     if (day.date >= twelveMonthStr) {
@@ -223,18 +220,16 @@ export function analyzeSpikeEvents(
     }
   }
 
-  // If 12m ago was during a spike, use the base price instead
   let priceChange12m: number | null = null;
   if (price12mAgo !== null && price12mAgo > 0) {
     const currentPrice = recentHistory[recentHistory.length - 1].close;
 
-    // Check if 12m ago was during a spike
+    // Check if 12m ago was during a spike - use base price instead
     const was12mInSpike = events.some(
       (e) => twelveMonthStr >= e.start_date && twelveMonthStr <= e.end_date,
     );
 
     if (was12mInSpike) {
-      // Use base price from month before the spike
       const preSpikeCutoff = new Date(twelveMonthsAgo);
       preSpikeCutoff.setMonth(preSpikeCutoff.getMonth() - 1);
       const preSpikeStr = preSpikeCutoff.toISOString().split('T')[0];
@@ -252,7 +247,6 @@ export function analyzeSpikeEvents(
   }
 
   // Calculate base price decline over lookback period
-  // Compare first quarter base median vs last quarter base median
   const quarterLength = Math.floor(basePrices.length / 4);
   let baseDeclinePct: number | null = null;
   if (quarterLength > 5) {
@@ -263,7 +257,7 @@ export function analyzeSpikeEvents(
     }
   }
 
-  // Stability bonus: if base price has grown, add 20% bonus to score
+  // Stability bonus
   if (baseDeclinePct !== null && baseDeclinePct > 0) {
     spikeScore *= 1.2;
   }
@@ -283,7 +277,7 @@ export function analyzeSpikeEvents(
  * Score color for Zonnebloem stocks
  */
 export function getZBScoreColor(score: number): 'green' | 'orange' | 'red' {
-  if (score >= 10) return 'green';
-  if (score >= 3) return 'orange';
+  if (score >= 5) return 'green';
+  if (score >= 2) return 'orange';
   return 'red';
 }

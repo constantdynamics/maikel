@@ -1,21 +1,118 @@
 /**
  * TradingView Scanner API integration.
  *
- * Fetches the biggest losers from TradingView's market movers page
- * (https://www.tradingview.com/markets/stocks-usa/market-movers-losers/)
- * via their unofficial scanner API.
- *
- * This replaces the hardcoded ticker list - the scan universe is now
- * dynamically sourced from what TradingView identifies as top losers.
+ * Fetches the biggest losers from TradingView's market movers pages
+ * via their unofficial scanner API. Supports multiple markets.
  */
 
 import { retryWithBackoff } from '../utils';
 
-const SCANNER_URL = 'https://scanner.tradingview.com/america/scan';
+// Market configurations
+export interface MarketConfig {
+  id: string;
+  name: string;
+  flag: string;
+  scannerUrl: string;
+  marketCode: string;
+  exchanges: string[];
+  yahooSuffix: (exchange: string) => string;
+}
+
+export const MARKETS: Record<string, MarketConfig> = {
+  us: {
+    id: 'us',
+    name: 'United States',
+    flag: '🇺🇸',
+    scannerUrl: 'https://scanner.tradingview.com/america/scan',
+    marketCode: 'america',
+    exchanges: ['AMEX', 'NYSE', 'NASDAQ'],
+    yahooSuffix: () => '',
+  },
+  ca: {
+    id: 'ca',
+    name: 'Canada',
+    flag: '🇨🇦',
+    scannerUrl: 'https://scanner.tradingview.com/canada/scan',
+    marketCode: 'canada',
+    exchanges: ['TSX', 'TSXV'],
+    yahooSuffix: (exchange) => exchange === 'TSXV' ? '.V' : '.TO',
+  },
+  uk: {
+    id: 'uk',
+    name: 'United Kingdom',
+    flag: '🇬🇧',
+    scannerUrl: 'https://scanner.tradingview.com/uk/scan',
+    marketCode: 'uk',
+    exchanges: ['LSE'],
+    yahooSuffix: () => '.L',
+  },
+  de: {
+    id: 'de',
+    name: 'Germany',
+    flag: '🇩🇪',
+    scannerUrl: 'https://scanner.tradingview.com/germany/scan',
+    marketCode: 'germany',
+    exchanges: ['XETR', 'FWB'],
+    yahooSuffix: (exchange) => exchange === 'XETR' ? '.DE' : '.F',
+  },
+  fr: {
+    id: 'fr',
+    name: 'France',
+    flag: '🇫🇷',
+    scannerUrl: 'https://scanner.tradingview.com/france/scan',
+    marketCode: 'france',
+    exchanges: ['EURONEXT'],
+    yahooSuffix: () => '.PA',
+  },
+  hk: {
+    id: 'hk',
+    name: 'Hong Kong',
+    flag: '🇭🇰',
+    scannerUrl: 'https://scanner.tradingview.com/hongkong/scan',
+    marketCode: 'hongkong',
+    exchanges: ['HKEX'],
+    yahooSuffix: () => '.HK',
+  },
+  kr: {
+    id: 'kr',
+    name: 'South Korea',
+    flag: '🇰🇷',
+    scannerUrl: 'https://scanner.tradingview.com/korea/scan',
+    marketCode: 'korea',
+    exchanges: ['KRX', 'KOSDAQ'],
+    yahooSuffix: (exchange) => exchange === 'KOSDAQ' ? '.KQ' : '.KS',
+  },
+  za: {
+    id: 'za',
+    name: 'South Africa',
+    flag: '🇿🇦',
+    scannerUrl: 'https://scanner.tradingview.com/rsa/scan',
+    marketCode: 'rsa',
+    exchanges: ['JSE'],
+    yahooSuffix: () => '.JO',
+  },
+};
+
+export const DEFAULT_MARKETS = ['us', 'ca'];
+
+const COLUMNS = [
+  'name',
+  'description',
+  'close',
+  'change',
+  'change_from_open',
+  'volume',
+  'market_cap_basic',
+  'sector',
+  'High.All',
+  'price_52_week_high',
+  'price_52_week_low',
+  'exchange',
+];
 
 interface TradingViewResult {
-  s: string; // e.g. "NASDAQ:AAPL"
-  d: (string | number | null)[]; // data columns in request order
+  s: string;
+  d: (string | number | null)[];
 }
 
 interface TradingViewResponse {
@@ -36,195 +133,195 @@ export interface TradingViewStock {
   high52w: number | null;
   low52w: number | null;
   allTimeHigh: number | null;
+  market: string; // market id
+}
+
+function parseResults(data: TradingViewResponse | null, marketId: string): TradingViewStock[] {
+  if (!data?.data) return [];
+  return data.data
+    .map((item) => {
+      const [exchangePrefix, ticker] = item.s.split(':');
+      const d = item.d;
+      return {
+        ticker: ticker || (d[0] as string),
+        exchange: (d[11] as string) || exchangePrefix || '',
+        name: (d[1] as string) || '',
+        close: (d[2] as number) || 0,
+        change: (d[3] as number) || 0,
+        changePct: (d[4] as number) || 0,
+        volume: (d[5] as number) || 0,
+        marketCap: (d[6] as number) || null,
+        sector: (d[7] as string) || null,
+        high52w: (d[9] as number) || null,
+        low52w: (d[10] as number) || null,
+        allTimeHigh: (d[8] as number) || null,
+        market: marketId,
+      };
+    })
+    .filter((s) => s.ticker && s.close > 0);
+}
+
+async function fetchFromScanner(url: string, payload: object): Promise<TradingViewResponse> {
+  return retryWithBackoff(async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(`TradingView scanner HTTP ${res.status}: ${res.statusText}`);
+    }
+    return res.json() as Promise<TradingViewResponse>;
+  });
 }
 
 /**
- * Fetch top losers from TradingView scanner API.
- *
- * Mirrors the data from:
- * https://www.tradingview.com/markets/stocks-usa/market-movers-losers/
- *
- * @param limit Number of stocks to fetch (max ~1000)
+ * Apply Yahoo Finance ticker suffix based on market.
  */
-export async function fetchTopLosers(limit: number = 200): Promise<TradingViewStock[]> {
+export function applyYahooSuffix(stock: TradingViewStock): TradingViewStock {
+  const market = MARKETS[stock.market];
+  if (!market) return stock;
+  const suffix = market.yahooSuffix(stock.exchange);
+  return {
+    ...stock,
+    ticker: suffix ? `${stock.ticker}${suffix}` : stock.ticker,
+  };
+}
+
+/**
+ * Fetch top losers from a specific market.
+ */
+export async function fetchMarketLosers(
+  marketId: string,
+  limit: number = 200,
+): Promise<TradingViewStock[]> {
+  const market = MARKETS[marketId];
+  if (!market) {
+    console.error(`Unknown market: ${marketId}`);
+    return [];
+  }
+
   const payload = {
-    columns: [
-      'name',
-      'description',
-      'close',
-      'change',
-      'change_from_open',
-      'volume',
-      'market_cap_basic',
-      'sector',
-      'High.All',
-      'price_52_week_high',
-      'price_52_week_low',
-      'exchange',
-    ],
+    columns: COLUMNS,
     ignore_unknown_fields: false,
     options: { lang: 'en' },
     range: [0, limit],
     sort: { sortBy: 'change', sortOrder: 'asc' },
     symbols: {},
-    markets: ['america'],
-    filter2: {
-      operator: 'and',
-      operands: [
-        // Only common stocks (no ETFs, funds, etc.)
-        { operation: { operator: 'equal', operand: ['type', 'stock'] } },
-        // Only NYSE and NASDAQ
-        {
-          operation: {
-            operator: 'in_range',
-            operand: ['exchange', ['AMEX', 'NYSE', 'NASDAQ']],
-          },
-        },
-        // Must be actively traded (volume > 0)
-        { operation: { operator: 'greater', operand: ['volume', 0] } },
-        // Price > 0 (no weird entries)
-        { operation: { operator: 'greater', operand: ['close', 0] } },
-      ],
-    },
+    markets: [market.marketCode],
+    filter: [
+      { left: 'type', operation: 'equal', right: 'stock' },
+      { left: 'subtype', operation: 'in_range', right: ['common', 'foreign-issuer'] },
+      { left: 'exchange', operation: 'in_range', right: market.exchanges },
+      { left: 'is_primary', operation: 'equal', right: true },
+      { left: 'volume', operation: 'greater', right: 0 },
+      { left: 'close', operation: 'greater', right: 0 },
+    ],
   };
 
   try {
-    const data = await retryWithBackoff(async () => {
-      const res = await fetch(SCANNER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error(`TradingView scanner HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      return res.json() as Promise<TradingViewResponse>;
-    });
-
-    if (!data?.data) return [];
-
-    return data.data
-      .map((item) => {
-        const [exchangePrefix, ticker] = item.s.split(':');
-        const d = item.d;
-
-        return {
-          ticker: ticker || (d[0] as string),
-          exchange: (d[11] as string) || exchangePrefix || '',
-          name: (d[1] as string) || '',
-          close: (d[2] as number) || 0,
-          change: (d[3] as number) || 0,
-          changePct: (d[4] as number) || 0,
-          volume: (d[5] as number) || 0,
-          marketCap: (d[6] as number) || null,
-          sector: (d[7] as string) || null,
-          high52w: (d[9] as number) || null,
-          low52w: (d[10] as number) || null,
-          allTimeHigh: (d[8] as number) || null,
-        };
-      })
-      .filter((s) => s.ticker && s.close > 0);
+    const results = parseResults(await fetchFromScanner(market.scannerUrl, payload), marketId);
+    return results.map(applyYahooSuffix);
   } catch (error) {
-    console.error('TradingView: Error fetching top losers:', error);
+    console.error(`TradingView: Error fetching ${market.name} losers:`, error);
     return [];
   }
 }
 
 /**
- * Fetch stocks that have declined the most from their all-time high.
- * This is a more targeted query for our specific use case.
+ * Fetch stocks with high ATH decline from a specific market.
  */
+export async function fetchMarketHighDecline(
+  marketId: string,
+  minDeclinePct: number = 90,
+  limit: number = 300,
+): Promise<TradingViewStock[]> {
+  const market = MARKETS[marketId];
+  if (!market) {
+    console.error(`Unknown market: ${marketId}`);
+    return [];
+  }
+
+  const payload = {
+    columns: COLUMNS,
+    ignore_unknown_fields: false,
+    options: { lang: 'en' },
+    range: [0, limit],
+    sort: { sortBy: 'change', sortOrder: 'asc' },
+    symbols: {},
+    markets: [market.marketCode],
+    filter: [
+      { left: 'type', operation: 'equal', right: 'stock' },
+      { left: 'subtype', operation: 'in_range', right: ['common', 'foreign-issuer'] },
+      { left: 'exchange', operation: 'in_range', right: market.exchanges },
+      { left: 'is_primary', operation: 'equal', right: true },
+      { left: 'volume', operation: 'greater', right: 0 },
+      { left: 'close', operation: 'greater', right: 0 },
+      { left: 'High.All', operation: 'greater', right: 0 },
+    ],
+  };
+
+  try {
+    const results = parseResults(await fetchFromScanner(market.scannerUrl, payload), marketId);
+    return results
+      .map(applyYahooSuffix)
+      .filter((s) => {
+        if (!s.allTimeHigh || s.allTimeHigh <= 0) return false;
+        const decline = ((s.allTimeHigh - s.close) / s.allTimeHigh) * 100;
+        return decline >= minDeclinePct;
+      });
+  } catch (error) {
+    console.error(`TradingView: Error fetching ${market.name} high-decline:`, error);
+    return [];
+  }
+}
+
+/**
+ * Fetch losers from multiple markets in parallel.
+ */
+export async function fetchMultiMarketLosers(
+  marketIds: string[],
+  limitPerMarket: number = 200,
+): Promise<TradingViewStock[]> {
+  const results = await Promise.all(
+    marketIds.map((id) => fetchMarketLosers(id, limitPerMarket)),
+  );
+  return results.flat();
+}
+
+/**
+ * Fetch high-decline stocks from multiple markets in parallel.
+ */
+export async function fetchMultiMarketHighDecline(
+  marketIds: string[],
+  minDeclinePct: number = 90,
+  limitPerMarket: number = 300,
+): Promise<TradingViewStock[]> {
+  const results = await Promise.all(
+    marketIds.map((id) => fetchMarketHighDecline(id, minDeclinePct, limitPerMarket)),
+  );
+  return results.flat();
+}
+
+// Legacy exports for backward compatibility
+export async function fetchTopLosers(limit: number = 200): Promise<TradingViewStock[]> {
+  return fetchMarketLosers('us', limit);
+}
+
+export async function fetchCanadianLosers(limit: number = 200): Promise<TradingViewStock[]> {
+  return fetchMarketLosers('ca', limit);
+}
+
 export async function fetchHighDeclineStocks(
   minDeclinePct: number = 90,
   limit: number = 300,
 ): Promise<TradingViewStock[]> {
-  const payload = {
-    columns: [
-      'name',
-      'description',
-      'close',
-      'change',
-      'change_from_open',
-      'volume',
-      'market_cap_basic',
-      'sector',
-      'High.All',
-      'price_52_week_high',
-      'price_52_week_low',
-      'exchange',
-    ],
-    ignore_unknown_fields: false,
-    options: { lang: 'en' },
-    range: [0, limit],
-    sort: { sortBy: 'change', sortOrder: 'asc' },
-    symbols: {},
-    markets: ['america'],
-    filter2: {
-      operator: 'and',
-      operands: [
-        { operation: { operator: 'equal', operand: ['type', 'stock'] } },
-        {
-          operation: {
-            operator: 'in_range',
-            operand: ['exchange', ['AMEX', 'NYSE', 'NASDAQ']],
-          },
-        },
-        { operation: { operator: 'greater', operand: ['volume', 0] } },
-        { operation: { operator: 'greater', operand: ['close', 0] } },
-        // Must have an all-time high recorded
-        { operation: { operator: 'greater', operand: ['High.All', 0] } },
-      ],
-    },
-  };
+  return fetchMarketHighDecline('us', minDeclinePct, limit);
+}
 
-  try {
-    const data = await retryWithBackoff(async () => {
-      const res = await fetch(SCANNER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error(`TradingView scanner HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      return res.json() as Promise<TradingViewResponse>;
-    });
-
-    if (!data?.data) return [];
-
-    return data.data
-      .map((item): { declinePct: number; stock: TradingViewStock } => {
-        const [exchangePrefix, ticker] = item.s.split(':');
-        const d = item.d;
-        const ath = (d[8] as number) || 0;
-        const close = (d[2] as number) || 0;
-
-        return {
-          declinePct: ath > 0 ? ((ath - close) / ath) * 100 : 0,
-          stock: {
-            ticker: ticker || (d[0] as string),
-            exchange: (d[11] as string) || exchangePrefix || '',
-            name: (d[1] as string) || '',
-            close,
-            change: (d[3] as number) || 0,
-            changePct: (d[4] as number) || 0,
-            volume: (d[5] as number) || 0,
-            marketCap: (d[6] as number) || null,
-            sector: (d[7] as string) || null,
-            high52w: (d[9] as number) || null,
-            low52w: (d[10] as number) || null,
-            allTimeHigh: ath || null,
-          },
-        };
-      })
-      .filter((s) => s.stock.ticker && s.stock.close > 0 && s.declinePct >= minDeclinePct)
-      .map((s) => s.stock);
-  } catch (error) {
-    console.error('TradingView: Error fetching high-decline stocks:', error);
-    return [];
-  }
+export async function fetchCanadianHighDecline(
+  minDeclinePct: number = 90,
+  limit: number = 300,
+): Promise<TradingViewStock[]> {
+  return fetchMarketHighDecline('ca', minDeclinePct, limit);
 }

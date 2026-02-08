@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/zonnebloem",
       "schedule": "0 16 * * 1-5"
-    },
-    {
-      "path": "/api/cron/zonnebloem",
-      "schedule": "0 21 * * 1-5"
     }
   ]
 }

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '@/components/AuthGuard';
+import BackupStatus from '@/components/BackupStatus';
 import { supabase } from '@/lib/supabase';
-import type { Settings, ZonnebloemSettings } from '@/lib/types';
-import { ZONNEBLOEM_DEFAULTS } from '@/lib/types';
+import type { Settings, MarketCapCategory, ZonnebloemSettings } from '@/lib/types';
+import { DEFAULT_VOLATILE_SECTORS, MARKET_CAP_CATEGORIES, ZONNEBLOEM_DEFAULTS } from '@/lib/types';
 
 const SECTORS = [
   'Technology',
@@ -20,36 +21,10 @@ const SECTORS = [
   'Utilities',
 ];
 
-const ALL_MARKETS = [
-  { id: 'america', label: 'United States' },
-  { id: 'europe', label: 'Europe (Euronext)' },
-  { id: 'uk', label: 'United Kingdom' },
-  { id: 'canada', label: 'Canada' },
-  { id: 'australia', label: 'Australia' },
-  { id: 'germany', label: 'Germany (XETRA)' },
-  { id: 'hongkong', label: 'Hong Kong' },
-  { id: 'japan', label: 'Japan' },
-  { id: 'india', label: 'India' },
-  { id: 'brazil', label: 'Brazil' },
-  { id: 'korea', label: 'South Korea' },
-  { id: 'taiwan', label: 'Taiwan' },
-  { id: 'singapore', label: 'Singapore' },
-  { id: 'mexico', label: 'Mexico' },
-  { id: 'israel', label: 'Israel' },
-  { id: 'indonesia', label: 'Indonesia' },
-];
-
-const EXCLUDED_COUNTRIES = [
-  'Russia', 'North Korea', 'Iran', 'Syria', 'Belarus', 'Myanmar', 'Venezuela', 'Cuba',
-  'Afghanistan', 'Somalia', 'Sudan', 'South Sudan', 'Yemen', 'Libya',
-];
-
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'kuifje' | 'zonnebloem'>('kuifje');
-
   const [settings, setSettings] = useState<Settings>({
-    ath_decline_min: 95,
-    ath_decline_max: 99,
+    ath_decline_min: 85,
+    ath_decline_max: 100,
     growth_threshold_pct: 200,
     min_growth_events: 2,
     min_consecutive_days: 5,
@@ -57,10 +32,18 @@ export default function SettingsPage() {
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
     excluded_sectors: [],
+    included_volatile_sectors: [],  // Empty = don't scan volatile sectors
+    market_cap_categories: ['micro', 'small', 'mid', 'large'],  // All selected by default
+    auto_scan_interval_minutes: 5,
+    // NovaBay-type filter settings
+    enable_stable_spike_filter: false,
+    stable_max_decline_pct: 10,
+    stable_min_spike_pct: 100,
+    stable_lookback_months: 12,
+    // Scanner variety
+    skip_recently_scanned_hours: 0,
   });
-
   const [zbSettings, setZbSettings] = useState<ZonnebloemSettings>({ ...ZONNEBLOEM_DEFAULTS });
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -71,10 +54,7 @@ export default function SettingsPage() {
 
     if (data) {
       const newSettings = { ...settings };
-      const newZbSettings = { ...ZONNEBLOEM_DEFAULTS };
-
       for (const row of data) {
-        // Kuifje settings
         const key = row.key as keyof Settings;
         if (key in newSettings) {
           try {
@@ -84,25 +64,32 @@ export default function SettingsPage() {
                 ? JSON.parse(row.value)
                 : row.value;
             (newSettings as Record<string, unknown>)[key] = val;
-          } catch { /* keep default */ }
+          } catch {
+            // keep default
+          }
         }
+      }
+      setSettings(newSettings);
 
-        // Zonnebloem settings
-        const zbKey = row.key as keyof ZonnebloemSettings;
-        if (zbKey in newZbSettings) {
-          try {
-            const defaultVal = newZbSettings[zbKey];
-            (newZbSettings as unknown as Record<string, unknown>)[zbKey] =
-              typeof defaultVal === 'number'
+      // Load Zonnebloem settings
+      const zbData = data?.filter(row => (row.key as string).startsWith('zb_'));
+      if (zbData && zbData.length > 0) {
+        const newZb = { ...ZONNEBLOEM_DEFAULTS };
+        for (const row of zbData) {
+          const key = row.key as keyof ZonnebloemSettings;
+          if (key in newZb) {
+            try {
+              const val = typeof newZb[key] === 'number'
                 ? Number(row.value)
                 : typeof row.value === 'string'
                   ? JSON.parse(row.value)
                   : row.value;
-          } catch { /* keep default */ }
+              (newZb as Record<string, unknown>)[key] = val;
+            } catch { /* keep default */ }
+          }
         }
+        setZbSettings(newZb);
       }
-      setSettings(newSettings);
-      setZbSettings(newZbSettings);
     }
     setLoading(false);
   }, []);
@@ -115,8 +102,8 @@ export default function SettingsPage() {
     setSaving(true);
     setSaved(false);
 
-    const kuifjeEntries = Object.entries(settings);
-    for (const [key, value] of kuifjeEntries) {
+    const entries = Object.entries(settings);
+    for (const [key, value] of entries) {
       const storeValue = typeof value === 'number' ? String(value) : JSON.stringify(value);
       await supabase
         .from('settings')
@@ -126,6 +113,7 @@ export default function SettingsPage() {
         );
     }
 
+    // Save Zonnebloem settings
     const zbEntries = Object.entries(zbSettings);
     for (const [key, value] of zbEntries) {
       const storeValue = typeof value === 'number' ? String(value) : JSON.stringify(value);
@@ -146,47 +134,42 @@ export default function SettingsPage() {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }
 
-  function updateZbSetting<K extends keyof ZonnebloemSettings>(key: K, value: ZonnebloemSettings[K]) {
-    setZbSettings((prev) => ({ ...prev, [key]: value }));
-  }
-
   function toggleSectorExclusion(sector: string) {
     setSettings((prev) => {
       const excluded = [...prev.excluded_sectors];
       const idx = excluded.indexOf(sector);
-      if (idx >= 0) excluded.splice(idx, 1);
-      else excluded.push(sector);
+      if (idx >= 0) {
+        excluded.splice(idx, 1);
+      } else {
+        excluded.push(sector);
+      }
       return { ...prev, excluded_sectors: excluded };
     });
   }
 
-  function toggleZbSectorExclusion(sector: string) {
-    setZbSettings((prev) => {
-      const excluded = [...prev.zb_excluded_sectors];
-      const idx = excluded.indexOf(sector);
-      if (idx >= 0) excluded.splice(idx, 1);
-      else excluded.push(sector);
-      return { ...prev, zb_excluded_sectors: excluded };
+  function toggleVolatileSectorInclusion(sector: string) {
+    setSettings((prev) => {
+      const included = [...prev.included_volatile_sectors];
+      const idx = included.indexOf(sector);
+      if (idx >= 0) {
+        included.splice(idx, 1);
+      } else {
+        included.push(sector);
+      }
+      return { ...prev, included_volatile_sectors: included };
     });
   }
 
-  function toggleZbMarket(marketId: string) {
-    setZbSettings((prev) => {
-      const markets = [...prev.zb_markets];
-      const idx = markets.indexOf(marketId);
-      if (idx >= 0) markets.splice(idx, 1);
-      else markets.push(marketId);
-      return { ...prev, zb_markets: markets };
-    });
-  }
-
-  function toggleZbCountryExclusion(country: string) {
-    setZbSettings((prev) => {
-      const excluded = [...prev.zb_excluded_countries];
-      const idx = excluded.indexOf(country);
-      if (idx >= 0) excluded.splice(idx, 1);
-      else excluded.push(country);
-      return { ...prev, zb_excluded_countries: excluded };
+  function toggleMarketCapCategory(category: string) {
+    setSettings((prev) => {
+      const categories = [...prev.market_cap_categories];
+      const idx = categories.indexOf(category);
+      if (idx >= 0) {
+        categories.splice(idx, 1);
+      } else {
+        categories.push(category);
+      }
+      return { ...prev, market_cap_categories: categories };
     });
   }
 
@@ -215,212 +198,569 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Scanner Tabs */}
-        <div className="flex gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
-          <button
-            onClick={() => setActiveTab('kuifje')}
-            className={`flex-1 px-4 py-2 rounded text-sm font-medium transition-colors ${
-              activeTab === 'kuifje'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
-          >
-            Kuifje (ATH Recovery)
-          </button>
-          <button
-            onClick={() => setActiveTab('zonnebloem')}
-            className={`flex-1 px-4 py-2 rounded text-sm font-medium transition-colors ${
-              activeTab === 'zonnebloem'
-                ? 'bg-purple-600 text-white'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
-          >
-            Prof. Zonnebloem (Spike Scanner)
-          </button>
-        </div>
+        {/* Screening Criteria */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Screening Criteria</h2>
 
-        {/* KUIFJE SETTINGS */}
-        {activeTab === 'kuifje' && (
-          <>
-            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
-              <h2 className="text-lg font-semibold">Kuifje - Screening Criteria</h2>
-              <p className="text-sm text-slate-400">
-                Searches for stocks that have crashed 95-99% from ATH but show recovery growth events.
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                ATH Decline Min (%)
+              </label>
+              <input
+                type="number"
+                value={settings.ath_decline_min}
+                onChange={(e) => updateSetting('ath_decline_min', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+                max={100}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                ATH Decline Max (%)
+              </label>
+              <input
+                type="number"
+                value={settings.ath_decline_max}
+                onChange={(e) => updateSetting('ath_decline_max', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+                max={100}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Growth Threshold (%)
+              </label>
+              <input
+                type="number"
+                value={settings.growth_threshold_pct}
+                onChange={(e) => updateSetting('growth_threshold_pct', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={50}
+              />
+              <p className="text-xs text-slate-500 mt-1">Min growth % for an event (e.g. 200 or 300)</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Min Growth Events
+              </label>
+              <input
+                type="number"
+                value={settings.min_growth_events}
+                onChange={(e) => updateSetting('min_growth_events', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Min Consecutive Days Above Threshold
+              </label>
+              <input
+                type="number"
+                value={settings.min_consecutive_days}
+                onChange={(e) => updateSetting('min_consecutive_days', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+              />
+              <p className="text-xs text-slate-500 mt-1">Filters out single-day spikes</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Growth Lookback (years)
+              </label>
+              <input
+                type="number"
+                value={settings.growth_lookback_years}
+                onChange={(e) => updateSetting('growth_lookback_years', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+                max={10}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Purchase Limit Multiplier
+            </label>
+            <input
+              type="number"
+              value={settings.purchase_limit_multiplier}
+              onChange={(e) => updateSetting('purchase_limit_multiplier', Number(e.target.value))}
+              className="w-48 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+              min={1}
+              max={3}
+              step={0.05}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Purchase limit = 5Y Low x {settings.purchase_limit_multiplier.toFixed(2)} (currently {((settings.purchase_limit_multiplier - 1) * 100).toFixed(0)}% above 5Y low)
+            </p>
+          </div>
+        </section>
+
+        {/* Sector Exclusions */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Sector Exclusions</h2>
+          <p className="text-sm text-slate-400">
+            Stocks in excluded sectors will be skipped during scanning.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {SECTORS.map((sector) => (
+              <label
+                key={sector}
+                className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white"
+              >
+                <input
+                  type="checkbox"
+                  checked={settings.excluded_sectors.includes(sector)}
+                  onChange={() => toggleSectorExclusion(sector)}
+                  className="rounded bg-slate-700 border-slate-500"
+                />
+                {sector}
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {/* Volatile Sectors */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Volatile Sectors</h2>
+          <p className="text-sm text-slate-400">
+            These sectors are known for extreme volatility. Check the ones you <strong>want to include</strong> in scanning.
+            Unchecked sectors will be skipped.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {DEFAULT_VOLATILE_SECTORS.map((sector) => (
+              <label
+                key={sector}
+                className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white"
+              >
+                <input
+                  type="checkbox"
+                  checked={settings.included_volatile_sectors.includes(sector)}
+                  onChange={() => toggleVolatileSectorInclusion(sector)}
+                  className="rounded bg-slate-700 border-slate-500"
+                />
+                {sector}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, included_volatile_sectors: [...DEFAULT_VOLATILE_SECTORS] }))}
+              className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded transition-colors"
+            >
+              Include All
+            </button>
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, included_volatile_sectors: [] }))}
+              className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+            >
+              Exclude All
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Currently: {settings.included_volatile_sectors.length === 0
+              ? 'All volatile sectors excluded'
+              : `${settings.included_volatile_sectors.length} volatile sector(s) included`}
+          </p>
+        </section>
+
+        {/* Market Cap Filter */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Market Cap Filter</h2>
+          <p className="text-sm text-slate-400">
+            Check the market cap categories you want to include in scanning. Multiple selections allowed.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.entries(MARKET_CAP_CATEGORIES) as [MarketCapCategory, typeof MARKET_CAP_CATEGORIES[MarketCapCategory]][]).map(([key, cat]) => (
+              <label
+                key={key}
+                className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white"
+              >
+                <input
+                  type="checkbox"
+                  checked={settings.market_cap_categories.includes(key)}
+                  onChange={() => toggleMarketCapCategory(key)}
+                  className="rounded bg-slate-700 border-slate-500"
+                />
+                {cat.label}
+              </label>
+            ))}
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, market_cap_categories: ['micro', 'small', 'mid', 'large'] }))}
+              className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded transition-colors"
+            >
+              Select All
+            </button>
+            <button
+              onClick={() => setSettings(prev => ({ ...prev, market_cap_categories: [] }))}
+              className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+            >
+              Clear All
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            {settings.market_cap_categories.length === 0
+              ? 'Warning: No market caps selected - nothing will be scanned!'
+              : settings.market_cap_categories.length === 4
+                ? 'All market cap sizes included'
+                : `${settings.market_cap_categories.length} category(s) selected`}
+          </p>
+        </section>
+
+        {/* NovaBay-Type Filter: Stable with Spikes */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Stable with Spikes Filter (NovaBay-type)</h2>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.enable_stable_spike_filter}
+                onChange={(e) => updateSetting('enable_stable_spike_filter', e.target.checked)}
+                className="rounded bg-slate-700 border-slate-500"
+              />
+              <span className="text-sm text-slate-300">Enable</span>
+            </label>
+          </div>
+          <p className="text-sm text-slate-400">
+            Find stocks like NovaBay: stable base price with occasional large upward spikes.
+            These are stocks that haven&apos;t declined much but have shown explosive growth potential.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Max Decline from Average (%)
+              </label>
+              <input
+                type="number"
+                value={settings.stable_max_decline_pct}
+                onChange={(e) => updateSetting('stable_max_decline_pct', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+                max={50}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                E.g., 10 = stock can&apos;t drop more than 10% below its average
               </p>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">ATH Decline Min (%)</label>
-                  <input type="number" value={settings.ath_decline_min} onChange={(e) => updateSetting('ath_decline_min', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={0} max={100} />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">ATH Decline Max (%)</label>
-                  <input type="number" value={settings.ath_decline_max} onChange={(e) => updateSetting('ath_decline_max', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={0} max={100} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Growth Threshold (%)</label>
-                  <input type="number" value={settings.growth_threshold_pct} onChange={(e) => updateSetting('growth_threshold_pct', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={50} />
-                  <p className="text-xs text-slate-500 mt-1">Min growth % for an event</p>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Min Growth Events</label>
-                  <input type="number" value={settings.min_growth_events} onChange={(e) => updateSetting('min_growth_events', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={1} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Min Consecutive Days</label>
-                  <input type="number" value={settings.min_consecutive_days} onChange={(e) => updateSetting('min_consecutive_days', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={1} />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Growth Lookback (years)</label>
-                  <input type="number" value={settings.growth_lookback_years} onChange={(e) => updateSetting('growth_lookback_years', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={1} max={10} />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Purchase Limit Multiplier</label>
-                <input type="number" value={settings.purchase_limit_multiplier} onChange={(e) => updateSetting('purchase_limit_multiplier', Number(e.target.value))} className="w-48 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={1} max={3} step={0.05} />
-                <p className="text-xs text-slate-500 mt-1">Purchase limit = 5Y Low x {settings.purchase_limit_multiplier.toFixed(2)}</p>
-              </div>
-            </section>
-
-            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
-              <h2 className="text-lg font-semibold">Kuifje - Sector Exclusions</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {SECTORS.map((sector) => (
-                  <label key={sector} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
-                    <input type="checkbox" checked={settings.excluded_sectors.includes(sector)} onChange={() => toggleSectorExclusion(sector)} className="rounded bg-slate-700 border-slate-500" />
-                    {sector}
-                  </label>
-                ))}
-              </div>
-            </section>
-
-            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-2">
-              <h2 className="text-lg font-semibold">Kuifje - Scan Schedule</h2>
-              <p className="text-sm text-slate-400">Scans run automatically on weekdays via Vercel Cron:</p>
-              <ul className="text-sm text-slate-300 space-y-1 pl-4 list-disc">
-                <li>4:21 PM EST (daily weekdays)</li>
-              </ul>
-            </section>
-          </>
-        )}
-
-        {/* PROFESSOR ZONNEBLOEM SETTINGS */}
-        {activeTab === 'zonnebloem' && (
-          <>
-            <section className="bg-slate-800 border border-purple-700/50 rounded-lg p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-purple-300">Prof. Zonnebloem - Spike Detection</h2>
-              <p className="text-sm text-slate-400">
-                Searches for stocks with a stable base price and explosive upward spikes.
-                Like NovaBay Pharmaceuticals: steady around $0.60, but spiking to $2.50 and even $15+.
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">
+                Min Spike Above Average (%)
+              </label>
+              <input
+                type="number"
+                value={settings.stable_min_spike_pct}
+                onChange={(e) => updateSetting('stable_min_spike_pct', Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={50}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                E.g., 100 = require at least 2x spike above average
               </p>
+            </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Minimum Spike (%)</label>
-                  <input type="number" value={zbSettings.zb_min_spike_pct} onChange={(e) => updateZbSetting('zb_min_spike_pct', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={50} max={500} />
-                  <p className="text-xs text-slate-500 mt-1">Min spike % above base (100% = doubles)</p>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Min Spike Duration (days)</label>
-                  <input type="number" value={zbSettings.zb_min_spike_duration_days} onChange={(e) => updateZbSetting('zb_min_spike_duration_days', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={2} max={10} />
-                  <p className="text-xs text-slate-500 mt-1">Filters out splits / data errors</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Min Number of Spikes</label>
-                  <input type="number" value={zbSettings.zb_min_spike_count} onChange={(e) => updateZbSetting('zb_min_spike_count', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={1} max={5} />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Lookback Period (months)</label>
-                  <input type="number" value={zbSettings.zb_lookback_months} onChange={(e) => updateZbSetting('zb_lookback_months', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={6} max={36} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Max Price Decline 12m (%)</label>
-                  <input type="number" value={zbSettings.zb_max_price_decline_12m_pct} onChange={(e) => updateZbSetting('zb_max_price_decline_12m_pct', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={0} max={50} />
-                  <p className="text-xs text-slate-500 mt-1">Must not have fallen more than this</p>
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Max Base Decline (%)</label>
-                  <input type="number" value={zbSettings.zb_max_base_decline_pct} onChange={(e) => updateZbSetting('zb_max_base_decline_pct', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={10} max={50} />
-                  <p className="text-xs text-slate-500 mt-1">Base price stability (excl. spikes)</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Min Avg Volume (30d)</label>
-                  <input type="number" value={zbSettings.zb_min_avg_volume} onChange={(e) => updateZbSetting('zb_min_avg_volume', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={10000} max={500000} step={10000} />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Min Price ($)</label>
-                  <input type="number" value={zbSettings.zb_min_price} onChange={(e) => updateZbSetting('zb_min_price', Number(e.target.value))} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm" min={0.01} max={5} step={0.01} />
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-slate-800 border border-purple-700/50 rounded-lg p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-purple-300">Prof. Zonnebloem - Markets</h2>
-              <p className="text-sm text-slate-400">Select which global markets to scan.</p>
-              <div className="grid grid-cols-2 gap-2">
-                {ALL_MARKETS.map((market) => (
-                  <label key={market.id} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
-                    <input type="checkbox" checked={zbSettings.zb_markets.includes(market.id)} onChange={() => toggleZbMarket(market.id)} className="rounded bg-slate-700 border-slate-500" />
-                    {market.label}
-                  </label>
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Lookback Period (months)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={settings.stable_lookback_months}
+                onChange={(e) => updateSetting('stable_lookback_months', Math.max(1, Number(e.target.value)))}
+                className="w-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+                max={24}
+              />
+              <div className="flex gap-2">
+                {[3, 6, 12, 18, 24].map((months) => (
+                  <button
+                    key={months}
+                    onClick={() => updateSetting('stable_lookback_months', months)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      settings.stable_lookback_months === months
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {months}m
+                  </button>
                 ))}
               </div>
-            </section>
+            </div>
+          </div>
 
-            <section className="bg-slate-800 border border-purple-700/50 rounded-lg p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-purple-300">Prof. Zonnebloem - Sector Exclusions</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {SECTORS.map((sector) => (
-                  <label key={sector} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
-                    <input type="checkbox" checked={zbSettings.zb_excluded_sectors.includes(sector)} onChange={() => toggleZbSectorExclusion(sector)} className="rounded bg-slate-700 border-slate-500" />
-                    {sector}
-                  </label>
+          <div className="bg-slate-700/50 rounded p-3 text-sm">
+            <p className="text-slate-300 font-medium">Example: NovaBay</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Stayed around $0.75 for most of 2024, but spiked to $4.22 (Sept) and $19 (Jan).
+              With max decline 10% and min spike 100%, this stock would be flagged.
+            </p>
+          </div>
+        </section>
+
+        {/* Scanner Variety Settings */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Scanner Variety</h2>
+          <p className="text-sm text-slate-400">
+            Configure how the scanner prioritizes new stocks over recently scanned ones.
+          </p>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Skip Recently Scanned (hours)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={settings.skip_recently_scanned_hours}
+                onChange={(e) => updateSetting('skip_recently_scanned_hours', Math.max(0, Number(e.target.value)))}
+                className="w-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+                max={168}
+              />
+              <div className="flex gap-2">
+                {[0, 4, 12, 24, 48].map((hours) => (
+                  <button
+                    key={hours}
+                    onClick={() => updateSetting('skip_recently_scanned_hours', hours)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      settings.skip_recently_scanned_hours === hours
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {hours === 0 ? 'Off' : `${hours}h`}
+                  </button>
                 ))}
               </div>
-            </section>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Set to 0 to disable. Higher values = more new stocks per scan, lower = more updates to existing stocks.
+            </p>
+          </div>
+        </section>
 
-            <section className="bg-slate-800 border border-purple-700/50 rounded-lg p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-purple-300">Prof. Zonnebloem - Country Exclusions</h2>
-              <p className="text-sm text-slate-400">Stocks from sanctioned/controversial countries are excluded.</p>
-              <div className="grid grid-cols-2 gap-2">
-                {EXCLUDED_COUNTRIES.map((country) => (
-                  <label key={country} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
-                    <input type="checkbox" checked={zbSettings.zb_excluded_countries.includes(country)} onChange={() => toggleZbCountryExclusion(country)} className="rounded bg-slate-700 border-slate-500" />
-                    {country}
-                  </label>
+        {/* Auto-Scan Settings */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Auto-Scan Settings</h2>
+          <p className="text-sm text-slate-400">
+            Configure how often the auto-scanner runs when enabled on the dashboard.
+          </p>
+
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Auto-Scan Interval (minutes)
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                value={settings.auto_scan_interval_minutes}
+                onChange={(e) => updateSetting('auto_scan_interval_minutes', Math.max(1, Number(e.target.value)))}
+                className="w-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+                max={60}
+              />
+              <div className="flex gap-2">
+                {[1, 5, 10, 15, 30, 60].map((mins) => (
+                  <button
+                    key={mins}
+                    onClick={() => updateSetting('auto_scan_interval_minutes', mins)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      settings.auto_scan_interval_minutes === mins
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                    }`}
+                  >
+                    {mins}m
+                  </button>
                 ))}
               </div>
-            </section>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Lower intervals = more API calls. Recommended: 5-15 minutes to avoid rate limiting.
+            </p>
+          </div>
+        </section>
 
-            <section className="bg-slate-800 border border-purple-700/50 rounded-lg p-6 space-y-2">
-              <h2 className="text-lg font-semibold text-purple-300">Prof. Zonnebloem - Scan Schedule</h2>
-              <p className="text-sm text-slate-400">Scans run automatically on weekdays via Vercel Cron:</p>
-              <ul className="text-sm text-slate-300 space-y-1 pl-4 list-disc">
-                <li>11:00 AM EST (weekdays)</li>
-                <li>4:00 PM EST (weekdays)</li>
-              </ul>
-              <p className="text-xs text-slate-500 mt-2">
-                Each scan prioritizes never-scanned stocks first, ensuring new discoveries every cycle.
-              </p>
-            </section>
-          </>
-        )}
+        {/* Background Scanning Info */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold">Background Scanning</h2>
+          <div className="bg-amber-900/30 border border-amber-700/50 rounded p-3">
+            <p className="text-amber-300 text-sm font-medium">Browser Limitations</p>
+            <p className="text-amber-200/80 text-xs mt-1">
+              When you switch tabs or close your laptop, browsers pause JavaScript to save battery.
+              The auto-scan countdown is preserved and will resume when you return.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm text-slate-300 font-medium">For true background scanning:</p>
+            <ul className="text-sm text-slate-400 space-y-1 pl-4 list-disc">
+              <li>
+                <strong className="text-slate-300">Server-side cron jobs</strong> run automatically even when your browser is closed
+              </li>
+              <li>Scans run on weekdays at 10:30 AM and 3:00 PM EST via Vercel Cron</li>
+              <li>These scans happen on the server and don&apos;t require your browser</li>
+            </ul>
+          </div>
+
+          <div className="bg-slate-700/50 rounded p-3 text-xs text-slate-400">
+            <p className="font-medium text-slate-300">How the auto-scan timer works:</p>
+            <ul className="mt-1 space-y-1 list-disc pl-4">
+              <li>Timer is saved to your browser storage</li>
+              <li>When you return to the tab, it picks up where it left off</li>
+              <li>If the timer expired while you were away, scan starts automatically</li>
+            </ul>
+          </div>
+        </section>
+
+        {/* Scan Schedule Info */}
+        <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-2">
+          <h2 className="text-lg font-semibold">Server Scan Schedule</h2>
+          <p className="text-sm text-slate-400">
+            Scans run automatically on weekdays via Vercel Cron (even when your browser is closed):
+          </p>
+          <ul className="text-sm text-slate-300 space-y-1 pl-4 list-disc">
+            <li>10:30 AM EST - 1 hour after market open</li>
+            <li>3:00 PM EST - 1 hour before market close</li>
+          </ul>
+          <p className="text-xs text-slate-500 mt-2">
+            Schedule is configured in vercel.json. Manual scans can be triggered from the dashboard.
+          </p>
+        </section>
+
+        {/* ===== Professor Zonnebloem Settings ===== */}
+        <section className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-purple-300">Professor Zonnebloem Settings</h2>
+          <p className="text-sm text-slate-400">
+            Zonnebloem finds stocks with a stable base price and occasional explosive upward spikes.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Spike % Above Base</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_spike_pct}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_spike_pct: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={25}
+              />
+              <p className="text-xs text-slate-500 mt-1">E.g. 75 = spike must be 75% above base price</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Spike Duration (days)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_spike_duration_days}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_spike_duration_days: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Spike Count</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_spike_count}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_spike_count: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={1}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Lookback (months)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_lookback_months}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_lookback_months: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={6}
+                max={60}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Max Price Decline 12m (%)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_max_price_decline_12m_pct}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_max_price_decline_12m_pct: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={5}
+                max={80}
+              />
+              <p className="text-xs text-slate-500 mt-1">Reject stocks that dropped more than this</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Max Base Decline (%)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_max_base_decline_pct}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_max_base_decline_pct: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={5}
+                max={80}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Avg Volume (30d)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_avg_volume}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_avg_volume: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Min Price ($)</label>
+              <input
+                type="number"
+                value={zbSettings.zb_min_price}
+                onChange={(e) => setZbSettings(prev => ({ ...prev, zb_min_price: Number(e.target.value) }))}
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white text-sm"
+                min={0}
+                step={0.01}
+              />
+            </div>
+          </div>
+
+          <div className="bg-purple-900/30 rounded p-3 text-sm">
+            <p className="text-purple-300 font-medium">Cron Schedule</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Zonnebloem scans run automatically at 4:00 PM UTC on weekdays via Vercel Cron.
+            </p>
+          </div>
+        </section>
+
+        {/* Data Backup */}
+        <BackupStatus />
       </div>
     </AuthGuard>
   );

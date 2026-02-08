@@ -2,25 +2,220 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ============================================
+   THEME SYSTEM - 8 Color Themes
+   ============================================ */
+
+/* Sunflower - Default Theme (Professor Zonnebloem) */
+:root,
+[data-theme="sunflower"] {
+  --bg-primary: #1a1608;
+  --bg-secondary: #2a240e;
+  --bg-tertiary: #3d3515;
+  --text-primary: #fffbeb;
+  --text-secondary: #fcd34d;
+  --text-muted: #d97706;
+  --accent-primary: #f59e0b;
+  --accent-secondary: #fbbf24;
+  --accent-green: #84cc16;
+  --accent-orange: #f97316;
+  --accent-red: #ef4444;
+  --border-color: #4d4318;
+  --card-bg: #2a240e;
+  --input-bg: #3d3515;
+  --sunflower-gold: #ffd700;
+  --sunflower-orange: #ff8c00;
+  --sunflower-brown: #8b4513;
+}
+
+[data-theme="midnight"] {
   --bg-primary: #0f172a;
   --bg-secondary: #1e293b;
   --bg-tertiary: #334155;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
-  --accent-blue: #3b82f6;
+  --text-muted: #64748b;
+  --accent-primary: #3b82f6;
+  --accent-secondary: #60a5fa;
   --accent-green: #22c55e;
   --accent-orange: #f97316;
   --accent-red: #ef4444;
   --border-color: #334155;
+  --card-bg: #1e293b;
+  --input-bg: #334155;
 }
+
+[data-theme="ocean"] {
+  --bg-primary: #0c1929;
+  --bg-secondary: #122a42;
+  --bg-tertiary: #1a3a5c;
+  --text-primary: #e0f2fe;
+  --text-secondary: #7dd3fc;
+  --text-muted: #38bdf8;
+  --accent-primary: #0ea5e9;
+  --accent-secondary: #38bdf8;
+  --accent-green: #2dd4bf;
+  --accent-orange: #fb923c;
+  --accent-red: #f87171;
+  --border-color: #1a3a5c;
+  --card-bg: #122a42;
+  --input-bg: #1a3a5c;
+}
+
+[data-theme="forest"] {
+  --bg-primary: #0f1a14;
+  --bg-secondary: #162419;
+  --bg-tertiary: #1f3322;
+  --text-primary: #ecfdf5;
+  --text-secondary: #86efac;
+  --text-muted: #4ade80;
+  --accent-primary: #22c55e;
+  --accent-secondary: #4ade80;
+  --accent-green: #34d399;
+  --accent-orange: #fbbf24;
+  --accent-red: #f87171;
+  --border-color: #1f3322;
+  --card-bg: #162419;
+  --input-bg: #1f3322;
+}
+
+[data-theme="sunset"] {
+  --bg-primary: #1a0f0f;
+  --bg-secondary: #2d1515;
+  --bg-tertiary: #451a1a;
+  --text-primary: #fff7ed;
+  --text-secondary: #fdba74;
+  --text-muted: #fb923c;
+  --accent-primary: #f97316;
+  --accent-secondary: #fb923c;
+  --accent-green: #a3e635;
+  --accent-orange: #fbbf24;
+  --accent-red: #ef4444;
+  --border-color: #451a1a;
+  --card-bg: #2d1515;
+  --input-bg: #451a1a;
+}
+
+[data-theme="lavender"] {
+  --bg-primary: #1a1625;
+  --bg-secondary: #251f35;
+  --bg-tertiary: #352d4a;
+  --text-primary: #f5f3ff;
+  --text-secondary: #c4b5fd;
+  --text-muted: #a78bfa;
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #a78bfa;
+  --accent-green: #4ade80;
+  --accent-orange: #fbbf24;
+  --accent-red: #f87171;
+  --border-color: #352d4a;
+  --card-bg: #251f35;
+  --input-bg: #352d4a;
+}
+
+[data-theme="rose"] {
+  --bg-primary: #1a0f14;
+  --bg-secondary: #2d151f;
+  --bg-tertiary: #451a2c;
+  --text-primary: #fff1f2;
+  --text-secondary: #fda4af;
+  --text-muted: #fb7185;
+  --accent-primary: #f43f5e;
+  --accent-secondary: #fb7185;
+  --accent-green: #4ade80;
+  --accent-orange: #fbbf24;
+  --accent-red: #ef4444;
+  --border-color: #451a2c;
+  --card-bg: #2d151f;
+  --input-bg: #451a2c;
+}
+
+[data-theme="cyber"] {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-tertiary: #1f1f1f;
+  --text-primary: #4ade80;
+  --text-secondary: #22c55e;
+  --text-muted: #16a34a;
+  --accent-primary: #22c55e;
+  --accent-secondary: #4ade80;
+  --accent-green: #4ade80;
+  --accent-orange: #fbbf24;
+  --accent-red: #ef4444;
+  --border-color: #22c55e33;
+  --card-bg: #141414;
+  --input-bg: #1f1f1f;
+}
+
+[data-theme="arctic"] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #e2e8f0;
+  --bg-tertiary: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --accent-primary: #0284c7;
+  --accent-secondary: #0ea5e9;
+  --accent-green: #16a34a;
+  --accent-orange: #ea580c;
+  --accent-red: #dc2626;
+  --border-color: #cbd5e1;
+  --card-bg: #e2e8f0;
+  --input-bg: #f1f5f9;
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Score row colors */
+/* Navbar background */
+.navbar-bg {
+  background-color: var(--bg-secondary);
+}
+
+/* ============================================
+   RAINBOW SCORE BAR
+   ============================================ */
+
+.rainbow-score {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.rainbow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--bg-tertiary);
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.rainbow-dot.active {
+  transform: scale(1.1);
+}
+
+.rainbow-dot.score-1 { background-color: #ef4444; }
+.rainbow-dot.score-2 { background-color: #f97316; }
+.rainbow-dot.score-3 { background-color: #eab308; }
+.rainbow-dot.score-4 { background-color: #a3e635; }
+.rainbow-dot.score-5 { background-color: #22c55e; }
+.rainbow-dot.score-6 { background-color: #10b981; }
+.rainbow-dot.score-7 { background-color: #14b8a6; }
+.rainbow-dot.score-8 { background-color: #06b6d4; }
+.rainbow-dot.score-9 { background-color: #0ea5e9; }
+.rainbow-dot.score-10 { background-color: #3b82f6; }
+
+/* ============================================
+   SCORE ROW COLORS
+   ============================================ */
+
 .row-score-green {
   background-color: rgba(34, 197, 94, 0.08);
 }
@@ -42,7 +237,10 @@ body {
   background-color: rgba(239, 68, 68, 0.15);
 }
 
-/* Custom scrollbar */
+/* ============================================
+   CUSTOM SCROLLBAR
+   ============================================ */
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -58,10 +256,13 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--text-muted);
 }
 
-/* Table styles */
+/* ============================================
+   TABLE STYLES
+   ============================================ */
+
 .stock-table th {
   cursor: pointer;
   user-select: none;
@@ -76,7 +277,10 @@ body {
   white-space: nowrap;
 }
 
-/* Favorite star animation */
+/* ============================================
+   FAVORITE STAR ANIMATION
+   ============================================ */
+
 .star-btn {
   transition: transform 0.15s ease;
 }
@@ -86,3 +290,452 @@ body {
 .star-btn:active {
   transform: scale(0.9);
 }
+
+/* ============================================
+   TICKER LINK STYLES
+   ============================================ */
+
+.ticker-link {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.ticker-link:hover {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+}
+
+/* ============================================
+   CARD & BUTTON THEMING
+   ============================================ */
+
+.card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.btn-primary {
+  background-color: var(--accent-primary);
+  color: white;
+  transition: opacity 0.15s ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.input-themed {
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.input-themed:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+.input-themed::placeholder {
+  color: var(--text-muted);
+}
+
+/* ============================================
+   PROFESSOR ZONNEBLOEM BRANDING
+   ============================================ */
+
+.logo-text {
+  background: linear-gradient(135deg, #ffd700 0%, #ff8c00 50%, #ffa500 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 800;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.logo-sunflower {
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* ============================================
+   SUNFLOWER EVENT ICONS
+   ============================================ */
+
+.sunflower-events {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sunflower-icon {
+  display: inline-block;
+  line-height: 1;
+}
+
+.sunflower-small {
+  font-size: 12px;
+}
+
+.sunflower-medium {
+  font-size: 16px;
+}
+
+.sunflower-large {
+  font-size: 20px;
+}
+
+/* ============================================
+   VERSION & SCROLL-TO-TOP FIXED ELEMENTS
+   ============================================ */
+
+.fixed-version {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  padding: 6px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  z-index: 50;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.fixed-version:hover {
+  opacity: 1;
+}
+
+.scroll-to-top {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  background: var(--accent-primary);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(20px);
+  transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.scroll-to-top.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.scroll-to-top:hover {
+  background: var(--accent-secondary);
+  transform: scale(1.1);
+}
+
+.scroll-to-top svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* ============================================
+   EXPORT REMINDER BANNER
+   ============================================ */
+
+.export-reminder {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #1a1608;
+  padding: 12px 20px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.export-reminder button {
+  background: rgba(0, 0, 0, 0.2);
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.export-reminder button:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+/* Fade in animation for rows */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* Table row animations */
+.animate-row {
+  animation: fadeInUp 0.3s ease-out forwards;
+  opacity: 0;
+}
+
+.animate-row:nth-child(1) { animation-delay: 0.02s; }
+.animate-row:nth-child(2) { animation-delay: 0.04s; }
+.animate-row:nth-child(3) { animation-delay: 0.06s; }
+.animate-row:nth-child(4) { animation-delay: 0.08s; }
+.animate-row:nth-child(5) { animation-delay: 0.1s; }
+.animate-row:nth-child(6) { animation-delay: 0.12s; }
+.animate-row:nth-child(7) { animation-delay: 0.14s; }
+.animate-row:nth-child(8) { animation-delay: 0.16s; }
+.animate-row:nth-child(9) { animation-delay: 0.18s; }
+.animate-row:nth-child(10) { animation-delay: 0.2s; }
+
+/* Card animations */
+.animate-card {
+  animation: fadeIn 0.4s ease-out;
+}
+
+/* Favorite star pop */
+.star-pop {
+  animation: pop 0.3s ease-out;
+}
+
+/* Loading skeleton */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* Pulse for loading states */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Bounce for attention */
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+/* Slide in for sidebar elements */
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Hover lift effect */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Button press effect */
+.btn-press {
+  transition: transform 0.1s ease;
+}
+
+.btn-press:active {
+  transform: scale(0.95);
+}
+
+/* Smooth color transitions */
+.color-transition {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* ============================================
+   MOBILE RESPONSIVE STYLES
+   ============================================ */
+
+/* Mobile-first table adjustments */
+@media (max-width: 1024px) {
+  .stock-table {
+    font-size: 13px;
+  }
+
+  .stock-table th,
+  .stock-table td {
+    padding: 8px 6px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Dashboard header */
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  /* Filter bar mobile layout */
+  .filter-bar-mobile {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .filter-bar-mobile > * {
+    width: 100%;
+  }
+
+  /* Horizontal scroll for table on mobile */
+  .table-container-mobile {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -16px;
+    padding: 0 16px;
+  }
+
+  .stock-table {
+    font-size: 12px;
+    min-width: 800px;
+  }
+
+  .stock-table th,
+  .stock-table td {
+    padding: 6px 4px;
+  }
+
+  /* Hide less important columns on mobile */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* Stack action buttons */
+  .action-buttons-mobile {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .action-buttons-mobile button {
+    flex: 1 1 auto;
+    min-width: 80px;
+  }
+
+  /* Fixed elements adjustment */
+  .fixed-version {
+    bottom: 8px;
+    left: 8px;
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+
+  .scroll-to-top {
+    bottom: 8px;
+    right: 8px;
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Card padding reduction */
+  .card-mobile {
+    padding: 12px;
+  }
+
+  /* Settings page mobile */
+  .settings-grid-mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .stock-table {
+    font-size: 11px;
+  }
+
+  /* Compact mode for very small screens */
+  .compact-mobile th,
+  .compact-mobile td {
+    padding: 4px 2px;
+  }
+
+  /* Stack pagination */
+  .pagination-mobile {
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+  .stock-table td,
+  .stock-table th {
+    min-height: 44px;
+  }
+
+  button,
+  input[type="checkbox"],
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .star-btn {
+    padding: 8px;
+  }
+}
+

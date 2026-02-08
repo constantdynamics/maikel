@@ -37,7 +37,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await runScan();
+    // Parse request body for market selection
+    let markets: string[] | undefined;
+    try {
+      const body = await request.json();
+      if (body.markets && Array.isArray(body.markets)) {
+        markets = body.markets;
+      }
+    } catch {
+      // No body or invalid JSON - use defaults
+    }
+
+    const result = await runScan(markets);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

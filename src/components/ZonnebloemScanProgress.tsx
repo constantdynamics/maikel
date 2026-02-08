@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface ZBScanProgressData {
   running: boolean;
@@ -27,6 +27,8 @@ interface Props {
 export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }: Props) {
   const [data, setData] = useState<ZBScanProgressData | null>(null);
   const [polling, setPolling] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+  const lastScanId = useRef<string | null>(null);
 
   const fetchProgress = useCallback(async () => {
     try {
@@ -40,11 +42,42 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
     return null;
   }, []);
 
+  // Check for running scan on mount (fixes: progress disappears on navigation)
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkOnMount() {
+      const result = await fetchProgress();
+      if (cancelled) return;
+
+      if (result?.running) {
+        // There's already a scan running - start polling
+        setPolling(true);
+        setShowResult(true);
+      } else if (result?.scan) {
+        // Show the last completed scan result briefly
+        const completedAt = result.scan.completedAt;
+        if (completedAt) {
+          const completedTime = new Date(completedAt).getTime();
+          const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+          if (completedTime > fiveMinutesAgo) {
+            setShowResult(true);
+          }
+        }
+      }
+    }
+
+    checkOnMount();
+    return () => { cancelled = true; };
+  }, [fetchProgress]);
+
+  // Start/continue polling when scan is triggered or running scan is detected
   useEffect(() => {
     if (!scanTriggered && !polling) return;
 
     if (scanTriggered && !polling) {
       setPolling(true);
+      setShowResult(true);
     }
 
     const interval = setInterval(async () => {
@@ -53,6 +86,8 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
         setPolling(false);
         clearInterval(interval);
         onScanComplete();
+        // Keep showing the result for a while
+        setShowResult(true);
       }
     }, 3000);
 
@@ -61,8 +96,16 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
     return () => clearInterval(interval);
   }, [scanTriggered, polling, fetchProgress, onScanComplete]);
 
+  // Track scan ID changes to detect new scans
+  useEffect(() => {
+    if (data?.scan?.id && data.scan.id !== lastScanId.current) {
+      lastScanId.current = data.scan.id;
+      setShowResult(true);
+    }
+  }, [data?.scan?.id]);
+
   if (!data?.scan) return null;
-  if (!data.running && !scanTriggered) return null;
+  if (!showResult && !data.running && !scanTriggered) return null;
 
   const scan = data.scan;
   const isRunning = data.running;
@@ -90,12 +133,24 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
                 ? 'Zonnebloem scan completed'
                 : scan.status === 'failed'
                   ? 'Zonnebloem scan failed'
-                  : 'Zonnebloem scan finished with warnings'}
+                  : scan.status === 'partial'
+                    ? 'Zonnebloem scan completed (partial - will continue next run)'
+                    : 'Zonnebloem scan finished with warnings'}
           </span>
         </div>
-        <span className="text-xs text-slate-400">
-          {isRunning ? `${elapsed}s elapsed` : scan.durationSeconds ? `${scan.durationSeconds}s` : ''}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400">
+            {isRunning ? `${elapsed}s elapsed` : scan.durationSeconds ? `${scan.durationSeconds}s` : ''}
+          </span>
+          {!isRunning && (
+            <button
+              onClick={() => setShowResult(false)}
+              className="text-xs text-slate-500 hover:text-slate-300"
+            >
+              dismiss
+            </button>
+          )}
+        </div>
       </div>
 
       {isRunning && scan.stocksDeepScanned > 0 && (
