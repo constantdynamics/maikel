@@ -1,12 +1,10 @@
 /**
  * Professor Zonnebloem - Multi-market TradingView scanner
  *
- * Scans 8+ global markets for stocks with high 52-week range ratios,
+ * Scans 30+ global markets for stocks with high 52-week range ratios,
  * which indicates potential explosive spikes from a stable base.
  *
- * Key difference from Kuifje: instead of searching for crashed stocks,
- * we search for stocks where 52W High / 52W Low >= 3.0, indicating
- * the stock had a massive spike within the past year.
+ * Uses pagination to fetch ALL qualifying stocks per market, not just a top slice.
  */
 
 import { retryWithBackoff } from '../utils';
@@ -39,79 +37,101 @@ export interface ZBCandidate {
   country: string | null;
 }
 
-// TradingView market endpoints
+// TradingView market endpoints - all available global markets
 const MARKET_URLS: Record<string, string> = {
+  // Americas
   america: 'https://scanner.tradingview.com/america/scan',
+  canada: 'https://scanner.tradingview.com/canada/scan',
+  brazil: 'https://scanner.tradingview.com/brazil/scan',
+  mexico: 'https://scanner.tradingview.com/mexico/scan',
+  argentina: 'https://scanner.tradingview.com/argentina/scan',
+  colombia: 'https://scanner.tradingview.com/colombia/scan',
+  chile: 'https://scanner.tradingview.com/chile/scan',
+  peru: 'https://scanner.tradingview.com/peru/scan',
+  // Europe
   europe: 'https://scanner.tradingview.com/europe/scan',
   uk: 'https://scanner.tradingview.com/uk/scan',
-  canada: 'https://scanner.tradingview.com/canada/scan',
-  australia: 'https://scanner.tradingview.com/australia/scan',
   germany: 'https://scanner.tradingview.com/germany/scan',
+  france: 'https://scanner.tradingview.com/france/scan',
+  spain: 'https://scanner.tradingview.com/spain/scan',
+  italy: 'https://scanner.tradingview.com/italy/scan',
+  sweden: 'https://scanner.tradingview.com/sweden/scan',
+  norway: 'https://scanner.tradingview.com/norway/scan',
+  denmark: 'https://scanner.tradingview.com/denmark/scan',
+  finland: 'https://scanner.tradingview.com/finland/scan',
+  switzerland: 'https://scanner.tradingview.com/switzerland/scan',
+  netherlands: 'https://scanner.tradingview.com/netherlands/scan',
+  belgium: 'https://scanner.tradingview.com/belgium/scan',
+  poland: 'https://scanner.tradingview.com/poland/scan',
+  austria: 'https://scanner.tradingview.com/austria/scan',
+  portugal: 'https://scanner.tradingview.com/portugal/scan',
+  greece: 'https://scanner.tradingview.com/greece/scan',
+  turkey: 'https://scanner.tradingview.com/turkey/scan',
+  israel: 'https://scanner.tradingview.com/israel/scan',
+  // Asia-Pacific
   hongkong: 'https://scanner.tradingview.com/hongkong/scan',
   japan: 'https://scanner.tradingview.com/japan/scan',
   india: 'https://scanner.tradingview.com/india/scan',
-  brazil: 'https://scanner.tradingview.com/brazil/scan',
   korea: 'https://scanner.tradingview.com/korea/scan',
   taiwan: 'https://scanner.tradingview.com/taiwan/scan',
   singapore: 'https://scanner.tradingview.com/singapore/scan',
-  mexico: 'https://scanner.tradingview.com/mexico/scan',
-  israel: 'https://scanner.tradingview.com/israel/scan',
+  australia: 'https://scanner.tradingview.com/australia/scan',
+  newzealand: 'https://scanner.tradingview.com/newzealand/scan',
   indonesia: 'https://scanner.tradingview.com/indonesia/scan',
+  malaysia: 'https://scanner.tradingview.com/malaysia/scan',
+  thailand: 'https://scanner.tradingview.com/thailand/scan',
+  philippines: 'https://scanner.tradingview.com/philippines/scan',
+  vietnam: 'https://scanner.tradingview.com/vietnam/scan',
+  pakistan: 'https://scanner.tradingview.com/pakistan/scan',
+  // Africa & Middle East
+  southafrica: 'https://scanner.tradingview.com/southafrica/scan',
+  egypt: 'https://scanner.tradingview.com/egypt/scan',
+  saudi: 'https://scanner.tradingview.com/saudi/scan',
+  uae: 'https://scanner.tradingview.com/uae/scan',
+  qatar: 'https://scanner.tradingview.com/qatar/scan',
+  kuwait: 'https://scanner.tradingview.com/kuwait/scan',
+  bahrain: 'https://scanner.tradingview.com/bahrain/scan',
+  nigeria: 'https://scanner.tradingview.com/nigeria/scan',
+  kenya: 'https://scanner.tradingview.com/kenya/scan',
 };
 
-// Sanctioned/excluded countries mapping per market
+// Country labels per market
 const MARKET_COUNTRIES: Record<string, string> = {
-  america: 'United States',
-  europe: 'Europe',
-  uk: 'United Kingdom',
-  canada: 'Canada',
-  australia: 'Australia',
-  germany: 'Germany',
-  hongkong: 'Hong Kong',
-  japan: 'Japan',
-  india: 'India',
-  brazil: 'Brazil',
-  korea: 'South Korea',
-  taiwan: 'Taiwan',
-  singapore: 'Singapore',
-  mexico: 'Mexico',
-  israel: 'Israel',
-  indonesia: 'Indonesia',
+  america: 'United States', canada: 'Canada', brazil: 'Brazil', mexico: 'Mexico',
+  argentina: 'Argentina', colombia: 'Colombia', chile: 'Chile', peru: 'Peru',
+  europe: 'Europe', uk: 'United Kingdom', germany: 'Germany', france: 'France',
+  spain: 'Spain', italy: 'Italy', sweden: 'Sweden', norway: 'Norway',
+  denmark: 'Denmark', finland: 'Finland', switzerland: 'Switzerland',
+  netherlands: 'Netherlands', belgium: 'Belgium', poland: 'Poland',
+  austria: 'Austria', portugal: 'Portugal', greece: 'Greece', turkey: 'Turkey',
+  israel: 'Israel', hongkong: 'Hong Kong', japan: 'Japan', india: 'India',
+  korea: 'South Korea', taiwan: 'Taiwan', singapore: 'Singapore',
+  australia: 'Australia', newzealand: 'New Zealand', indonesia: 'Indonesia',
+  malaysia: 'Malaysia', thailand: 'Thailand', philippines: 'Philippines',
+  vietnam: 'Vietnam', pakistan: 'Pakistan', southafrica: 'South Africa',
+  egypt: 'Egypt', saudi: 'Saudi Arabia', uae: 'UAE', qatar: 'Qatar',
+  kuwait: 'Kuwait', bahrain: 'Bahrain', nigeria: 'Nigeria', kenya: 'Kenya',
 };
 
 /**
- * Fetch stocks with high 52-week range ratio from a single market.
- * A high range ratio (52W High / 52W Low >= 3.0) indicates the stock
- * had a massive spike relative to its base price in the past year.
+ * Fetch a single page of stocks from one market.
  */
-export async function fetchHighRangeStocks(
+async function fetchPage(
   market: string,
-  minRangeRatio: number = 3.0,
-  minVolume: number = 50000,
-  minPrice: number = 0.10,
-  limit: number = 500,
-  offset: number = 0,
-): Promise<ZBCandidate[]> {
+  minRangeRatio: number,
+  minVolume: number,
+  minPrice: number,
+  limit: number,
+  offset: number,
+): Promise<{ candidates: ZBCandidate[]; totalCount: number }> {
   const url = MARKET_URLS[market];
-  if (!url) {
-    console.warn(`ZB: Unknown market "${market}", skipping`);
-    return [];
-  }
+  if (!url) return { candidates: [], totalCount: 0 };
 
   const payload = {
     columns: [
-      'name',
-      'description',
-      'close',
-      'change',
-      'volume',
-      'average_volume_30d_calc',
-      'market_cap_basic',
-      'sector',
-      'price_52_week_high',
-      'price_52_week_low',
-      'exchange',
-      'country',
+      'name', 'description', 'close', 'change', 'volume',
+      'average_volume_30d_calc', 'market_cap_basic', 'sector',
+      'price_52_week_high', 'price_52_week_low', 'exchange', 'country',
     ],
     ignore_unknown_fields: true,
     options: { lang: 'en' },
@@ -131,60 +151,99 @@ export async function fetchHighRangeStocks(
     },
   };
 
-  try {
-    const data = await retryWithBackoff(async () => {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        throw new Error(`TradingView ${market} HTTP ${res.status}: ${res.statusText}`);
-      }
-      return res.json() as Promise<TradingViewResponse>;
+  const data = await retryWithBackoff(async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      throw new Error(`TradingView ${market} HTTP ${res.status}: ${res.statusText}`);
+    }
+    return res.json() as Promise<TradingViewResponse>;
+  });
 
-    if (!data?.data) return [];
+  if (!data?.data) return { candidates: [], totalCount: data?.totalCount || 0 };
 
-    return data.data
-      .map((item): ZBCandidate | null => {
-        const [exchangePrefix, ticker] = item.s.split(':');
-        const d = item.d;
+  const candidates = data.data
+    .map((item): ZBCandidate | null => {
+      const [exchangePrefix, ticker] = item.s.split(':');
+      const d = item.d;
 
-        const high52w = (d[8] as number) || null;
-        const low52w = (d[9] as number) || null;
-        const rangeRatio = high52w && low52w && low52w > 0
-          ? high52w / low52w
-          : null;
+      const high52w = (d[8] as number) || null;
+      const low52w = (d[9] as number) || null;
+      const rangeRatio = high52w && low52w && low52w > 0 ? high52w / low52w : null;
 
-        // Filter: only keep stocks with high range ratio
-        if (!rangeRatio || rangeRatio < minRangeRatio) return null;
+      if (!rangeRatio || rangeRatio < minRangeRatio) return null;
 
-        const close = (d[2] as number) || 0;
-        if (close <= 0) return null;
+      const close = (d[2] as number) || 0;
+      if (close <= 0) return null;
 
-        return {
-          ticker: ticker || (d[0] as string) || '',
-          fullSymbol: item.s,
-          exchange: (d[10] as string) || exchangePrefix || '',
-          name: (d[1] as string) || '',
-          close,
-          change: (d[3] as number) || 0,
-          volume: (d[4] as number) || 0,
-          avgVolume30d: (d[5] as number) || null,
-          marketCap: (d[6] as number) || null,
-          sector: (d[7] as string) || null,
-          high52w,
-          low52w,
-          rangeRatio,
-          market,
-          country: (d[11] as string) || MARKET_COUNTRIES[market] || null,
-        };
-      })
-      .filter((s): s is ZBCandidate => s !== null && s.ticker.length > 0);
+      return {
+        ticker: ticker || (d[0] as string) || '',
+        fullSymbol: item.s,
+        exchange: (d[10] as string) || exchangePrefix || '',
+        name: (d[1] as string) || '',
+        close,
+        change: (d[3] as number) || 0,
+        volume: (d[4] as number) || 0,
+        avgVolume30d: (d[5] as number) || null,
+        marketCap: (d[6] as number) || null,
+        sector: (d[7] as string) || null,
+        high52w,
+        low52w,
+        rangeRatio,
+        market,
+        country: (d[11] as string) || MARKET_COUNTRIES[market] || null,
+      };
+    })
+    .filter((s): s is ZBCandidate => s !== null && s.ticker.length > 0);
+
+  return { candidates, totalCount: data.totalCount };
+}
+
+/**
+ * Fetch ALL qualifying stocks from a single market using pagination.
+ * Keeps fetching pages until no more results or max cap reached.
+ */
+export async function fetchHighRangeStocks(
+  market: string,
+  minRangeRatio: number = 1.5,
+  minVolume: number = 10000,
+  minPrice: number = 0.10,
+  maxPerMarket: number = 5000,
+): Promise<ZBCandidate[]> {
+  const url = MARKET_URLS[market];
+  if (!url) {
+    console.warn(`ZB: Unknown market "${market}", skipping`);
+    return [];
+  }
+
+  const pageSize = 1500;
+  const allCandidates: ZBCandidate[] = [];
+  let offset = 0;
+
+  try {
+    // First page
+    const first = await fetchPage(market, minRangeRatio, minVolume, minPrice, pageSize, 0);
+    allCandidates.push(...first.candidates);
+
+    // If there are more results, paginate
+    const totalAvailable = first.totalCount;
+    offset = pageSize;
+
+    while (offset < totalAvailable && allCandidates.length < maxPerMarket) {
+      const page = await fetchPage(market, minRangeRatio, minVolume, minPrice, pageSize, offset);
+      if (page.candidates.length === 0) break;
+      allCandidates.push(...page.candidates);
+      offset += pageSize;
+    }
+
+    return allCandidates.slice(0, maxPerMarket);
   } catch (error) {
     console.error(`ZB TradingView: Error fetching ${market}:`, error);
-    return [];
+    // Return whatever we got before the error
+    return allCandidates;
   }
 }
 
@@ -194,14 +253,14 @@ export async function fetchHighRangeStocks(
  */
 export async function fetchCandidatesFromAllMarkets(
   markets: string[],
-  minRangeRatio: number = 3.0,
-  minVolume: number = 50000,
+  minRangeRatio: number = 1.5,
+  minVolume: number = 10000,
   minPrice: number = 0.10,
-  limitPerMarket: number = 500,
+  maxPerMarket: number = 5000,
 ): Promise<ZBCandidate[]> {
   console.log(`ZB: Scanning ${markets.length} markets: ${markets.join(', ')}`);
 
-  // Scan all markets in parallel (batches of 4 to avoid rate limiting)
+  // Scan markets in parallel batches of 4 to avoid rate limiting
   const allCandidates: ZBCandidate[] = [];
   const batchSize = 4;
 
@@ -209,13 +268,13 @@ export async function fetchCandidatesFromAllMarkets(
     const batch = markets.slice(i, i + batchSize);
     const results = await Promise.all(
       batch.map((market) =>
-        fetchHighRangeStocks(market, minRangeRatio, minVolume, minPrice, limitPerMarket),
+        fetchHighRangeStocks(market, minRangeRatio, minVolume, minPrice, maxPerMarket),
       ),
     );
 
-    for (const candidates of results) {
-      console.log(`ZB: Got ${candidates.length} candidates from ${batch[results.indexOf(candidates)] || 'unknown'}`);
-      allCandidates.push(...candidates);
+    for (let j = 0; j < results.length; j++) {
+      console.log(`ZB: Got ${results[j].length} candidates from ${batch[j]}`);
+      allCandidates.push(...results[j]);
     }
   }
 
@@ -229,10 +288,8 @@ export async function fetchCandidatesFromAllMarkets(
   }
 
   const deduplicated = Array.from(tickerMap.values());
-
-  // Sort by range ratio descending (most explosive first)
   deduplicated.sort((a, b) => (b.rangeRatio || 0) - (a.rangeRatio || 0));
 
-  console.log(`ZB: Total ${allCandidates.length} raw -> ${deduplicated.length} unique candidates`);
+  console.log(`ZB: Total ${allCandidates.length} raw -> ${deduplicated.length} unique candidates across ${markets.length} markets`);
   return deduplicated;
 }

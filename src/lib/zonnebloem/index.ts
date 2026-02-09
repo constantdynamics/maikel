@@ -207,7 +207,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       1.5, // Range ratio (52W High / 52W Low >= 1.5) - broad net for large pool
       settings.zb_min_avg_volume,
       settings.zb_min_price,
-      1500,
+      5000, // Max per market - pagination fetches all qualifying stocks
     );
 
     const candidatesFound = allCandidates.length;
