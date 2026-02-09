@@ -359,6 +359,12 @@ export default function DashboardPage() {
               onBulkFavorite={handleBulkFavorite}
               onBulkArchive={handleBulkArchive}
               onBulkDelete={requestBulkDelete}
+              onOpenInGoogle={() => {
+                const selected = stocks.filter((s) => selectedIds.has(s.id));
+                for (const s of selected) {
+                  window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' stock')}`, '_blank');
+                }
+              }}
               onQuickSelect={handleQuickSelect}
             />
 
@@ -483,6 +489,17 @@ export default function DashboardPage() {
                 {selectedIds.size > 0 && (
                   <div className="flex items-center gap-2 ml-auto">
                     <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
+                    <button
+                      onClick={() => {
+                        const selected = zbStocks.filter((s) => selectedIds.has(s.id));
+                        for (const s of selected) {
+                          window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' stock')}`, '_blank');
+                        }
+                      }}
+                      className="px-3 py-2 text-sm bg-purple-600 text-white hover:opacity-90 rounded transition-colors"
+                    >
+                      Open in Google
+                    </button>
                     <button
                       onClick={handleBulkFavorite}
                       className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors"

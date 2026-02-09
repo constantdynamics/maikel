@@ -19,6 +19,7 @@ interface FilterBarProps {
   onBulkFavorite: () => void;
   onBulkArchive: () => void;
   onBulkDelete: () => void;
+  onOpenInGoogle?: () => void;
   onQuickSelect: (type: QuickSelectType) => void;
 }
 
@@ -33,6 +34,7 @@ export default function FilterBar({
   onBulkFavorite,
   onBulkArchive,
   onBulkDelete,
+  onOpenInGoogle,
   onQuickSelect,
 }: FilterBarProps) {
   const [showQuickSelect, setShowQuickSelect] = useState(false);
@@ -152,6 +154,15 @@ export default function FilterBar({
           {selectedCount > 0 && (
             <>
               <span className="text-sm text-[var(--text-muted)]">{selectedCount} selected</span>
+              {onOpenInGoogle && (
+                <button
+                  onClick={onOpenInGoogle}
+                  className="px-3 py-2 text-sm bg-[var(--accent-primary)] text-white hover:opacity-90 rounded transition-colors"
+                  title="Open all in Google Search"
+                >
+                  Open in Google
+                </button>
+              )}
               <button
                 onClick={onBulkFavorite}
                 className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors"
