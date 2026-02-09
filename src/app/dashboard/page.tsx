@@ -56,6 +56,9 @@ export default function DashboardPage() {
     handleSort: zbHandleSort,
     sectors: zbSectors,
     markets: zbMarkets,
+    scanSessions: zbScanSessions,
+    visibleColumns: zbVisibleColumns,
+    toggleColumn: zbToggleColumn,
     toggleFavorite: zbToggleFavorite,
     deleteStock: zbDeleteStock,
     bulkFavorite: zbBulkFavorite,
@@ -552,6 +555,9 @@ export default function DashboardPage() {
                   onToggleSelectAll={toggleSelectAll}
                   onToggleFavorite={zbToggleFavorite}
                   onDelete={requestDelete}
+                  scanSessions={zbScanSessions}
+                  visibleColumns={zbVisibleColumns}
+                  onToggleColumn={zbToggleColumn}
                 />
 
                 {totalPages > 1 && (

@@ -28,6 +28,52 @@ const defaultSort: SortConfig = {
   direction: 'desc',
 };
 
+// Scan session info: daily number + time
+export interface ScanSessionInfo {
+  dailyNumber: number;
+  time: string; // HH:mm
+  date: string; // YYYY-MM-DD
+}
+
+// All available columns - used for visibility picker
+export const ALL_ZB_COLUMNS = [
+  { key: 'ticker', label: 'Ticker', defaultVisible: true },
+  { key: 'company_name', label: 'Company', defaultVisible: true },
+  { key: 'market', label: 'Market', defaultVisible: true },
+  { key: 'current_price', label: 'Price', defaultVisible: true },
+  { key: 'base_price_median', label: 'Base Price', defaultVisible: false },
+  { key: 'spike_dots', label: 'Spikes', defaultVisible: true },
+  { key: 'spike_score', label: 'Spike Score', defaultVisible: false },
+  { key: 'highest_spike_pct', label: 'Max Spike %', defaultVisible: true },
+  { key: 'price_change_12m_pct', label: '12m Change', defaultVisible: true },
+  { key: 'avg_volume_30d', label: 'Volume 30d', defaultVisible: true },
+  { key: 'market_cap', label: 'Market Cap', defaultVisible: false },
+  { key: 'sector', label: 'Sector', defaultVisible: false },
+  { key: 'country', label: 'Country', defaultVisible: false },
+  { key: 'scan_number', label: 'Scan #', defaultVisible: true },
+  { key: 'scan_time', label: 'Scan Time', defaultVisible: true },
+  { key: 'detection_date', label: 'Detected', defaultVisible: true },
+] as const;
+
+const STORAGE_KEY = 'zb-visible-columns';
+
+function loadVisibleColumns(): Set<string> {
+  if (typeof window === 'undefined') {
+    return new Set(ALL_ZB_COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
+  }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) return new Set(JSON.parse(stored));
+  } catch { /* use defaults */ }
+  return new Set(ALL_ZB_COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
+}
+
+function saveVisibleColumns(cols: Set<string>) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(cols)));
+  } catch { /* ignore */ }
+}
+
 export function useZonnebloemStocks() {
   const [stocks, setStocks] = useState<ZonnebloemStock[]>([]);
   const [filteredStocks, setFilteredStocks] = useState<ZonnebloemStock[]>([]);
@@ -36,6 +82,38 @@ export function useZonnebloemStocks() {
   const [sort, setSort] = useState<SortConfig>(defaultSort);
   const [sectors, setSectors] = useState<string[]>([]);
   const [markets, setMarkets] = useState<string[]>([]);
+  const [scanSessions, setScanSessions] = useState<Map<string, ScanSessionInfo>>(new Map());
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(loadVisibleColumns);
+
+  // Fetch scan logs to build daily scan number mapping
+  const fetchScanSessions = useCallback(async () => {
+    const { data } = await supabase
+      .from('zonnebloem_scan_logs')
+      .select('id, started_at')
+      .order('started_at', { ascending: true });
+
+    if (!data) return;
+
+    const sessionMap = new Map<string, ScanSessionInfo>();
+    const dailyCounters = new Map<string, number>();
+
+    for (const log of data) {
+      const dt = new Date(log.started_at);
+      const dateStr = dt.toISOString().split('T')[0];
+      const timeStr = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+      const count = (dailyCounters.get(dateStr) || 0) + 1;
+      dailyCounters.set(dateStr, count);
+
+      sessionMap.set(log.id, {
+        dailyNumber: count,
+        time: timeStr,
+        date: dateStr,
+      });
+    }
+
+    setScanSessions(sessionMap);
+  }, []);
 
   const fetchStocks = useCallback(async () => {
     setLoading(true);
@@ -98,6 +176,19 @@ export function useZonnebloemStocks() {
         return sort.direction === 'asc' ? comparison : -comparison;
       }
 
+      // Special sort for scan_number: use session date+number
+      if (sort.column === ('scan_number' as never) || sort.column === ('scan_time' as never)) {
+        const aSession = a.scan_session_id ? scanSessions.get(a.scan_session_id) : null;
+        const bSession = b.scan_session_id ? scanSessions.get(b.scan_session_id) : null;
+        if (!aSession && !bSession) return 0;
+        if (!aSession) return 1;
+        if (!bSession) return -1;
+        const aKey = `${aSession.date}-${String(aSession.dailyNumber).padStart(3, '0')}`;
+        const bKey = `${bSession.date}-${String(bSession.dailyNumber).padStart(3, '0')}`;
+        const comparison = aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+        return sort.direction === 'asc' ? comparison : -comparison;
+      }
+
       const aVal = a[sort.column as keyof ZonnebloemStock];
       const bVal = b[sort.column as keyof ZonnebloemStock];
       if (aVal === null || aVal === undefined) return 1;
@@ -107,15 +198,25 @@ export function useZonnebloemStocks() {
     });
 
     setFilteredStocks(result);
-  }, [stocks, filters, sort]);
+  }, [stocks, filters, sort, scanSessions]);
 
-  useEffect(() => { fetchStocks(); }, [fetchStocks]);
+  useEffect(() => { fetchStocks(); fetchScanSessions(); }, [fetchStocks, fetchScanSessions]);
 
   function handleSort(column: keyof ZonnebloemStock) {
     setSort((prev) => ({
       column: column as never,
       direction: prev.column === (column as never) && prev.direction === 'desc' ? 'asc' : 'desc',
     }));
+  }
+
+  function toggleColumn(key: string) {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      saveVisibleColumns(next);
+      return next;
+    });
   }
 
   async function toggleFavorite(id: string) {
@@ -156,6 +257,9 @@ export function useZonnebloemStocks() {
     handleSort,
     sectors,
     markets,
+    scanSessions,
+    visibleColumns,
+    toggleColumn,
     toggleFavorite,
     deleteStock,
     bulkFavorite,
