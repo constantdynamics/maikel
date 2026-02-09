@@ -83,6 +83,7 @@ const MARKET_URLS: Record<string, string> = {
   philippines: 'https://scanner.tradingview.com/philippines/scan',
   vietnam: 'https://scanner.tradingview.com/vietnam/scan',
   pakistan: 'https://scanner.tradingview.com/pakistan/scan',
+  china: 'https://scanner.tradingview.com/china/scan',
   // Africa & Middle East
   southafrica: 'https://scanner.tradingview.com/southafrica/scan',
   egypt: 'https://scanner.tradingview.com/egypt/scan',
@@ -93,6 +94,7 @@ const MARKET_URLS: Record<string, string> = {
   bahrain: 'https://scanner.tradingview.com/bahrain/scan',
   nigeria: 'https://scanner.tradingview.com/nigeria/scan',
   kenya: 'https://scanner.tradingview.com/kenya/scan',
+  ghana: 'https://scanner.tradingview.com/ghana/scan',
 };
 
 // Country labels per market
@@ -108,9 +110,9 @@ const MARKET_COUNTRIES: Record<string, string> = {
   korea: 'South Korea', taiwan: 'Taiwan', singapore: 'Singapore',
   australia: 'Australia', newzealand: 'New Zealand', indonesia: 'Indonesia',
   malaysia: 'Malaysia', thailand: 'Thailand', philippines: 'Philippines',
-  vietnam: 'Vietnam', pakistan: 'Pakistan', southafrica: 'South Africa',
+  vietnam: 'Vietnam', pakistan: 'Pakistan', china: 'China', southafrica: 'South Africa',
   egypt: 'Egypt', saudi: 'Saudi Arabia', uae: 'UAE', qatar: 'Qatar',
-  kuwait: 'Kuwait', bahrain: 'Bahrain', nigeria: 'Nigeria', kenya: 'Kenya',
+  kuwait: 'Kuwait', bahrain: 'Bahrain', nigeria: 'Nigeria', kenya: 'Kenya', ghana: 'Ghana',
 };
 
 /**
