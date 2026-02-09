@@ -204,10 +204,10 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
 
     const allCandidates = await fetchCandidatesFromAllMarkets(
       settings.zb_markets,
-      2.0, // Lowered from 3.0 - range ratio (52W High / 52W Low >= 2.0)
+      1.5, // Range ratio (52W High / 52W Low >= 1.5) - broad net for large pool
       settings.zb_min_avg_volume,
       settings.zb_min_price,
-      500,
+      1500,
     );
 
     const candidatesFound = allCandidates.length;
