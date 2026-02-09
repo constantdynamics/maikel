@@ -28,9 +28,8 @@ export interface Stock {
   ipo_date: string | null;
   market_cap: number | null;
   created_at: string;
-  scan_number: number | null;  // Which scan of the day found this stock (1, 2, 3, etc.)
-  scan_date: string | null;    // Date of the scan that found/updated this stock
-  // NovaBay-type analysis fields
+  scan_number: number | null;
+  scan_date: string | null;
   twelve_month_low: number | null;
   twelve_month_max_decline_pct: number | null;
   twelve_month_max_spike_pct: number | null;
@@ -136,19 +135,16 @@ export interface Settings {
   purchase_limit_multiplier: number;
   scan_times: string[];
   excluded_sectors: string[];
-  included_volatile_sectors: string[];  // Changed: sectors to INCLUDE (empty = scan all non-volatile)
-  market_cap_categories: string[];      // Changed: array of selected categories ['micro', 'small', 'mid', 'large']
+  included_volatile_sectors: string[];
+  market_cap_categories: string[];
   auto_scan_interval_minutes: number;
-  // NovaBay-type filter: stable stocks with upward spikes
   enable_stable_spike_filter: boolean;
-  stable_max_decline_pct: number;       // Max decline allowed in last 12 months (e.g., 10%)
-  stable_min_spike_pct: number;         // Min spike required above base (e.g., 100%)
-  stable_lookback_months: number;       // How far back to look (default: 12)
-  // Scanner variety settings
-  skip_recently_scanned_hours: number;  // Skip stocks scanned within X hours (0 = don't skip)
+  stable_max_decline_pct: number;
+  stable_min_spike_pct: number;
+  stable_lookback_months: number;
+  skip_recently_scanned_hours: number;
 }
 
-// Default volatile sectors list
 export const DEFAULT_VOLATILE_SECTORS = [
   'Biotechnology',
   'Pharmaceuticals',
@@ -163,7 +159,6 @@ export const DEFAULT_VOLATILE_SECTORS = [
   'Adult Entertainment',
 ];
 
-// Market cap categories with ranges
 export const MARKET_CAP_CATEGORIES = {
   micro: { label: 'Micro (<$300M)', min: 0, max: 300_000_000 },
   small: { label: 'Small ($300M-$2B)', min: 300_000_000, max: 2_000_000_000 },
@@ -221,85 +216,9 @@ export interface ZonnebloemStock {
   is_favorite: boolean;
   is_deleted: boolean;
   deleted_at: string | null;
-  needs_review: boolean;
-  review_reason: string | null;
-  created_at: string;
-}
-
-export interface ZonnebloemSpikeEvent {
-  id: string;
-  ticker: string;
-  start_date: string;
-  peak_date: string;
-  end_date: string;
-  base_price: number;
-  peak_price: number;
-  spike_pct: number;
-  duration_days: number;
-  is_valid: boolean;
-  created_at: string;
-}
-
-export type SortDirection = 'asc' | 'desc';
-
-export interface SortConfig {
-  column: keyof Stock;
-  direction: SortDirection;
-}
-
-export interface FilterConfig {
-  search: string;
-  sectorFilter: string;
-  scoreMin: number | null;
-  scoreMax: number | null;
-  athDeclineMin: number | null;
-  athDeclineMax: number | null;
-  showFavorites: boolean;
-  showArchived: boolean;
-  hideVolatileSectors: boolean;
-  marketCapMin: number | null;
-  marketCapMax: number | null;
-  showStableWithSpikes: boolean;  // Filter for NovaBay-type stocks
-}
-
-// Sectors known to be extremely volatile
-export const VOLATILE_SECTORS = [
-  'Biotechnology',
-  'Pharmaceuticals',
-  'Cannabis',
-  'Cryptocurrency',
-  'SPACs',
-  'Junior Mining',
-  'Penny Stocks',
-];
-
-// ============================================================
-// Professor Zonnebloem types
-// ============================================================
-
-export interface ZonnebloemStock {
-  id: string;
-  ticker: string;
-  company_name: string;
-  sector: string | null;
-  exchange: string | null;
-  market: string | null;
-  country: string | null;
-  current_price: number | null;
-  base_price_median: number | null;
-  price_12m_ago: number | null;
-  price_change_12m_pct: number | null;
-  spike_count: number;
-  highest_spike_pct: number | null;
-  highest_spike_date: string | null;
-  spike_score: number;
-  avg_volume_30d: number | null;
-  market_cap: number | null;
-  detection_date: string;
-  last_updated: string;
-  is_favorite: boolean;
-  is_deleted: boolean;
-  deleted_at: string | null;
+  is_archived: boolean;
+  archived_at: string | null;
+  scan_session_id: string | null;
   needs_review: boolean;
   review_reason: string | null;
   created_at: string;
@@ -332,6 +251,7 @@ export interface ZonnebloemScanLog {
   errors: string[];
   duration_seconds: number | null;
   api_calls_yahoo: number;
+  details: ZonnebloemScanDetail[] | null;
   created_at: string;
 }
 
@@ -384,6 +304,42 @@ export interface ZonnebloemScanDetail {
   priceChange12m?: number;
 }
 
+// ============================================================
+// Shared types
+// ============================================================
+
+export type SortDirection = 'asc' | 'desc';
+
+export interface SortConfig {
+  column: keyof Stock;
+  direction: SortDirection;
+}
+
+export interface FilterConfig {
+  search: string;
+  sectorFilter: string;
+  scoreMin: number | null;
+  scoreMax: number | null;
+  athDeclineMin: number | null;
+  athDeclineMax: number | null;
+  showFavorites: boolean;
+  showArchived: boolean;
+  hideVolatileSectors: boolean;
+  marketCapMin: number | null;
+  marketCapMax: number | null;
+  showStableWithSpikes: boolean;
+}
+
+export const VOLATILE_SECTORS = [
+  'Biotechnology',
+  'Pharmaceuticals',
+  'Cannabis',
+  'Cryptocurrency',
+  'SPACs',
+  'Junior Mining',
+  'Penny Stocks',
+];
+
 export type ScoreColor = 'green' | 'orange' | 'red';
 
 export function getScoreColor(score: number): ScoreColor {
@@ -394,6 +350,5 @@ export function getScoreColor(score: number): ScoreColor {
 
 export function calculateExponentialScore(eventCount: number): number {
   if (eventCount <= 0) return 0;
-  // 1x = 1pt, 2x = 3pts, 3x = 6pts, 4x = 10pts (triangular numbers)
   return (eventCount * (eventCount + 1)) / 2;
 }

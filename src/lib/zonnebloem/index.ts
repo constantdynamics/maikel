@@ -268,7 +268,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       const batch = prioritized.slice(batchStart, batchStart + batchSize);
 
       const batchResults = await Promise.allSettled(
-        batch.map((candidate) => deepScanCandidate(candidate, settings, supabase)),
+        batch.map((candidate) => deepScanCandidate(candidate, settings, supabase, scanId)),
       );
 
       for (let j = 0; j < batchResults.length; j++) {
@@ -413,6 +413,7 @@ async function deepScanCandidate(
   candidate: ZBCandidate,
   settings: ZonnebloemSettings,
   supabase: ReturnType<typeof createServiceClient>,
+  scanId?: string,
 ): Promise<{
   matched: boolean;
   isNew: boolean;
@@ -434,8 +435,8 @@ async function deepScanCandidate(
   };
 
   try {
-    // Fetch 5-year historical data from Yahoo Finance
-    const history = await yahoo.getHistoricalData(ticker, 5);
+    // Fetch 3-year historical data from Yahoo Finance
+    const history = await yahoo.getHistoricalData(ticker, 3);
 
     if (history.length === 0) {
       detail.result = 'error';
@@ -451,10 +452,10 @@ async function deepScanCandidate(
       return { matched: false, isNew: false, detail, error: null };
     }
 
-    // Check minimum age (3 years of data) - relaxed to 2.5 years (630 trading days)
-    if (history.length < 630) {
+    // Check minimum age - relaxed to ~1 year (200 trading days)
+    if (history.length < 200) {
       detail.result = 'rejected';
-      detail.rejectReason = `Only ${history.length} data points (need ~630 for 2.5 years)`;
+      detail.rejectReason = `Only ${history.length} data points (need ~200 for 1 year)`;
       return { matched: false, isNew: false, detail, error: null };
     }
 
@@ -543,6 +544,7 @@ async function deepScanCandidate(
         avg_volume_30d: candidate.avgVolume30d,
         market_cap: candidate.marketCap,
         last_updated: new Date().toISOString(),
+        scan_session_id: scanId || null,
         needs_review: needsReview,
         review_reason: reviewReason,
       },

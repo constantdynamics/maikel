@@ -1,8 +1,8 @@
 'use client';
 
-import type { ZonnebloemStock, SortConfig, SortDirection } from '@/lib/types';
-import { getZBScoreColor } from '@/lib/zonnebloem/scorer';
-import { formatCurrency, formatPercent, formatDate } from '@/lib/utils';
+import type { ZonnebloemStock, SortConfig } from '@/lib/types';
+import { getExchangeFlag } from '@/lib/exchanges';
+import RainbowScore from './RainbowScore';
 
 interface ZonnebloemTableProps {
   stocks: ZonnebloemStock[];
@@ -21,24 +21,39 @@ const columns: { key: keyof ZonnebloemStock; label: string; shortLabel: string; 
   { key: 'market', label: 'Market', shortLabel: 'Market' },
   { key: 'current_price', label: 'Current Price', shortLabel: 'Price', align: 'right' },
   { key: 'base_price_median', label: 'Base Price', shortLabel: 'Base', align: 'right' },
-  { key: 'price_change_12m_pct', label: '12m Change', shortLabel: '12m%', align: 'right' },
-  { key: 'spike_score', label: 'Spike Score', shortLabel: 'Score', align: 'right' },
+  { key: 'spike_score', label: 'Spike Score', shortLabel: 'Score', align: 'center' },
   { key: 'spike_count', label: '# Spikes', shortLabel: 'Spikes', align: 'right' },
   { key: 'highest_spike_pct', label: 'Highest Spike %', shortLabel: 'Max Spike', align: 'right' },
+  { key: 'price_change_12m_pct', label: '12m Change', shortLabel: '12m%', align: 'right' },
   { key: 'avg_volume_30d', label: 'Avg Volume', shortLabel: 'Vol 30d', align: 'right' },
-  { key: 'detection_date', label: 'Detection Date', shortLabel: 'Detected' },
+  { key: 'detection_date', label: 'Detected', shortLabel: 'Detected', align: 'center' },
 ];
 
-function SortIcon({ direction }: { direction: SortDirection | null }) {
-  if (!direction) return <span className="text-slate-600 ml-1">&#8597;</span>;
-  return <span className="ml-1">{direction === 'asc' ? '\u25B2' : '\u25BC'}</span>;
+const RIGHT_ALIGNED = new Set(['current_price', 'base_price_median', 'spike_count', 'highest_spike_pct', 'price_change_12m_pct', 'avg_volume_30d']);
+const CENTER_ALIGNED = new Set(['spike_score', 'detection_date']);
+
+function formatCurrency(val: number | null): string {
+  if (val === null || val === undefined) return '-';
+  return val < 1 ? `$${val.toFixed(4)}` : `$${val.toFixed(2)}`;
 }
 
-function formatVolume(value: number | null): string {
-  if (value === null || value === undefined) return '-';
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
-  return String(value);
+function formatVolume(val: number | null): string {
+  if (val === null || val === undefined) return '-';
+  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
+  if (val >= 1_000) return `${(val / 1_000).toFixed(0)}K`;
+  return String(val);
+}
+
+function formatPct(val: number | null): string {
+  if (val === null || val === undefined) return '-';
+  const sign = val >= 0 ? '+' : '';
+  return `${sign}${val.toFixed(1)}%`;
+}
+
+function formatShortDate(val: string | null): string {
+  if (!val) return '-';
+  const d = new Date(val);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
 
 export default function ZonnebloemTable({
@@ -51,142 +66,168 @@ export default function ZonnebloemTable({
   onToggleFavorite,
   onDelete,
 }: ZonnebloemTableProps) {
-  const allSelected = stocks.length > 0 && selectedIds.size === stocks.length;
-
-  function getScoreBadgeClass(score: number): string {
-    const color = getZBScoreColor(score);
-    switch (color) {
-      case 'green': return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'orange': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-      case 'red': return 'bg-red-500/20 text-red-400 border-red-500/30';
-    }
-  }
-
-  function getRowColorClass(score: number): string {
-    const color = getZBScoreColor(score);
-    switch (color) {
-      case 'green': return 'row-score-green';
-      case 'orange': return 'row-score-orange';
-      case 'red': return 'row-score-red';
-    }
-  }
-
   function renderCell(stock: ZonnebloemStock, key: keyof ZonnebloemStock) {
-    const value = stock[key];
-
     switch (key) {
       case 'ticker':
-        return <span className="font-mono font-semibold text-purple-400">{String(value)}</span>;
+        return (
+          <span className="flex items-center gap-1.5">
+            <span className="text-xs">{getExchangeFlag(stock.exchange, stock.ticker)}</span>
+            <a
+              href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="ticker-link font-mono font-semibold text-purple-400 hover:text-purple-300 hover:underline transition-colors"
+            >
+              {stock.ticker}
+            </a>
+          </span>
+        );
+
+      case 'company_name':
+        return (
+          <span className="text-[var(--text-secondary)] truncate max-w-[200px] inline-block" title={stock.company_name}>
+            {stock.company_name}
+          </span>
+        );
+
+      case 'market':
+        return <span className="text-xs text-[var(--text-muted)]">{stock.market || '-'}</span>;
+
       case 'current_price':
+        return <span className="font-mono text-xs">{formatCurrency(stock.current_price)}</span>;
+
       case 'base_price_median':
-        return formatCurrency(value as number | null);
-      case 'price_change_12m_pct':
+        return <span className="font-mono text-xs text-[var(--text-muted)]">{formatCurrency(stock.base_price_median)}</span>;
+
+      case 'spike_score': {
+        const score = stock.spike_score;
+        const normalizedScore = Math.min(10, Math.max(0, Math.round(score)));
+        return <RainbowScore score={normalizedScore} maxScore={10} />;
+      }
+
+      case 'spike_count':
+        return (
+          <span className={`font-mono text-xs font-semibold ${stock.spike_count >= 3 ? 'text-green-400' : stock.spike_count >= 2 ? 'text-yellow-400' : 'text-[var(--text-secondary)]'}`}>
+            {stock.spike_count}
+          </span>
+        );
+
       case 'highest_spike_pct':
         return (
-          <span className={
-            (value as number) > 0 ? 'text-green-400' :
-            (value as number) < -10 ? 'text-red-400' : ''
-          }>
-            {formatPercent(value as number | null)}
+          <span className={`font-mono text-xs font-semibold ${(stock.highest_spike_pct || 0) >= 200 ? 'text-green-400' : (stock.highest_spike_pct || 0) >= 100 ? 'text-yellow-400' : 'text-[var(--text-secondary)]'}`}>
+            {stock.highest_spike_pct !== null ? `+${stock.highest_spike_pct.toFixed(0)}%` : '-'}
           </span>
         );
-      case 'spike_score':
-        return (
-          <span className={`inline-block px-2 py-0.5 rounded border text-xs font-semibold ${getScoreBadgeClass(stock.spike_score)}`}>
-            {typeof value === 'number' ? value.toFixed(1) : value}
-          </span>
-        );
-      case 'avg_volume_30d':
-        return formatVolume(value as number | null);
-      case 'detection_date':
-        return formatDate(value as string | null);
-      case 'market':
-        return <span className="text-xs uppercase text-slate-400">{String(value ?? '-')}</span>;
-      default:
-        return String(value ?? '-');
-    }
-  }
 
-  if (stocks.length === 0) {
-    return (
-      <div className="bg-slate-800 border border-purple-700/30 rounded-lg p-12 text-center">
-        <div className="text-slate-400 text-lg mb-2">No Zonnebloem stocks found</div>
-        <p className="text-slate-500 text-sm">
-          Run a Zonnebloem scan to detect stocks with stable bases and explosive spikes.
-        </p>
-      </div>
-    );
+      case 'price_change_12m_pct': {
+        const pct = stock.price_change_12m_pct;
+        return (
+          <span className={`font-mono text-xs ${pct !== null && pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {formatPct(pct)}
+          </span>
+        );
+      }
+
+      case 'avg_volume_30d':
+        return <span className="font-mono text-xs text-[var(--text-muted)]">{formatVolume(stock.avg_volume_30d)}</span>;
+
+      case 'detection_date':
+        return (
+          <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
+            {formatShortDate(stock.detection_date)}
+            {stock.scan_session_id && (
+              <span className="ml-1 text-purple-400">#{stock.scan_session_id.slice(0, 4)}</span>
+            )}
+          </span>
+        );
+
+      default:
+        return <span className="text-xs">{String(stock[key] ?? '-')}</span>;
+    }
   }
 
   return (
-    <div className="bg-slate-800 border border-purple-700/30 rounded-lg overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="stock-table w-full text-sm">
-          <thead className="bg-slate-700/50">
-            <tr>
-              <th className="px-3 py-3 text-left">
-                <input type="checkbox" checked={allSelected} onChange={onToggleSelectAll} className="rounded bg-slate-700 border-slate-500" />
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[var(--border-color)]">
+            <th className="w-8 p-2">
+              <input
+                type="checkbox"
+                checked={stocks.length > 0 && selectedIds.size === stocks.length}
+                onChange={onToggleSelectAll}
+                className="rounded"
+              />
+            </th>
+            <th className="w-8 p-2" />
+            {columns.map((col) => (
+              <th
+                key={col.key}
+                className={`p-2 cursor-pointer hover:bg-[var(--hover-bg)] transition-colors text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider ${
+                  RIGHT_ALIGNED.has(col.key) ? 'text-right' : CENTER_ALIGNED.has(col.key) ? 'text-center' : 'text-left'
+                }`}
+                onClick={() => onSort(col.key)}
+              >
+                <span className="inline-flex items-center gap-1">
+                  {col.shortLabel}
+                  {sort.column === (col.key as never) && (
+                    <span className="text-purple-400">{sort.direction === 'desc' ? '\u25BC' : '\u25B2'}</span>
+                  )}
+                </span>
               </th>
-              <th className="px-2 py-3 text-center w-10"></th>
+            ))}
+            <th className="w-8 p-2" />
+          </tr>
+        </thead>
+        <tbody>
+          {stocks.map((stock) => (
+            <tr
+              key={stock.id}
+              className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors cursor-pointer ${
+                selectedIds.has(stock.id) ? 'bg-purple-900/20' : ''
+              }`}
+              onClick={() => onToggleSelect(stock.id)}
+            >
+              <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(stock.id)}
+                  onChange={() => onToggleSelect(stock.id)}
+                  className="rounded"
+                />
+              </td>
+              <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => onToggleFavorite(stock.id)}
+                  className={`text-lg transition-colors ${stock.is_favorite ? 'text-yellow-400' : 'text-[var(--text-muted)] hover:text-yellow-400'}`}
+                >
+                  {stock.is_favorite ? '\u2605' : '\u2606'}
+                </button>
+              </td>
               {columns.map((col) => (
-                <th
+                <td
                   key={col.key}
-                  onClick={() => onSort(col.key)}
-                  className={`px-3 py-3 text-slate-300 font-medium text-xs uppercase tracking-wider cursor-pointer hover:text-white ${
-                    col.align === 'right' ? 'text-right' : 'text-left'
+                  className={`p-2 ${
+                    RIGHT_ALIGNED.has(col.key) ? 'text-right' : CENTER_ALIGNED.has(col.key) ? 'text-center' : 'text-left'
                   }`}
                 >
-                  {col.shortLabel}
-                  <SortIcon direction={sort.column === (col.key as never) ? sort.direction : null} />
-                </th>
+                  {renderCell(stock, col.key)}
+                </td>
               ))}
-              <th className="px-3 py-3 text-center text-slate-300 font-medium text-xs uppercase tracking-wider">Link</th>
-              <th className="px-3 py-3 w-10"></th>
+              <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => onDelete(stock.id)}
+                  className="text-[var(--text-muted)] hover:text-red-400 transition-colors text-xs"
+                  title="Delete"
+                >
+                  \u2716
+                </button>
+              </td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700/50">
-            {stocks.map((stock) => (
-              <tr key={stock.id} className={`${getRowColorClass(stock.spike_score)} transition-colors`}>
-                <td className="px-3 py-2.5">
-                  <input type="checkbox" checked={selectedIds.has(stock.id)} onChange={() => onToggleSelect(stock.id)} className="rounded bg-slate-700 border-slate-500" />
-                </td>
-                <td className="px-2 py-2.5 text-center">
-                  <button onClick={() => onToggleFavorite(stock.id)} className="star-btn text-lg" title="Toggle favorite">
-                    {stock.is_favorite
-                      ? <span className="text-yellow-400">{'\u2605'}</span>
-                      : <span className="text-slate-600 hover:text-yellow-400">{'\u2606'}</span>
-                    }
-                  </button>
-                </td>
-                {columns.map((col) => (
-                  <td key={col.key} className={`px-3 py-2.5 ${col.align === 'right' ? 'text-right font-mono' : ''}`}>
-                    {renderCell(stock, col.key)}
-                  </td>
-                ))}
-                <td className="px-3 py-2.5 text-center">
-                  <a
-                    href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-purple-400 hover:text-purple-300 text-xs"
-                  >
-                    Search
-                  </a>
-                </td>
-                <td className="px-3 py-2.5 text-center">
-                  <button onClick={() => onDelete(stock.id)} className="text-slate-500 hover:text-red-400 transition-colors" title="Delete">
-                    {'\u2717'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="px-4 py-2 bg-slate-700/30 text-sm text-slate-400 flex justify-between">
-        <span>{stocks.length} stocks</span>
-        <span>{selectedIds.size > 0 ? `${selectedIds.size} selected` : ''}</span>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
