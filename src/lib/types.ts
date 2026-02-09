@@ -280,14 +280,16 @@ export const ZONNEBLOEM_DEFAULTS: ZonnebloemSettings = {
   zb_min_avg_volume: 10000,
   zb_min_price: 0.10,
   zb_markets: [
-    'america', 'canada', 'brazil', 'mexico', 'argentina', 'colombia', 'chile', 'peru',
+    // Americas - NYSE, NASDAQ, AMEX, ARCA, OTC, TSE/TSX
+    'america', 'canada',
+    // Europe - LSE, XETR/FWB, Euronext, BME, MIL, OMX, SIX, WSE, VIE, Athens
     'europe', 'uk', 'germany', 'france', 'spain', 'italy', 'sweden', 'norway',
     'denmark', 'finland', 'switzerland', 'netherlands', 'belgium', 'poland',
-    'austria', 'portugal', 'greece', 'turkey', 'israel',
-    'hongkong', 'japan', 'india', 'korea', 'taiwan', 'singapore',
-    'australia', 'newzealand', 'indonesia', 'malaysia', 'thailand', 'philippines',
-    'vietnam', 'pakistan', 'china',
-    'southafrica', 'egypt', 'saudi', 'uae', 'qatar', 'kuwait', 'bahrain', 'nigeria', 'kenya', 'ghana',
+    'austria', 'portugal', 'greece',
+    // Asia-Pacific - HKEX, TYO, SGX, ASX, Bursa Malaysia, Shanghai/Shenzhen Connect
+    'hongkong', 'japan', 'singapore', 'australia', 'malaysia', 'china',
+    // Africa - JSE
+    'southafrica',
   ],
   zb_excluded_sectors: [],
   zb_excluded_countries: ['Russia', 'North Korea', 'Iran', 'Syria', 'Belarus', 'Myanmar', 'Venezuela', 'Cuba'],
