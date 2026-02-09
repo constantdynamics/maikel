@@ -286,8 +286,8 @@ export const ZONNEBLOEM_DEFAULTS: ZonnebloemSettings = {
     'europe', 'uk', 'germany', 'france', 'spain', 'italy', 'sweden', 'norway',
     'denmark', 'finland', 'switzerland', 'netherlands', 'belgium', 'poland',
     'austria', 'portugal', 'greece',
-    // Asia-Pacific - HKEX, TYO, SGX, ASX, Bursa Malaysia, Shanghai/Shenzhen Connect
-    'hongkong', 'japan', 'singapore', 'australia', 'malaysia', 'china',
+    // Asia-Pacific - HKEX, TYO, ASX, Bursa Malaysia
+    'hongkong', 'japan', 'australia', 'malaysia',
     // Africa - JSE
     'southafrica',
   ],

@@ -7,6 +7,92 @@ import { supabase } from '@/lib/supabase';
 import type { Settings, MarketCapCategory, ZonnebloemSettings } from '@/lib/types';
 import { DEFAULT_VOLATILE_SECTORS, MARKET_CAP_CATEGORIES, ZONNEBLOEM_DEFAULTS } from '@/lib/types';
 
+// All available Zonnebloem markets with labels
+const ZB_ALL_MARKETS = [
+  // Americas
+  { key: 'america', label: 'US (NYSE/NASDAQ/AMEX)' },
+  { key: 'canada', label: 'Canada (TSE/TSX)' },
+  { key: 'brazil', label: 'Brazil (B3)' },
+  { key: 'mexico', label: 'Mexico (BMV)' },
+  { key: 'argentina', label: 'Argentina (BCBA)' },
+  { key: 'colombia', label: 'Colombia' },
+  { key: 'chile', label: 'Chile' },
+  { key: 'peru', label: 'Peru' },
+  // Europe
+  { key: 'europe', label: 'Europe (Euronext broad)' },
+  { key: 'uk', label: 'UK (LSE)' },
+  { key: 'germany', label: 'Germany (XETRA/FWB)' },
+  { key: 'france', label: 'France (Euronext Paris)' },
+  { key: 'spain', label: 'Spain (BME)' },
+  { key: 'italy', label: 'Italy (Borsa Italiana)' },
+  { key: 'sweden', label: 'Sweden (OMX Stockholm)' },
+  { key: 'norway', label: 'Norway (Oslo)' },
+  { key: 'denmark', label: 'Denmark (OMX Copenhagen)' },
+  { key: 'finland', label: 'Finland (OMX Helsinki)' },
+  { key: 'switzerland', label: 'Switzerland (SIX)' },
+  { key: 'netherlands', label: 'Netherlands (AMS)' },
+  { key: 'belgium', label: 'Belgium (Euronext Brussels)' },
+  { key: 'poland', label: 'Poland (WSE)' },
+  { key: 'austria', label: 'Austria (Vienna)' },
+  { key: 'portugal', label: 'Portugal (Euronext Lisbon)' },
+  { key: 'greece', label: 'Greece (Athens)' },
+  { key: 'turkey', label: 'Turkey (BIST)' },
+  { key: 'israel', label: 'Israel (TASE)' },
+  // Asia-Pacific
+  { key: 'hongkong', label: 'Hong Kong (HKEX)' },
+  { key: 'japan', label: 'Japan (Tokyo)' },
+  { key: 'india', label: 'India (NSE/BSE)' },
+  { key: 'korea', label: 'South Korea (KRX)' },
+  { key: 'taiwan', label: 'Taiwan (TWSE)' },
+  { key: 'singapore', label: 'Singapore (SGX)' },
+  { key: 'australia', label: 'Australia (ASX)' },
+  { key: 'newzealand', label: 'New Zealand (NZX)' },
+  { key: 'indonesia', label: 'Indonesia (IDX)' },
+  { key: 'malaysia', label: 'Malaysia (Bursa)' },
+  { key: 'thailand', label: 'Thailand (SET)' },
+  { key: 'philippines', label: 'Philippines (PSE)' },
+  { key: 'vietnam', label: 'Vietnam (HOSE)' },
+  { key: 'pakistan', label: 'Pakistan (PSX)' },
+  { key: 'china', label: 'China Mainland (SSE/SZSE)' },
+  // Africa & Middle East
+  { key: 'southafrica', label: 'South Africa (JSE)' },
+  { key: 'egypt', label: 'Egypt (EGX)' },
+  { key: 'saudi', label: 'Saudi Arabia (Tadawul)' },
+  { key: 'uae', label: 'UAE (DFM/ADX)' },
+  { key: 'qatar', label: 'Qatar (QSE)' },
+  { key: 'kuwait', label: 'Kuwait' },
+  { key: 'bahrain', label: 'Bahrain' },
+  { key: 'nigeria', label: 'Nigeria (NGX)' },
+  { key: 'kenya', label: 'Kenya (NSE)' },
+  { key: 'ghana', label: 'Ghana (GSE)' },
+];
+
+// Sectors from TradingView
+const ZB_SECTORS = [
+  'Technology',
+  'Healthcare',
+  'Financial Services',
+  'Consumer Cyclical',
+  'Communication Services',
+  'Industrials',
+  'Consumer Defensive',
+  'Energy',
+  'Basic Materials',
+  'Real Estate',
+  'Utilities',
+  'Commercial Services',
+  'Distribution Services',
+  'Electronic Technology',
+  'Health Technology',
+  'Industrial Services',
+  'Non-Energy Minerals',
+  'Process Industries',
+  'Producer Manufacturing',
+  'Retail Trade',
+  'Transportation',
+  'Miscellaneous',
+];
+
 const SECTORS = [
   'Technology',
   'Healthcare',
@@ -757,6 +843,100 @@ export default function SettingsPage() {
               Zonnebloem scans run automatically at 4:00 PM UTC on weekdays via Vercel Cron.
             </p>
           </div>
+        </section>
+
+        {/* Zonnebloem: Exchange Filter */}
+        <section className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-purple-300">Zonnebloem: Exchanges</h2>
+          <p className="text-sm text-slate-400">
+            Check the exchanges you want Zonnebloem to scan. Only checked exchanges will be included.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {ZB_ALL_MARKETS.map((m) => (
+              <label key={m.key} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
+                <input
+                  type="checkbox"
+                  checked={zbSettings.zb_markets.includes(m.key)}
+                  onChange={() => {
+                    setZbSettings(prev => {
+                      const markets = prev.zb_markets.includes(m.key)
+                        ? prev.zb_markets.filter(k => k !== m.key)
+                        : [...prev.zb_markets, m.key];
+                      return { ...prev, zb_markets: markets };
+                    });
+                  }}
+                  className="rounded bg-slate-700 border-slate-500"
+                />
+                <span>{m.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => setZbSettings(prev => ({ ...prev, zb_markets: ZB_ALL_MARKETS.map(m => m.key) }))}
+              className="px-3 py-1 text-xs bg-purple-700 hover:bg-purple-600 rounded transition-colors"
+            >
+              Select All
+            </button>
+            <button
+              onClick={() => setZbSettings(prev => ({ ...prev, zb_markets: [] }))}
+              className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded transition-colors"
+            >
+              Clear All
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            {zbSettings.zb_markets.length === 0
+              ? 'Warning: No exchanges selected!'
+              : `${zbSettings.zb_markets.length} of ${ZB_ALL_MARKETS.length} exchanges selected`}
+          </p>
+        </section>
+
+        {/* Zonnebloem: Sector Filter */}
+        <section className="bg-purple-900/20 border border-purple-700/50 rounded-lg p-6 space-y-4">
+          <h2 className="text-lg font-semibold text-purple-300">Zonnebloem: Sector Filter</h2>
+          <p className="text-sm text-slate-400">
+            Check sectors to <strong>exclude</strong> from Zonnebloem scanning. Unchecked sectors will be scanned.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {ZB_SECTORS.map((sector) => (
+              <label key={sector} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-white">
+                <input
+                  type="checkbox"
+                  checked={zbSettings.zb_excluded_sectors.includes(sector)}
+                  onChange={() => {
+                    setZbSettings(prev => {
+                      const excluded = prev.zb_excluded_sectors.includes(sector)
+                        ? prev.zb_excluded_sectors.filter(s => s !== sector)
+                        : [...prev.zb_excluded_sectors, sector];
+                      return { ...prev, zb_excluded_sectors: excluded };
+                    });
+                  }}
+                  className="rounded bg-slate-700 border-slate-500"
+                />
+                <span>{sector}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => setZbSettings(prev => ({ ...prev, zb_excluded_sectors: [...ZB_SECTORS] }))}
+              className="px-3 py-1 text-xs bg-red-700 hover:bg-red-600 rounded transition-colors"
+            >
+              Exclude All
+            </button>
+            <button
+              onClick={() => setZbSettings(prev => ({ ...prev, zb_excluded_sectors: [] }))}
+              className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded transition-colors"
+            >
+              Include All
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            {zbSettings.zb_excluded_sectors.length === 0
+              ? 'All sectors included'
+              : `${zbSettings.zb_excluded_sectors.length} sector(s) excluded`}
+          </p>
         </section>
 
         {/* Data Backup */}
