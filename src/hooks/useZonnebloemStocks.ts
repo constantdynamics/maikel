@@ -42,6 +42,7 @@ export function useZonnebloemStocks() {
       .from('zonnebloem_stocks')
       .select('*')
       .eq('is_deleted', false)
+      .eq('is_archived', false)
       .order('spike_score', { ascending: false });
 
     if (error) {
@@ -60,7 +61,6 @@ export function useZonnebloemStocks() {
     setLoading(false);
   }, []);
 
-  // Client-side filtering
   useEffect(() => {
     let result = [...stocks];
 
@@ -72,28 +72,22 @@ export function useZonnebloemStocks() {
           s.company_name.toLowerCase().includes(q),
       );
     }
-
     if (filters.sectorFilter) {
       result = result.filter((s) => s.sector === filters.sectorFilter);
     }
-
     if (filters.marketFilter) {
       result = result.filter((s) => s.market === filters.marketFilter);
     }
-
     if (filters.showFavorites) {
       result = result.filter((s) => s.is_favorite);
     }
-
     if (filters.spikeCountMin !== null) {
       result = result.filter((s) => s.spike_count >= filters.spikeCountMin!);
     }
-
     if (filters.spikeScoreMin !== null) {
       result = result.filter((s) => s.spike_score >= filters.spikeScoreMin!);
     }
 
-    // Sort
     result.sort((a, b) => {
       const aVal = a[sort.column as keyof ZonnebloemStock];
       const bVal = b[sort.column as keyof ZonnebloemStock];
@@ -106,9 +100,7 @@ export function useZonnebloemStocks() {
     setFilteredStocks(result);
   }, [stocks, filters, sort]);
 
-  useEffect(() => {
-    fetchStocks();
-  }, [fetchStocks]);
+  useEffect(() => { fetchStocks(); }, [fetchStocks]);
 
   function handleSort(column: keyof ZonnebloemStock) {
     setSort((prev) => ({
@@ -121,47 +113,28 @@ export function useZonnebloemStocks() {
     const stock = stocks.find((s) => s.id === id);
     if (!stock) return;
     const newValue = !stock.is_favorite;
-    const { error } = await supabase
-      .from('zonnebloem_stocks')
-      .update({ is_favorite: newValue })
-      .eq('id', id);
-    if (!error) {
-      setStocks((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, is_favorite: newValue } : s)),
-      );
-    }
+    const { error } = await supabase.from('zonnebloem_stocks').update({ is_favorite: newValue }).eq('id', id);
+    if (!error) setStocks((prev) => prev.map((s) => (s.id === id ? { ...s, is_favorite: newValue } : s)));
   }
 
   async function deleteStock(id: string) {
-    const { error } = await supabase
-      .from('zonnebloem_stocks')
-      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-      .eq('id', id);
-    if (!error) {
-      setStocks((prev) => prev.filter((s) => s.id !== id));
-    }
+    const { error } = await supabase.from('zonnebloem_stocks').update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq('id', id);
+    if (!error) setStocks((prev) => prev.filter((s) => s.id !== id));
   }
 
   async function bulkFavorite(ids: Set<string>) {
-    const { error } = await supabase
-      .from('zonnebloem_stocks')
-      .update({ is_favorite: true })
-      .in('id', Array.from(ids));
-    if (!error) {
-      setStocks((prev) =>
-        prev.map((s) => (ids.has(s.id) ? { ...s, is_favorite: true } : s)),
-      );
-    }
+    const { error } = await supabase.from('zonnebloem_stocks').update({ is_favorite: true }).in('id', Array.from(ids));
+    if (!error) setStocks((prev) => prev.map((s) => (ids.has(s.id) ? { ...s, is_favorite: true } : s)));
   }
 
   async function bulkDelete(ids: Set<string>) {
-    const { error } = await supabase
-      .from('zonnebloem_stocks')
-      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-      .in('id', Array.from(ids));
-    if (!error) {
-      setStocks((prev) => prev.filter((s) => !ids.has(s.id)));
-    }
+    const { error } = await supabase.from('zonnebloem_stocks').update({ is_deleted: true, deleted_at: new Date().toISOString() }).in('id', Array.from(ids));
+    if (!error) setStocks((prev) => prev.filter((s) => !ids.has(s.id)));
+  }
+
+  async function bulkArchive(ids: Set<string>) {
+    const { error } = await supabase.from('zonnebloem_stocks').update({ is_archived: true, archived_at: new Date().toISOString() }).in('id', Array.from(ids));
+    if (!error) setStocks((prev) => prev.filter((s) => !ids.has(s.id)));
   }
 
   return {
@@ -178,6 +151,7 @@ export function useZonnebloemStocks() {
     deleteStock,
     bulkFavorite,
     bulkDelete,
+    bulkArchive,
     refreshStocks: fetchStocks,
   };
 }

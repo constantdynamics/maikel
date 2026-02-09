@@ -60,6 +60,7 @@ export default function DashboardPage() {
     deleteStock: zbDeleteStock,
     bulkFavorite: zbBulkFavorite,
     bulkDelete: zbBulkDelete,
+    bulkArchive: zbBulkArchive,
     refreshStocks: zbRefreshStocks,
   } = useZonnebloemStocks();
 
@@ -487,6 +488,12 @@ export default function DashboardPage() {
                       className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors"
                     >
                       Favorite
+                    </button>
+                    <button
+                      onClick={() => { zbBulkArchive(selectedIds); setSelectedIds(new Set()); }}
+                      className="px-3 py-2 text-sm bg-blue-600 text-white hover:opacity-90 rounded transition-colors"
+                    >
+                      Archive
                     </button>
                     <button
                       onClick={requestBulkDelete}

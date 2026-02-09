@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS zonnebloem_stocks (
   is_favorite BOOLEAN DEFAULT FALSE,
   is_deleted BOOLEAN DEFAULT FALSE,
   deleted_at TIMESTAMPTZ,
+  is_archived BOOLEAN DEFAULT FALSE,
+  archived_at TIMESTAMPTZ,
+  scan_session_id UUID REFERENCES zonnebloem_scan_logs(id),
   needs_review BOOLEAN DEFAULT FALSE,
   review_reason VARCHAR(255),
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -80,7 +83,9 @@ CREATE TABLE IF NOT EXISTS zonnebloem_scan_history (
 CREATE INDEX IF NOT EXISTS idx_zb_stocks_ticker ON zonnebloem_stocks(ticker);
 CREATE INDEX IF NOT EXISTS idx_zb_stocks_spike_score ON zonnebloem_stocks(spike_score DESC);
 CREATE INDEX IF NOT EXISTS idx_zb_stocks_is_deleted ON zonnebloem_stocks(is_deleted);
+CREATE INDEX IF NOT EXISTS idx_zb_stocks_is_archived ON zonnebloem_stocks(is_archived);
 CREATE INDEX IF NOT EXISTS idx_zb_stocks_is_favorite ON zonnebloem_stocks(is_favorite);
+CREATE INDEX IF NOT EXISTS idx_zb_stocks_scan_session ON zonnebloem_stocks(scan_session_id);
 CREATE INDEX IF NOT EXISTS idx_zb_stocks_detection_date ON zonnebloem_stocks(detection_date DESC);
 CREATE INDEX IF NOT EXISTS idx_zb_spike_events_ticker ON zonnebloem_spike_events(ticker);
 CREATE INDEX IF NOT EXISTS idx_zb_scan_logs_started ON zonnebloem_scan_logs(started_at DESC);

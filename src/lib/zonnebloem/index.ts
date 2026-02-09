@@ -204,10 +204,10 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
 
     const allCandidates = await fetchCandidatesFromAllMarkets(
       settings.zb_markets,
-      2.0, // Lowered from 3.0 - range ratio (52W High / 52W Low >= 2.0)
+      1.5, // Range ratio (52W High / 52W Low >= 1.5) - broad net for large pool
       settings.zb_min_avg_volume,
       settings.zb_min_price,
-      500,
+      5000, // Max per market - pagination fetches all qualifying stocks
     );
 
     const candidatesFound = allCandidates.length;
@@ -268,7 +268,7 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       const batch = prioritized.slice(batchStart, batchStart + batchSize);
 
       const batchResults = await Promise.allSettled(
-        batch.map((candidate) => deepScanCandidate(candidate, settings, supabase)),
+        batch.map((candidate) => deepScanCandidate(candidate, settings, supabase, scanId)),
       );
 
       for (let j = 0; j < batchResults.length; j++) {
@@ -413,6 +413,7 @@ async function deepScanCandidate(
   candidate: ZBCandidate,
   settings: ZonnebloemSettings,
   supabase: ReturnType<typeof createServiceClient>,
+  scanId?: string,
 ): Promise<{
   matched: boolean;
   isNew: boolean;
@@ -434,8 +435,9 @@ async function deepScanCandidate(
   };
 
   try {
-    // Fetch 5-year historical data from Yahoo Finance
-    const history = await yahoo.getHistoricalData(ticker, 5);
+    // Fetch 3-year historical data from Yahoo Finance using Yahoo-compatible ticker
+    const yahooTicker = candidate.yahooTicker || ticker;
+    const history = await yahoo.getHistoricalData(yahooTicker, 3);
 
     if (history.length === 0) {
       detail.result = 'error';
@@ -451,10 +453,10 @@ async function deepScanCandidate(
       return { matched: false, isNew: false, detail, error: null };
     }
 
-    // Check minimum age (3 years of data) - relaxed to 2.5 years (630 trading days)
-    if (history.length < 630) {
+    // Check minimum age - relaxed to ~1 year (200 trading days)
+    if (history.length < 200) {
       detail.result = 'rejected';
-      detail.rejectReason = `Only ${history.length} data points (need ~630 for 2.5 years)`;
+      detail.rejectReason = `Only ${history.length} data points (need ~200 for 1 year)`;
       return { matched: false, isNew: false, detail, error: null };
     }
 
@@ -521,33 +523,46 @@ async function deepScanCandidate(
       reviewReason = `Extreme spike: ${spikeAnalysis.highestSpikePct.toFixed(0)}%`;
     }
 
-    // Upsert stock
-    const { error: upsertError } = await supabase.from('zonnebloem_stocks').upsert(
-      {
-        ticker,
-        company_name: candidate.name || ticker,
-        sector: candidate.sector || null,
-        exchange: candidate.exchange || null,
-        market: candidate.market,
-        country: candidate.country || null,
-        current_price: candidate.close,
-        base_price_median: spikeAnalysis.basePriceMedian,
-        price_12m_ago: spikeAnalysis.priceChange12m !== null
-          ? candidate.close / (1 + spikeAnalysis.priceChange12m / 100)
-          : null,
-        price_change_12m_pct: spikeAnalysis.priceChange12m,
-        spike_count: spikeAnalysis.events.length,
-        highest_spike_pct: spikeAnalysis.highestSpikePct,
-        highest_spike_date: spikeAnalysis.highestSpikeDate,
-        spike_score: spikeAnalysis.spikeScore,
-        avg_volume_30d: candidate.avgVolume30d,
-        market_cap: candidate.marketCap,
-        last_updated: new Date().toISOString(),
-        needs_review: needsReview,
-        review_reason: reviewReason,
-      },
+    // Upsert stock (try with scan_session_id, fallback without if column doesn't exist)
+    const stockData: Record<string, unknown> = {
+      ticker,
+      company_name: candidate.name || ticker,
+      sector: candidate.sector || null,
+      exchange: candidate.exchange || null,
+      market: candidate.market,
+      country: candidate.country || null,
+      current_price: candidate.close,
+      base_price_median: spikeAnalysis.basePriceMedian,
+      price_12m_ago: spikeAnalysis.priceChange12m !== null
+        ? candidate.close / (1 + spikeAnalysis.priceChange12m / 100)
+        : null,
+      price_change_12m_pct: spikeAnalysis.priceChange12m,
+      spike_count: spikeAnalysis.events.length,
+      highest_spike_pct: spikeAnalysis.highestSpikePct,
+      highest_spike_date: spikeAnalysis.highestSpikeDate,
+      spike_score: spikeAnalysis.spikeScore,
+      avg_volume_30d: candidate.avgVolume30d,
+      market_cap: candidate.marketCap,
+      last_updated: new Date().toISOString(),
+      scan_session_id: scanId || null,
+      needs_review: needsReview,
+      review_reason: reviewReason,
+    };
+
+    let { error: upsertError } = await supabase.from('zonnebloem_stocks').upsert(
+      stockData,
       { onConflict: 'ticker' },
     );
+
+    // Fallback: if scan_session_id column doesn't exist yet, retry without it
+    if (upsertError?.message?.includes('scan_session_id')) {
+      delete stockData.scan_session_id;
+      const retry = await supabase.from('zonnebloem_stocks').upsert(
+        stockData,
+        { onConflict: 'ticker' },
+      );
+      upsertError = retry.error;
+    }
 
     if (upsertError) {
       detail.result = 'error';
