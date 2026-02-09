@@ -21,6 +21,7 @@ interface TradingViewResponse {
 
 export interface ZBCandidate {
   ticker: string;
+  yahooTicker: string;
   fullSymbol: string;
   exchange: string;
   name: string;
@@ -35,6 +36,83 @@ export interface ZBCandidate {
   rangeRatio: number | null;
   market: string;
   country: string | null;
+}
+
+// TradingView exchange prefix → Yahoo Finance suffix mapping
+// Yahoo needs suffixed tickers for non-US markets (e.g., "7504.T" for Tokyo)
+const EXCHANGE_TO_YAHOO_SUFFIX: Record<string, string> = {
+  // Americas
+  NYSE: '', NASDAQ: '', AMEX: '', ARCA: '', OTC: '',
+  TSX: '.TO', TSXV: '.V', NEO: '.NEO',
+  BMFBOVESPA: '.SA', BVMF: '.SA',
+  BMV: '.MX',
+  BCBA: '.BA',
+  BVC: '.CL',
+  BVL: '.LM',
+  BCS: '.SN',
+  // Europe
+  LSE: '.L', LSIN: '.L',
+  XETR: '.DE', FWB: '.F',
+  EURONEXT: '.PA', EPA: '.PA',
+  BME: '.MC',
+  MIL: '.MI',
+  STO: '.ST', NGM: '.ST',
+  OSL: '.OL', OSE: '.OL',
+  CSE: '.CO', OMXCOP: '.CO',
+  HEL: '.HE', OMXHEX: '.HE',
+  SIX: '.SW', SWX: '.SW',
+  AMS: '.AS', ENXTAM: '.AS',
+  BRU: '.BR', ENXTBR: '.BR',
+  WSE: '.WA', GPW: '.WA',
+  VIE: '.VI', WBAG: '.VI',
+  ENXTLS: '.LS', ELI: '.LS',
+  ATHEX: '.AT', ASE: '.AT',
+  BIST: '.IS',
+  TASE: '.TA',
+  // Asia-Pacific
+  HKEX: '.HK', HKSE: '.HK',
+  TSE: '.T', JPX: '.T',
+  NSE: '.NS', BSE: '.BO',
+  KRX: '.KS', KOSDAQ: '.KQ', KOSE: '.KS',
+  TWSE: '.TW', TPEX: '.TWO',
+  SGX: '.SI',
+  ASX: '.AX',
+  NZX: '.NZ', NZE: '.NZ',
+  IDX: '.JK',
+  MYX: '.KL', KLSE: '.KL',
+  SET: '.BK',
+  PSE: '.PS',
+  HOSE: '.VN', HNX: '.VN',
+  KSE: '.KA', PSX: '.KA',
+  SSE: '.SS', SZSE: '.SZ', SHH: '.SS', SHZ: '.SZ',
+  // Africa & Middle East
+  JSE: '.JO',
+  EGX: '.CA',
+  TADAWUL: '.SR', SAU: '.SR',
+  DFM: '.AE', ADX: '.AE',
+  QSE: '.QA', DSM: '.QA',
+  BK: '.KW', KSE_KW: '.KW',
+  BAX: '.BH',
+  NGX: '.LG', NGSE: '.LG',
+  NSE_KE: '.NR',
+  GSE: '.GH',
+};
+
+// Patterns that indicate ETFs, funds, warrants, or depositary receipts — skip these
+const SKIP_NAME_PATTERNS = /\b(ETF|ETN|Fund|Trust|Index|Warrant|Rights|Dep\.?\s*Rec|BDR|GDR|ADR|Cert|Tracker|SPDR|iShares|Vanguard|Lyxor|Amundi|Xtrackers|WisdomTree)\b/i;
+const SKIP_TICKER_PATTERNS = /^(.*-ETF.*|.*-WNT.*|.*-WT.*|.*-UN$|.*-PR$|.*34$)$/i;
+
+/**
+ * Convert a TradingView exchange:ticker into a Yahoo Finance ticker.
+ */
+function toYahooTicker(exchangePrefix: string, ticker: string): string {
+  // US stocks don't need a suffix
+  const suffix = EXCHANGE_TO_YAHOO_SUFFIX[exchangePrefix];
+  if (suffix !== undefined) {
+    return ticker + suffix;
+  }
+  // Fallback: try the raw ticker (works for many US stocks)
+  return ticker;
 }
 
 // TradingView market endpoints - all available global markets
@@ -171,6 +249,11 @@ async function fetchPage(
     .map((item): ZBCandidate | null => {
       const [exchangePrefix, ticker] = item.s.split(':');
       const d = item.d;
+      const name = (d[1] as string) || '';
+
+      // Skip ETFs, funds, warrants, depositary receipts
+      if (SKIP_NAME_PATTERNS.test(name)) return null;
+      if (SKIP_TICKER_PATTERNS.test(ticker)) return null;
 
       const high52w = (d[8] as number) || null;
       const low52w = (d[9] as number) || null;
@@ -181,11 +264,15 @@ async function fetchPage(
       const close = (d[2] as number) || 0;
       if (close <= 0) return null;
 
+      const exchange = (d[10] as string) || exchangePrefix || '';
+      const yahooTicker = toYahooTicker(exchangePrefix, ticker);
+
       return {
         ticker: ticker || (d[0] as string) || '',
+        yahooTicker,
         fullSymbol: item.s,
-        exchange: (d[10] as string) || exchangePrefix || '',
-        name: (d[1] as string) || '',
+        exchange,
+        name,
         close,
         change: (d[3] as number) || 0,
         volume: (d[4] as number) || 0,
