@@ -2,7 +2,6 @@
 
 import type { ZonnebloemStock, SortConfig } from '@/lib/types';
 import { getExchangeFlag } from '@/lib/exchanges';
-import RainbowScore from './RainbowScore';
 
 interface ZonnebloemTableProps {
   stocks: ZonnebloemStock[];
@@ -15,22 +14,120 @@ interface ZonnebloemTableProps {
   onDelete: (id: string) => void;
 }
 
-const columns: { key: keyof ZonnebloemStock; label: string; shortLabel: string; align?: string }[] = [
+// Spike dot categories for Zonnebloem:
+// green = spike >= 200% (explosive), yellow = 100-200% (large), white = <100% (base)
+type DotColor = 'green' | 'yellow' | 'white';
+
+interface SpikeDots {
+  total: number;
+  green: number;
+  yellow: number;
+  white: number;
+  dots: DotColor[];
+}
+
+/**
+ * Estimate spike dot colors based on spike_count and highest_spike_pct.
+ * We don't have individual spike events client-side, so we estimate:
+ * - First spike uses highest_spike_pct
+ * - Remaining spikes use a declining estimate
+ */
+function getSpikeDots(spikeCount: number, highestSpikePct: number | null): SpikeDots {
+  const count = Math.min(spikeCount, 10);
+  if (count === 0) return { total: 0, green: 0, yellow: 0, white: 0, dots: [] };
+
+  const highest = highestSpikePct || 75;
+  const avgSpike = highest / Math.max(spikeCount, 1);
+  const dots: DotColor[] = [];
+
+  for (let i = 0; i < count; i++) {
+    // First uses highest, others decline
+    const est = i === 0 ? highest : avgSpike * (1 - i * 0.08);
+    if (est >= 200) dots.push('green');
+    else if (est >= 100) dots.push('yellow');
+    else dots.push('white');
+  }
+
+  // Sort: green first, then yellow, then white
+  dots.sort((a, b) => {
+    const order: Record<DotColor, number> = { green: 0, yellow: 1, white: 2 };
+    return order[a] - order[b];
+  });
+
+  return {
+    total: dots.length,
+    green: dots.filter(d => d === 'green').length,
+    yellow: dots.filter(d => d === 'yellow').length,
+    white: dots.filter(d => d === 'white').length,
+    dots,
+  };
+}
+
+/**
+ * Sort value for spike dots: total count first, then green, yellow, white.
+ * Returns a comparable number where higher = better.
+ */
+export function spikeDotsSortValue(stock: ZonnebloemStock): number {
+  const d = getSpikeDots(stock.spike_count, stock.highest_spike_pct);
+  // Encode as: total * 1_000_000 + green * 10_000 + yellow * 100 + white
+  return d.total * 1_000_000 + d.green * 10_000 + d.yellow * 100 + d.white;
+}
+
+const DOT_COLORS: Record<DotColor, string> = {
+  green: '#22c55e',
+  yellow: '#facc15',
+  white: '#ffffff',
+};
+
+function SpikeDotDisplay({ spikeCount, highestSpikePct }: { spikeCount: number; highestSpikePct: number | null }) {
+  const { dots } = getSpikeDots(spikeCount, highestSpikePct);
+  if (dots.length === 0) return <span className="text-[var(--text-muted)]">-</span>;
+
+  const topRow = dots.slice(0, 5);
+  const bottomRow = dots.slice(5, 10);
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-0.5">
+        {topRow.map((color, idx) => (
+          <span
+            key={idx}
+            className="inline-block w-2 h-2 rounded-full border border-gray-600"
+            style={{ backgroundColor: DOT_COLORS[color] }}
+            title={`${color === 'green' ? '≥200%' : color === 'yellow' ? '100-200%' : '<100%'} spike`}
+          />
+        ))}
+      </div>
+      {bottomRow.length > 0 && (
+        <div className="flex items-center gap-0.5">
+          {bottomRow.map((color, idx) => (
+            <span
+              key={idx + 5}
+              className="inline-block w-2 h-2 rounded-full border border-gray-600"
+              style={{ backgroundColor: DOT_COLORS[color] }}
+              title={`${color === 'green' ? '≥200%' : color === 'yellow' ? '100-200%' : '<100%'} spike`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const columns: { key: string; label: string; shortLabel: string; align?: string }[] = [
   { key: 'ticker', label: 'Ticker', shortLabel: 'Ticker' },
   { key: 'company_name', label: 'Company Name', shortLabel: 'Company' },
   { key: 'market', label: 'Market', shortLabel: 'Market' },
   { key: 'current_price', label: 'Current Price', shortLabel: 'Price', align: 'right' },
-  { key: 'base_price_median', label: 'Base Price', shortLabel: 'Base', align: 'right' },
-  { key: 'spike_score', label: 'Spike Score', shortLabel: 'Score', align: 'center' },
-  { key: 'spike_count', label: '# Spikes', shortLabel: 'Spikes', align: 'right' },
+  { key: 'spike_dots', label: 'Spike Dots', shortLabel: 'Spikes', align: 'center' },
   { key: 'highest_spike_pct', label: 'Highest Spike %', shortLabel: 'Max Spike', align: 'right' },
   { key: 'price_change_12m_pct', label: '12m Change', shortLabel: '12m%', align: 'right' },
   { key: 'avg_volume_30d', label: 'Avg Volume', shortLabel: 'Vol 30d', align: 'right' },
   { key: 'detection_date', label: 'Detected', shortLabel: 'Detected', align: 'center' },
 ];
 
-const RIGHT_ALIGNED = new Set(['current_price', 'base_price_median', 'spike_count', 'highest_spike_pct', 'price_change_12m_pct', 'avg_volume_30d']);
-const CENTER_ALIGNED = new Set(['spike_score', 'detection_date']);
+const RIGHT_ALIGNED = new Set(['current_price', 'highest_spike_pct', 'price_change_12m_pct', 'avg_volume_30d']);
+const CENTER_ALIGNED = new Set(['spike_dots', 'detection_date']);
 
 function formatCurrency(val: number | null): string {
   if (val === null || val === undefined) return '-';
@@ -66,7 +163,13 @@ export default function ZonnebloemTable({
   onToggleFavorite,
   onDelete,
 }: ZonnebloemTableProps) {
-  function renderCell(stock: ZonnebloemStock, key: keyof ZonnebloemStock) {
+  function handleSort(key: string) {
+    // For spike_dots we use a virtual column - map it to spike_count for the hook
+    const sortKey = key === 'spike_dots' ? 'spike_dots' : key;
+    onSort(sortKey as keyof ZonnebloemStock);
+  }
+
+  function renderCell(stock: ZonnebloemStock, key: string) {
     switch (key) {
       case 'ticker':
         return (
@@ -97,21 +200,8 @@ export default function ZonnebloemTable({
       case 'current_price':
         return <span className="font-mono text-xs">{formatCurrency(stock.current_price)}</span>;
 
-      case 'base_price_median':
-        return <span className="font-mono text-xs text-[var(--text-muted)]">{formatCurrency(stock.base_price_median)}</span>;
-
-      case 'spike_score': {
-        const score = stock.spike_score;
-        const normalizedScore = Math.min(10, Math.max(0, Math.round(score)));
-        return <RainbowScore score={normalizedScore} maxScore={10} />;
-      }
-
-      case 'spike_count':
-        return (
-          <span className={`font-mono text-xs font-semibold ${stock.spike_count >= 3 ? 'text-green-400' : stock.spike_count >= 2 ? 'text-yellow-400' : 'text-[var(--text-secondary)]'}`}>
-            {stock.spike_count}
-          </span>
-        );
+      case 'spike_dots':
+        return <SpikeDotDisplay spikeCount={stock.spike_count} highestSpikePct={stock.highest_spike_pct} />;
 
       case 'highest_spike_pct':
         return (
@@ -143,7 +233,7 @@ export default function ZonnebloemTable({
         );
 
       default:
-        return <span className="text-xs">{String(stock[key] ?? '-')}</span>;
+        return <span className="text-xs">{String(stock[key as keyof ZonnebloemStock] ?? '-')}</span>;
     }
   }
 
@@ -167,7 +257,7 @@ export default function ZonnebloemTable({
                 className={`p-2 cursor-pointer hover:bg-[var(--hover-bg)] transition-colors text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider ${
                   RIGHT_ALIGNED.has(col.key) ? 'text-right' : CENTER_ALIGNED.has(col.key) ? 'text-center' : 'text-left'
                 }`}
-                onClick={() => onSort(col.key)}
+                onClick={() => handleSort(col.key)}
               >
                 <span className="inline-flex items-center gap-1">
                   {col.shortLabel}
@@ -221,7 +311,7 @@ export default function ZonnebloemTable({
                   className="text-[var(--text-muted)] hover:text-red-400 transition-colors text-xs"
                   title="Delete"
                 >
-                  \u2716
+                  ✖
                 </button>
               </td>
             </tr>

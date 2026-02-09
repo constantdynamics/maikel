@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { ZonnebloemStock, SortConfig } from '@/lib/types';
+import { spikeDotsSortValue } from '@/components/ZonnebloemTable';
 
 interface ZBFilterConfig {
   search: string;
@@ -23,7 +24,7 @@ const defaultFilters: ZBFilterConfig = {
 };
 
 const defaultSort: SortConfig = {
-  column: 'spike_score' as keyof ZonnebloemStock as never,
+  column: 'spike_dots' as never,
   direction: 'desc',
 };
 
@@ -89,6 +90,14 @@ export function useZonnebloemStocks() {
     }
 
     result.sort((a, b) => {
+      // Special sort for spike_dots: total dots → green → yellow → white
+      if (sort.column === ('spike_dots' as never)) {
+        const aVal = spikeDotsSortValue(a);
+        const bVal = spikeDotsSortValue(b);
+        const comparison = aVal - bVal;
+        return sort.direction === 'asc' ? comparison : -comparison;
+      }
+
       const aVal = a[sort.column as keyof ZonnebloemStock];
       const bVal = b[sort.column as keyof ZonnebloemStock];
       if (aVal === null || aVal === undefined) return 1;
