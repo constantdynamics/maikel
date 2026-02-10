@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import AuthGuard from '@/components/AuthGuard';
 import { getSelectedMarkets } from '@/components/MarketSelector';
 import StockTable from '@/components/StockTable';
@@ -75,6 +75,9 @@ export default function DashboardPage() {
   const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
   const [zbScanTriggered, setZbScanTriggered] = useState(false);
+  const [zbAutoScan, setZbAutoScan] = useState(false);
+  const [zbAutoNext, setZbAutoNext] = useState<Date | null>(null);
+  const zbAutoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
 
@@ -221,7 +224,42 @@ export default function DashboardPage() {
     setZbScanRunning(false);
     setZbScanTriggered(false);
     zbRefreshStocks();
+    // If auto-scan is on, schedule next run
+    if (zbAutoScan) {
+      setZbAutoNext(new Date(Date.now() + 15 * 60 * 1000));
+    }
   }
+
+  // Auto-scan interval for Zonnebloem
+  useEffect(() => {
+    if (zbAutoTimerRef.current) {
+      clearInterval(zbAutoTimerRef.current);
+      zbAutoTimerRef.current = null;
+    }
+
+    if (zbAutoScan) {
+      // Start first scan immediately if not already running
+      if (!zbScanRunning) {
+        handleRunZbScan();
+      }
+
+      zbAutoTimerRef.current = setInterval(() => {
+        if (!zbScanRunning) {
+          handleRunZbScan();
+        }
+      }, 15 * 60 * 1000); // 15 minutes
+    } else {
+      setZbAutoNext(null);
+    }
+
+    return () => {
+      if (zbAutoTimerRef.current) {
+        clearInterval(zbAutoTimerRef.current);
+        zbAutoTimerRef.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zbAutoScan]);
 
   function handleBulkFavorite() {
     if (activeTab === 'kuifje') bulkFavorite(selectedIds);
@@ -469,13 +507,33 @@ export default function DashboardPage() {
                 </span>
               </h1>
 
-              <button
-                onClick={handleRunZbScan}
-                disabled={zbScanRunning}
-                className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
-              >
-                {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRunZbScan}
+                  disabled={zbScanRunning}
+                  className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
+                >
+                  {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
+                </button>
+
+                <button
+                  onClick={() => setZbAutoScan(!zbAutoScan)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors ${
+                    zbAutoScan
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <span className={`inline-block w-2 h-2 rounded-full ${zbAutoScan ? 'bg-white animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                  {zbAutoScan ? 'Auto-scan ON' : 'Auto-scan'}
+                </button>
+
+                {zbAutoScan && zbAutoNext && !zbScanRunning && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    Next: {zbAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
             </div>
 
             <ZonnebloemScanProgress
