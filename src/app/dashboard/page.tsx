@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import AuthGuard from '@/components/AuthGuard';
+import { getSelectedMarkets } from '@/components/MarketSelector';
 import StockTable from '@/components/StockTable';
 import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
@@ -327,6 +328,19 @@ export default function DashboardPage() {
           >
             Prof. Zonnebloem
             <span className="ml-2 text-xs text-[var(--text-muted)]">({zbStocks.length})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (!scanRunning && !zbScanRunning) {
+                handleRunScan(getSelectedMarkets());
+                handleRunZbScan();
+              }
+            }}
+            disabled={scanRunning || zbScanRunning}
+            className="ml-auto px-4 py-1.5 text-sm font-medium bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white rounded hover:opacity-90 disabled:opacity-50 transition-all"
+          >
+            {scanRunning || zbScanRunning ? 'Scanning...' : 'Run Both Scans'}
           </button>
         </div>
 
