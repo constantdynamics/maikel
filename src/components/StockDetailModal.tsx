@@ -67,7 +67,7 @@ export default function StockDetailModal({ stock, onClose }: StockDetailModalPro
 
         <div className="mt-4 flex gap-2">
           <a
-            href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`}
+            href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 py-2 text-center rounded-lg bg-[var(--accent-primary)] text-white font-medium hover:opacity-90 transition-opacity"

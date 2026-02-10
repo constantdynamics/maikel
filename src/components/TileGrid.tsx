@@ -61,7 +61,7 @@ export default function TileGrid({ stocks }: TileGridProps) {
         return (
           <a
             key={stock.id}
-            href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`}
+            href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
             target="_blank"
             rel="noopener noreferrer"
             className="block rounded transition-transform hover:scale-105 hover:shadow-lg"

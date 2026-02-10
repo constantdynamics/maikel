@@ -367,7 +367,7 @@ export default function DashboardPage() {
               onOpenInGoogle={() => {
                 const selected = stocks.filter((s) => selectedIds.has(s.id));
                 for (const s of selected) {
-                  window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' stock')}`, '_blank');
+                  window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank');
                 }
               }}
               onQuickSelect={handleQuickSelect}
@@ -521,7 +521,7 @@ export default function DashboardPage() {
                       onClick={() => {
                         const selected = zbStocks.filter((s) => selectedIds.has(s.id));
                         for (const s of selected) {
-                          window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' stock')}`, '_blank');
+                          window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank');
                         }
                       }}
                       className="px-3 py-2 text-sm bg-purple-600 text-white hover:opacity-90 rounded transition-colors"

@@ -185,7 +185,7 @@ export default function ZonnebloemTable({
           <span className="flex items-center gap-1.5">
             <span className="text-xs">{getExchangeFlag(stock.exchange, stock.ticker)}</span>
             <a
-              href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' stock')}`}
+              href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
