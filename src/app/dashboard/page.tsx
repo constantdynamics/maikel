@@ -77,7 +77,7 @@ export default function DashboardPage() {
   const [zbScanTriggered, setZbScanTriggered] = useState(false);
   const [zbAutoScan, setZbAutoScan] = useState(false);
   const [zbAutoNext, setZbAutoNext] = useState<Date | null>(null);
-  const zbAutoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const zbAutoLastRun = useRef<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
 
@@ -224,42 +224,58 @@ export default function DashboardPage() {
     setZbScanRunning(false);
     setZbScanTriggered(false);
     zbRefreshStocks();
-    // If auto-scan is on, schedule next run
+    // If auto-scan is on, record last run and schedule next
     if (zbAutoScan) {
-      setZbAutoNext(new Date(Date.now() + 15 * 60 * 1000));
+      zbAutoLastRun.current = Date.now();
+      setZbAutoNext(new Date(Date.now() + ZB_AUTO_INTERVAL));
     }
   }
 
-  // Auto-scan interval for Zonnebloem
-  useEffect(() => {
-    if (zbAutoTimerRef.current) {
-      clearInterval(zbAutoTimerRef.current);
-      zbAutoTimerRef.current = null;
+  // Auto-scan for Zonnebloem — robust against background tabs and sleep
+  const ZB_AUTO_INTERVAL = 15 * 60 * 1000; // 15 minutes
+
+  // Check if it's time to scan (used by both timer and visibility handler)
+  const zbAutoCheck = useCallback(() => {
+    if (!zbAutoScan || zbScanRunning) return;
+    const elapsed = Date.now() - zbAutoLastRun.current;
+    if (elapsed >= ZB_AUTO_INTERVAL) {
+      handleRunZbScan();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zbAutoScan, zbScanRunning]);
 
+  // Start first scan when auto-scan is toggled on
+  useEffect(() => {
     if (zbAutoScan) {
-      // Start first scan immediately if not already running
       if (!zbScanRunning) {
+        zbAutoLastRun.current = Date.now();
         handleRunZbScan();
+        setZbAutoNext(new Date(Date.now() + ZB_AUTO_INTERVAL));
       }
-
-      zbAutoTimerRef.current = setInterval(() => {
-        if (!zbScanRunning) {
-          handleRunZbScan();
-        }
-      }, 15 * 60 * 1000); // 15 minutes
     } else {
       setZbAutoNext(null);
     }
-
-    return () => {
-      if (zbAutoTimerRef.current) {
-        clearInterval(zbAutoTimerRef.current);
-        zbAutoTimerRef.current = null;
-      }
-    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zbAutoScan]);
+
+  // Polling timer — runs every 30s to catch missed intervals
+  useEffect(() => {
+    if (!zbAutoScan) return;
+    const timer = setInterval(zbAutoCheck, 30_000);
+    return () => clearInterval(timer);
+  }, [zbAutoScan, zbAutoCheck]);
+
+  // Catch up after tab becomes visible again (laptop open, tab switch)
+  useEffect(() => {
+    if (!zbAutoScan) return;
+    function onVisible() {
+      if (document.visibilityState === 'visible') {
+        zbAutoCheck();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [zbAutoScan, zbAutoCheck]);
 
   function handleBulkFavorite() {
     if (activeTab === 'kuifje') bulkFavorite(selectedIds);
