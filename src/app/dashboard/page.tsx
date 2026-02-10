@@ -7,6 +7,7 @@ import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ZonnebloemScanProgress from '@/components/ZonnebloemScanProgress';
 import ZonnebloemTable from '@/components/ZonnebloemTable';
+import TileGrid from '@/components/TileGrid';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
@@ -68,6 +69,7 @@ export default function DashboardPage() {
   } = useZonnebloemStocks();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [kuifjeView, setKuifjeView] = useState<'table' | 'tiles'>('table');
   const [scanRunning, setScanRunning] = useState(false);
   const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
@@ -394,25 +396,48 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                <StockTable
-                  stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
-                  sort={sort}
-                  onSort={handleSort}
-                  selectedIds={selectedIds}
-                  onToggleSelect={toggleSelect}
-                  onToggleSelectAll={toggleSelectAll}
-                  onToggleFavorite={toggleFavorite}
-                  onDelete={requestDelete}
-                />
+                <div className="flex justify-end mb-2">
+                  <div className="inline-flex bg-[var(--bg-tertiary)] rounded p-0.5 border border-[var(--border-color)]">
+                    <button
+                      onClick={() => setKuifjeView('table')}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${kuifjeView === 'table' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                    >
+                      Table
+                    </button>
+                    <button
+                      onClick={() => setKuifjeView('tiles')}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${kuifjeView === 'tiles' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                    >
+                      Tiles
+                    </button>
+                  </div>
+                </div>
 
-                {totalPages > 1 && (
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={handlePageChange}
-                    totalItems={stocks.length}
-                    itemsPerPage={ITEMS_PER_PAGE}
-                  />
+                {kuifjeView === 'tiles' ? (
+                  <TileGrid stocks={stocks as Parameters<typeof TileGrid>[0]['stocks']} />
+                ) : (
+                  <>
+                    <StockTable
+                      stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
+                      sort={sort}
+                      onSort={handleSort}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      onToggleSelectAll={toggleSelectAll}
+                      onToggleFavorite={toggleFavorite}
+                      onDelete={requestDelete}
+                    />
+
+                    {totalPages > 1 && (
+                      <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                        totalItems={stocks.length}
+                        itemsPerPage={ITEMS_PER_PAGE}
+                      />
+                    )}
+                  </>
                 )}
               </>
             )}
