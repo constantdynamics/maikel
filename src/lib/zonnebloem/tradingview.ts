@@ -255,6 +255,9 @@ async function fetchPage(
       if (SKIP_NAME_PATTERNS.test(name)) return null;
       if (SKIP_TICKER_PATTERNS.test(ticker)) return null;
 
+      // Skip OTC (over-the-counter) stocks
+      if (exchangePrefix === 'OTC' || exchangePrefix === 'OTCM') return null;
+
       const high52w = (d[8] as number) || null;
       const low52w = (d[9] as number) || null;
       const rangeRatio = high52w && low52w && low52w > 0 ? high52w / low52w : null;
