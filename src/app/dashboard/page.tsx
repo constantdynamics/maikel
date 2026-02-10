@@ -7,6 +7,7 @@ import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ZonnebloemScanProgress from '@/components/ZonnebloemScanProgress';
 import ZonnebloemTable from '@/components/ZonnebloemTable';
+import ZonnebloemExcelView from '@/components/ZonnebloemExcelView';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
@@ -68,6 +69,7 @@ export default function DashboardPage() {
   } = useZonnebloemStocks();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [zbExcelView, setZbExcelView] = useState(false);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
@@ -430,13 +432,26 @@ export default function DashboardPage() {
                 </span>
               </h1>
 
-              <button
-                onClick={handleRunZbScan}
-                disabled={zbScanRunning}
-                className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
-              >
-                {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
-              </button>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <span className="text-xs text-[var(--text-muted)]">Excel</span>
+                  <button
+                    onClick={() => setZbExcelView(!zbExcelView)}
+                    className={`relative w-10 h-5 rounded-full transition-colors ${zbExcelView ? 'bg-green-600' : 'bg-[var(--bg-tertiary)]'}`}
+                    role="switch"
+                    aria-checked={zbExcelView}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow ${zbExcelView ? 'translate-x-5' : ''}`} />
+                  </button>
+                </label>
+                <button
+                  onClick={handleRunZbScan}
+                  disabled={zbScanRunning}
+                  className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
+                >
+                  {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
+                </button>
+              </div>
             </div>
 
             <ZonnebloemScanProgress
@@ -546,19 +561,30 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                <ZonnebloemTable
-                  stocks={paginatedStocks as Parameters<typeof ZonnebloemTable>[0]['stocks']}
-                  sort={zbSort}
-                  onSort={zbHandleSort}
-                  selectedIds={selectedIds}
-                  onToggleSelect={toggleSelect}
-                  onToggleSelectAll={toggleSelectAll}
-                  onToggleFavorite={zbToggleFavorite}
-                  onDelete={requestDelete}
-                  scanSessions={zbScanSessions}
-                  visibleColumns={zbVisibleColumns}
-                  onToggleColumn={zbToggleColumn}
-                />
+                {zbExcelView ? (
+                  <ZonnebloemExcelView
+                    stocks={paginatedStocks as Parameters<typeof ZonnebloemExcelView>[0]['stocks']}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                    onToggleSelectAll={toggleSelectAll}
+                    scanSessions={zbScanSessions}
+                    visibleColumns={zbVisibleColumns}
+                  />
+                ) : (
+                  <ZonnebloemTable
+                    stocks={paginatedStocks as Parameters<typeof ZonnebloemTable>[0]['stocks']}
+                    sort={zbSort}
+                    onSort={zbHandleSort}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelect}
+                    onToggleSelectAll={toggleSelectAll}
+                    onToggleFavorite={zbToggleFavorite}
+                    onDelete={requestDelete}
+                    scanSessions={zbScanSessions}
+                    visibleColumns={zbVisibleColumns}
+                    onToggleColumn={zbToggleColumn}
+                  />
+                )}
 
                 {totalPages > 1 && (
                   <Pagination
