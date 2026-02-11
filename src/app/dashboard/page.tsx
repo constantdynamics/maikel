@@ -75,6 +75,9 @@ export default function DashboardPage() {
   const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
   const [zbScanTriggered, setZbScanTriggered] = useState(false);
+  const [kuifjeAutoScan, setKuifjeAutoScan] = useState(false);
+  const [kuifjeAutoNext, setKuifjeAutoNext] = useState<Date | null>(null);
+  const kuifjeAutoLastRun = useRef<number>(0);
   const [zbAutoScan, setZbAutoScan] = useState(false);
   const [zbAutoNext, setZbAutoNext] = useState<Date | null>(null);
   const zbAutoLastRun = useRef<number>(0);
@@ -218,6 +221,10 @@ export default function DashboardPage() {
     setScanRunning(false);
     setScanTriggered(false);
     refreshStocks();
+    if (kuifjeAutoScan) {
+      kuifjeAutoLastRun.current = Date.now();
+      setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+    }
   }
 
   function handleZbScanComplete() {
@@ -227,30 +234,52 @@ export default function DashboardPage() {
     // If auto-scan is on, record last run and schedule next
     if (zbAutoScan) {
       zbAutoLastRun.current = Date.now();
-      setZbAutoNext(new Date(Date.now() + ZB_AUTO_INTERVAL));
+      setZbAutoNext(new Date(Date.now() + AUTO_INTERVAL));
     }
   }
 
-  // Auto-scan for Zonnebloem — robust against background tabs and sleep
-  const ZB_AUTO_INTERVAL = 15 * 60 * 1000; // 15 minutes
+  // Auto-scan — robust against background tabs and sleep
+  const AUTO_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
-  // Check if it's time to scan (used by both timer and visibility handler)
+  // Kuifje auto-scan check
+  const kuifjeAutoCheck = useCallback(() => {
+    if (!kuifjeAutoScan || scanRunning) return;
+    if (Date.now() - kuifjeAutoLastRun.current >= AUTO_INTERVAL) {
+      handleRunScan(getSelectedMarkets());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kuifjeAutoScan, scanRunning]);
+
+  // Zonnebloem auto-scan check
   const zbAutoCheck = useCallback(() => {
     if (!zbAutoScan || zbScanRunning) return;
-    const elapsed = Date.now() - zbAutoLastRun.current;
-    if (elapsed >= ZB_AUTO_INTERVAL) {
+    if (Date.now() - zbAutoLastRun.current >= AUTO_INTERVAL) {
       handleRunZbScan();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zbAutoScan, zbScanRunning]);
 
-  // Start first scan when auto-scan is toggled on
+  // Start first scan when Kuifje auto-scan is toggled on
+  useEffect(() => {
+    if (kuifjeAutoScan) {
+      if (!scanRunning) {
+        kuifjeAutoLastRun.current = Date.now();
+        handleRunScan(getSelectedMarkets());
+        setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
+    } else {
+      setKuifjeAutoNext(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kuifjeAutoScan]);
+
+  // Start first scan when Zonnebloem auto-scan is toggled on
   useEffect(() => {
     if (zbAutoScan) {
       if (!zbScanRunning) {
         zbAutoLastRun.current = Date.now();
         handleRunZbScan();
-        setZbAutoNext(new Date(Date.now() + ZB_AUTO_INTERVAL));
+        setZbAutoNext(new Date(Date.now() + AUTO_INTERVAL));
       }
     } else {
       setZbAutoNext(null);
@@ -260,22 +289,26 @@ export default function DashboardPage() {
 
   // Polling timer — runs every 30s to catch missed intervals
   useEffect(() => {
-    if (!zbAutoScan) return;
-    const timer = setInterval(zbAutoCheck, 30_000);
+    if (!kuifjeAutoScan && !zbAutoScan) return;
+    const timer = setInterval(() => {
+      kuifjeAutoCheck();
+      zbAutoCheck();
+    }, 30_000);
     return () => clearInterval(timer);
-  }, [zbAutoScan, zbAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, kuifjeAutoCheck, zbAutoCheck]);
 
   // Catch up after tab becomes visible again (laptop open, tab switch)
   useEffect(() => {
-    if (!zbAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan) return;
     function onVisible() {
       if (document.visibilityState === 'visible') {
+        kuifjeAutoCheck();
         zbAutoCheck();
       }
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [zbAutoScan, zbAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, kuifjeAutoCheck, zbAutoCheck]);
 
   function handleBulkFavorite() {
     if (activeTab === 'kuifje') bulkFavorite(selectedIds);
@@ -386,15 +419,18 @@ export default function DashboardPage() {
 
           <button
             onClick={() => {
-              if (!scanRunning && !zbScanRunning) {
-                handleRunScan(getSelectedMarkets());
-                handleRunZbScan();
-              }
+              const newState = !(kuifjeAutoScan && zbAutoScan);
+              setKuifjeAutoScan(newState);
+              setZbAutoScan(newState);
             }}
-            disabled={scanRunning || zbScanRunning}
-            className="ml-auto px-4 py-1.5 text-sm font-medium bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white rounded hover:opacity-90 disabled:opacity-50 transition-all"
+            className={`ml-auto flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all ${
+              kuifjeAutoScan && zbAutoScan
+                ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:opacity-90'
+                : 'bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white hover:opacity-90'
+            }`}
           >
-            {scanRunning || zbScanRunning ? 'Scanning...' : 'Run Both Scans'}
+            <span className={`inline-block w-2 h-2 rounded-full ${kuifjeAutoScan && zbAutoScan ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
+            {kuifjeAutoScan && zbAutoScan ? 'Auto-scan Both ON' : 'Auto-scan Both'}
           </button>
         </div>
 
@@ -409,11 +445,31 @@ export default function DashboardPage() {
                 </span>
               </h1>
 
-              {sessions.length > 0 && (
-                <div className="text-sm text-[var(--text-muted)]">
-                  Last scan: {new Date(sessions[0]?.started_at).toLocaleDateString()} ({sessions[0]?.stocks_found} found)
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {sessions.length > 0 && (
+                  <div className="text-sm text-[var(--text-muted)]">
+                    Last scan: {new Date(sessions[0]?.started_at).toLocaleDateString()} ({sessions[0]?.stocks_found} found)
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setKuifjeAutoScan(!kuifjeAutoScan)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors ${
+                    kuifjeAutoScan
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <span className={`inline-block w-2 h-2 rounded-full ${kuifjeAutoScan ? 'bg-white animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                  {kuifjeAutoScan ? 'Auto-scan ON' : 'Auto-scan'}
+                </button>
+
+                {kuifjeAutoScan && kuifjeAutoNext && !scanRunning && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    Next: {kuifjeAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
             </div>
 
             <ScanProgress
