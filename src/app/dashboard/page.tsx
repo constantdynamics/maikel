@@ -622,6 +622,10 @@ export default function DashboardPage() {
               <UnderwaterMode
                 stocks={zbStocks}
                 onExit={() => setUnderwaterMode(false)}
+                autoScanActive={zbAutoScan}
+                autoScanNext={zbAutoNext}
+                scanRunning={zbScanRunning}
+                onRefreshStocks={zbRefreshStocks}
               />
             )}
 
