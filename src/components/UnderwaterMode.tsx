@@ -99,7 +99,7 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
             {isRunning
               ? `Scanning${elapsed ? ` (${elapsed}s)` : ''}...`
               : autoScanActive
-                ? 'Idle'
+                ? 'Starting next scan...'
                 : 'Auto-scan off'}
           </span>
         </div>

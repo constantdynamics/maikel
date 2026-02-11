@@ -233,10 +233,15 @@ export default function DashboardPage() {
     setZbScanRunning(false);
     setZbScanTriggered(false);
     zbRefreshStocks();
-    // If auto-scan is on, record last run and schedule next
     if (zbAutoScan) {
-      zbAutoLastRun.current = Date.now();
-      setZbAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      if (underwaterMode) {
+        // In underwater mode: restart scan immediately (small delay to let state settle)
+        setTimeout(() => handleRunZbScan(), 3000);
+        setZbAutoNext(new Date(Date.now() + 3000));
+      } else {
+        zbAutoLastRun.current = Date.now();
+        setZbAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
     }
   }
 
