@@ -9,8 +9,8 @@ interface UnderwaterModeProps {
 }
 
 export default function UnderwaterMode({ stocks, onExit }: UnderwaterModeProps) {
-  // Split stocks into 4 columns
-  const colCount = 4;
+  // Split stocks into 8 columns
+  const colCount = 8;
   const columns: ZonnebloemStock[][] = Array.from({ length: colCount }, () => []);
   stocks.forEach((stock, i) => {
     columns[i % colCount].push(stock);
@@ -43,18 +43,18 @@ export default function UnderwaterMode({ stocks, onExit }: UnderwaterModeProps) 
         </span>
       </div>
 
-      {/* 4-column grid */}
-      <div className="px-6 pb-8 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-0">
+      {/* 8-column grid */}
+      <div className="px-6 pb-8 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-x-4 gap-y-0">
         {columns.map((col, colIdx) => (
           <div key={colIdx}>
             {col.map((stock) => (
               <div
                 key={stock.id}
-                className="flex items-center justify-between py-1 border-b"
+                className="flex items-center gap-1.5 py-1 border-b"
                 style={{ borderColor: '#252729' }}
               >
                 <span
-                  className="font-mono text-xs font-medium truncate mr-2"
+                  className="font-mono text-xs font-medium truncate"
                   style={{ color: '#7a7d82' }}
                 >
                   {stock.ticker}
