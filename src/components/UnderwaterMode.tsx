@@ -59,12 +59,12 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
     return () => clearInterval(timer);
   }, [fetchStatus, lastScanId, onRefreshStocks]);
 
-  // Split stocks into 8 columns
+  // Split stocks into 8 columns — fill vertically (column 1 first, then 2, etc.)
   const colCount = 8;
-  const columns: ZonnebloemStock[][] = Array.from({ length: colCount }, () => []);
-  stocks.forEach((stock, i) => {
-    columns[i % colCount].push(stock);
-  });
+  const rowsPerCol = Math.ceil(stocks.length / colCount);
+  const columns: ZonnebloemStock[][] = Array.from({ length: colCount }, (_, colIdx) =>
+    stocks.slice(colIdx * rowsPerCol, (colIdx + 1) * rowsPerCol)
+  );
 
   const isRunning = scanStatus?.running || scanRunning;
   const scan = scanStatus?.scan;

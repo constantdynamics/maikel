@@ -107,6 +107,26 @@ const SECTORS = [
   'Utilities',
 ];
 
+const KUIFJE_RECOMMENDED_DEFAULTS: Settings = {
+  ath_decline_min: 50,
+  ath_decline_max: 95,
+  growth_threshold_pct: 100,
+  min_growth_events: 1,
+  min_consecutive_days: 3,
+  growth_lookback_years: 5,
+  purchase_limit_multiplier: 1.20,
+  scan_times: ['10:30', '15:00'],
+  excluded_sectors: [],
+  included_volatile_sectors: ['Biotechnology', 'Pharmaceuticals', 'Drug Manufacturers'],
+  market_cap_categories: ['micro', 'small', 'mid', 'large'],
+  auto_scan_interval_minutes: 15,
+  enable_stable_spike_filter: false,
+  stable_max_decline_pct: 10,
+  stable_min_spike_pct: 100,
+  stable_lookback_months: 12,
+  skip_recently_scanned_hours: 0,
+};
+
 type SettingsTab = 'kuifje' | 'zonnebloem' | 'system';
 
 export default function SettingsPage() {
@@ -310,6 +330,22 @@ export default function SettingsPage() {
         {/* ===== KUIFJE TAB ===== */}
         {activeTab === 'kuifje' && (
           <div className="space-y-6">
+            {/* Reset to defaults */}
+            <div className="bg-amber-900/20 border border-amber-700/50 rounded-lg p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-amber-300">Recommended Defaults</p>
+                <p className="text-xs text-amber-200/60 mt-0.5">
+                  ATH decline 50-95%, growth 100%+, 1 event, 3 days, 5yr lookback, incl. biotech/pharma
+                </p>
+              </div>
+              <button
+                onClick={() => setSettings(prev => ({ ...prev, ...KUIFJE_RECOMMENDED_DEFAULTS }))}
+                className="px-4 py-2 text-sm bg-amber-700 hover:bg-amber-600 text-white rounded font-medium transition-colors whitespace-nowrap"
+              >
+                Reset to Defaults
+              </button>
+            </div>
+
             {/* Screening Criteria */}
             <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
               <h2 className="text-lg font-semibold">Screening Criteria</h2>

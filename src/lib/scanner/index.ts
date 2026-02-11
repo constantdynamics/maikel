@@ -134,10 +134,6 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
     }
   }
 
-  // Hard override: always use 85-100 range regardless of DB values
-  defaults.ath_decline_min = 85;
-  defaults.ath_decline_max = 100;
-
   return defaults;
 }
 
