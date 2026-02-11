@@ -9,6 +9,7 @@ import ScanProgress from '@/components/ScanProgress';
 import ZonnebloemScanProgress from '@/components/ZonnebloemScanProgress';
 import ZonnebloemTable from '@/components/ZonnebloemTable';
 import TileGrid from '@/components/TileGrid';
+import UnderwaterMode from '@/components/UnderwaterMode';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
@@ -71,6 +72,7 @@ export default function DashboardPage() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [kuifjeView, setKuifjeView] = useState<'table' | 'tiles'>('table');
+  const [underwaterMode, setUnderwaterMode] = useState(false);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
@@ -605,8 +607,23 @@ export default function DashboardPage() {
                     Next: {zbAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+
+                <button
+                  onClick={() => setUnderwaterMode(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors bg-[#1a1c1e] text-[#6a6d72] border border-[#3a3d41] hover:text-[#9a9da2]"
+                >
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#3a3d41]" />
+                  Underwater
+                </button>
               </div>
             </div>
+
+            {underwaterMode && (
+              <UnderwaterMode
+                stocks={zbStocks}
+                onExit={() => setUnderwaterMode(false)}
+              />
+            )}
 
             <ZonnebloemScanProgress
               scanTriggered={zbScanTriggered}

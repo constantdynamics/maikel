@@ -63,7 +63,7 @@ const DOT_COLORS: Record<DotColor, string> = {
   white: '#ffffff',
 };
 
-function SpikeDotDisplay({ spikeCount, highestSpikePct }: { spikeCount: number; highestSpikePct: number | null }) {
+export function SpikeDotDisplay({ spikeCount, highestSpikePct }: { spikeCount: number; highestSpikePct: number | null }) {
   const { dots } = getSpikeDots(spikeCount, highestSpikePct);
   if (dots.length === 0) return <span className="text-[var(--text-muted)]">-</span>;
 
