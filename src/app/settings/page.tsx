@@ -108,11 +108,11 @@ const SECTORS = [
 ];
 
 const KUIFJE_RECOMMENDED_DEFAULTS: Settings = {
-  ath_decline_min: 50,
-  ath_decline_max: 95,
+  ath_decline_min: 60,
+  ath_decline_max: 100,
   growth_threshold_pct: 100,
-  min_growth_events: 1,
-  min_consecutive_days: 3,
+  min_growth_events: 2,
+  min_consecutive_days: 4,
   growth_lookback_years: 5,
   purchase_limit_multiplier: 1.20,
   scan_times: ['10:30', '15:00'],
@@ -335,7 +335,7 @@ export default function SettingsPage() {
               <div>
                 <p className="text-sm font-medium text-amber-300">Recommended Defaults</p>
                 <p className="text-xs text-amber-200/60 mt-0.5">
-                  ATH decline 50-95%, growth 100%+, 1 event, 3 days, 5yr lookback, incl. biotech/pharma
+                  ATH decline 60-100%, growth 100%+, 2 events, 4 days, 5yr lookback, incl. biotech/pharma
                 </p>
               </div>
               <button
