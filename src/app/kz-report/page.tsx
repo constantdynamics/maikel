@@ -249,9 +249,19 @@ export default function KZReportPage() {
             <summary className="px-4 py-3 text-sm text-slate-400 cursor-pointer hover:text-white">
               Raw TICKER-LIMIET text ({currentStocks.length} lines)
             </summary>
-            <pre className="px-4 pb-4 text-xs text-slate-300 font-mono whitespace-pre-wrap max-h-96 overflow-auto">
-              {currentText}
-            </pre>
+            <div className="px-4 pb-4">
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => handleCopy(currentText)}
+                  className="px-3 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-colors"
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap max-h-96 overflow-auto">
+                {currentText}
+              </pre>
+            </div>
           </details>
         )}
       </div>

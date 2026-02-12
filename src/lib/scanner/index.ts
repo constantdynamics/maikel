@@ -387,6 +387,9 @@ async function deepScanStock(
     twelve_month_max_decline_pct: stableSpikeAnalysis.maxDeclineFromAverage,
     twelve_month_max_spike_pct: stableSpikeAnalysis.maxSpikeAboveAverage,
     is_stable_with_spikes: stableSpikeAnalysis.isStableWithSpikes,
+    // Reset visibility flags so re-discovered stocks reappear
+    is_deleted: false,
+    is_archived: false,
   }, { onConflict: 'ticker' });
 
   await supabase.from('growth_events').delete().eq('ticker', ticker);
