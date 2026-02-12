@@ -292,7 +292,7 @@ export default function ScanLogPage() {
                           ) : filteredDetails.map((d, i) => (
                             <tr key={`${d.ticker}-${i}`} className={`border-t border-[var(--border-color)] ${d.result === 'match' ? 'bg-green-900/20' : d.result === 'error' ? 'bg-red-900/20' : ''}`}>
                               <td className="px-3 py-2 font-mono font-bold">
-                                <a href={`https://www.google.com/search?q=${encodeURIComponent(d.ticker + ' stock')}`} target="_blank" rel="noopener noreferrer" className="ticker-link">{d.ticker}</a>
+                                <a href={`https://www.google.com/search?q=${encodeURIComponent(d.ticker + ' ' + (d.name || '') + ' stock')}`} target="_blank" rel="noopener noreferrer" className="ticker-link">{d.ticker}</a>
                               </td>
                               <td className="px-3 py-2 max-w-[200px] truncate">{d.name}</td>
                               <td className="px-3 py-2 text-right font-mono">${d.tvPrice.toFixed(2)}</td>
@@ -404,7 +404,7 @@ export default function ScanLogPage() {
                           ) : zbFilteredDetails.map((d, i) => (
                             <tr key={`${d.ticker}-${i}`} className={`border-t border-[var(--border-color)] ${d.result === 'match' ? 'bg-green-900/20' : d.result === 'error' ? 'bg-red-900/20' : ''}`}>
                               <td className="px-3 py-2 font-mono font-bold">
-                                <a href={`https://www.google.com/search?q=${encodeURIComponent(d.ticker + ' stock')}`} target="_blank" rel="noopener noreferrer" className="ticker-link text-purple-400 hover:text-purple-300">{d.ticker}</a>
+                                <a href={`https://www.google.com/search?q=${encodeURIComponent(d.ticker + ' ' + (d.name || '') + ' stock')}`} target="_blank" rel="noopener noreferrer" className="ticker-link text-purple-400 hover:text-purple-300">{d.ticker}</a>
                               </td>
                               <td className="px-3 py-2 max-w-[200px] truncate" title={d.name}>{d.name}</td>
                               <td className="px-3 py-2 text-xs text-[var(--text-muted)]">{d.market}</td>

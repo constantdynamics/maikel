@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import AuthGuard from '@/components/AuthGuard';
+import { getSelectedMarkets } from '@/components/MarketSelector';
 import StockTable from '@/components/StockTable';
 import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ZonnebloemScanProgress from '@/components/ZonnebloemScanProgress';
 import ZonnebloemTable from '@/components/ZonnebloemTable';
+import TileGrid from '@/components/TileGrid';
+import UnderwaterMode from '@/components/UnderwaterMode';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
@@ -56,6 +59,9 @@ export default function DashboardPage() {
     handleSort: zbHandleSort,
     sectors: zbSectors,
     markets: zbMarkets,
+    scanSessions: zbScanSessions,
+    visibleColumns: zbVisibleColumns,
+    toggleColumn: zbToggleColumn,
     toggleFavorite: zbToggleFavorite,
     deleteStock: zbDeleteStock,
     bulkFavorite: zbBulkFavorite,
@@ -65,10 +71,18 @@ export default function DashboardPage() {
   } = useZonnebloemStocks();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [kuifjeView, setKuifjeView] = useState<'table' | 'tiles'>('table');
+  const [underwaterMode, setUnderwaterMode] = useState(false);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanTriggered, setScanTriggered] = useState(false);
   const [zbScanRunning, setZbScanRunning] = useState(false);
   const [zbScanTriggered, setZbScanTriggered] = useState(false);
+  const [kuifjeAutoScan, setKuifjeAutoScan] = useState(false);
+  const [kuifjeAutoNext, setKuifjeAutoNext] = useState<Date | null>(null);
+  const kuifjeAutoLastRun = useRef<number>(0);
+  const [zbAutoScan, setZbAutoScan] = useState(false);
+  const [zbAutoNext, setZbAutoNext] = useState<Date | null>(null);
+  const zbAutoLastRun = useRef<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
 
@@ -209,13 +223,99 @@ export default function DashboardPage() {
     setScanRunning(false);
     setScanTriggered(false);
     refreshStocks();
+    if (kuifjeAutoScan) {
+      kuifjeAutoLastRun.current = Date.now();
+      setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+    }
   }
 
   function handleZbScanComplete() {
     setZbScanRunning(false);
     setZbScanTriggered(false);
     zbRefreshStocks();
+    if (zbAutoScan) {
+      if (underwaterMode) {
+        // In underwater mode: restart scan immediately (small delay to let state settle)
+        setTimeout(() => handleRunZbScan(), 3000);
+        setZbAutoNext(new Date(Date.now() + 3000));
+      } else {
+        zbAutoLastRun.current = Date.now();
+        setZbAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
+    }
   }
+
+  // Auto-scan — robust against background tabs and sleep
+  const AUTO_INTERVAL = 15 * 60 * 1000; // 15 minutes
+
+  // Kuifje auto-scan check
+  const kuifjeAutoCheck = useCallback(() => {
+    if (!kuifjeAutoScan || scanRunning) return;
+    if (Date.now() - kuifjeAutoLastRun.current >= AUTO_INTERVAL) {
+      handleRunScan(getSelectedMarkets());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kuifjeAutoScan, scanRunning]);
+
+  // Zonnebloem auto-scan check
+  const zbAutoCheck = useCallback(() => {
+    if (!zbAutoScan || zbScanRunning) return;
+    if (Date.now() - zbAutoLastRun.current >= AUTO_INTERVAL) {
+      handleRunZbScan();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zbAutoScan, zbScanRunning]);
+
+  // Start first scan when Kuifje auto-scan is toggled on
+  useEffect(() => {
+    if (kuifjeAutoScan) {
+      if (!scanRunning) {
+        kuifjeAutoLastRun.current = Date.now();
+        handleRunScan(getSelectedMarkets());
+        setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
+    } else {
+      setKuifjeAutoNext(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kuifjeAutoScan]);
+
+  // Start first scan when Zonnebloem auto-scan is toggled on
+  useEffect(() => {
+    if (zbAutoScan) {
+      if (!zbScanRunning) {
+        zbAutoLastRun.current = Date.now();
+        handleRunZbScan();
+        setZbAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
+    } else {
+      setZbAutoNext(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zbAutoScan]);
+
+  // Polling timer — runs every 30s to catch missed intervals
+  useEffect(() => {
+    if (!kuifjeAutoScan && !zbAutoScan) return;
+    const timer = setInterval(() => {
+      kuifjeAutoCheck();
+      zbAutoCheck();
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [kuifjeAutoScan, zbAutoScan, kuifjeAutoCheck, zbAutoCheck]);
+
+  // Catch up after tab becomes visible again (laptop open, tab switch)
+  useEffect(() => {
+    if (!kuifjeAutoScan && !zbAutoScan) return;
+    function onVisible() {
+      if (document.visibilityState === 'visible') {
+        kuifjeAutoCheck();
+        zbAutoCheck();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [kuifjeAutoScan, zbAutoScan, kuifjeAutoCheck, zbAutoCheck]);
 
   function handleBulkFavorite() {
     if (activeTab === 'kuifje') bulkFavorite(selectedIds);
@@ -323,6 +423,22 @@ export default function DashboardPage() {
             Prof. Zonnebloem
             <span className="ml-2 text-xs text-[var(--text-muted)]">({zbStocks.length})</span>
           </button>
+
+          <button
+            onClick={() => {
+              const newState = !(kuifjeAutoScan && zbAutoScan);
+              setKuifjeAutoScan(newState);
+              setZbAutoScan(newState);
+            }}
+            className={`ml-auto flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all ${
+              kuifjeAutoScan && zbAutoScan
+                ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:opacity-90'
+                : 'bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white hover:opacity-90'
+            }`}
+          >
+            <span className={`inline-block w-2 h-2 rounded-full ${kuifjeAutoScan && zbAutoScan ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
+            {kuifjeAutoScan && zbAutoScan ? 'Auto-scan Both ON' : 'Auto-scan Both'}
+          </button>
         </div>
 
         {/* Kuifje Tab */}
@@ -336,11 +452,31 @@ export default function DashboardPage() {
                 </span>
               </h1>
 
-              {sessions.length > 0 && (
-                <div className="text-sm text-[var(--text-muted)]">
-                  Last scan: {new Date(sessions[0]?.started_at).toLocaleDateString()} ({sessions[0]?.stocks_found} found)
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {sessions.length > 0 && (
+                  <div className="text-sm text-[var(--text-muted)]">
+                    Last scan: {new Date(sessions[0]?.started_at).toLocaleDateString()} ({sessions[0]?.stocks_found} found)
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setKuifjeAutoScan(!kuifjeAutoScan)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors ${
+                    kuifjeAutoScan
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <span className={`inline-block w-2 h-2 rounded-full ${kuifjeAutoScan ? 'bg-white animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                  {kuifjeAutoScan ? 'Auto-scan ON' : 'Auto-scan'}
+                </button>
+
+                {kuifjeAutoScan && kuifjeAutoNext && !scanRunning && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    Next: {kuifjeAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
             </div>
 
             <ScanProgress
@@ -359,6 +495,12 @@ export default function DashboardPage() {
               onBulkFavorite={handleBulkFavorite}
               onBulkArchive={handleBulkArchive}
               onBulkDelete={requestBulkDelete}
+              onOpenInGoogle={() => {
+                const selected = stocks.filter((s) => selectedIds.has(s.id));
+                for (const s of selected) {
+                  window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank');
+                }
+              }}
               onQuickSelect={handleQuickSelect}
             />
 
@@ -385,25 +527,48 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                <StockTable
-                  stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
-                  sort={sort}
-                  onSort={handleSort}
-                  selectedIds={selectedIds}
-                  onToggleSelect={toggleSelect}
-                  onToggleSelectAll={toggleSelectAll}
-                  onToggleFavorite={toggleFavorite}
-                  onDelete={requestDelete}
-                />
+                <div className="flex justify-end mb-2">
+                  <div className="inline-flex bg-[var(--bg-tertiary)] rounded p-0.5 border border-[var(--border-color)]">
+                    <button
+                      onClick={() => setKuifjeView('table')}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${kuifjeView === 'table' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                    >
+                      Table
+                    </button>
+                    <button
+                      onClick={() => setKuifjeView('tiles')}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${kuifjeView === 'tiles' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                    >
+                      Tiles
+                    </button>
+                  </div>
+                </div>
 
-                {totalPages > 1 && (
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onPageChange={handlePageChange}
-                    totalItems={stocks.length}
-                    itemsPerPage={ITEMS_PER_PAGE}
-                  />
+                {kuifjeView === 'tiles' ? (
+                  <TileGrid stocks={stocks as Parameters<typeof TileGrid>[0]['stocks']} />
+                ) : (
+                  <>
+                    <StockTable
+                      stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
+                      sort={sort}
+                      onSort={handleSort}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelect}
+                      onToggleSelectAll={toggleSelectAll}
+                      onToggleFavorite={toggleFavorite}
+                      onDelete={requestDelete}
+                    />
+
+                    {totalPages > 1 && (
+                      <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                        totalItems={stocks.length}
+                        itemsPerPage={ITEMS_PER_PAGE}
+                      />
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -421,14 +586,54 @@ export default function DashboardPage() {
                 </span>
               </h1>
 
-              <button
-                onClick={handleRunZbScan}
-                disabled={zbScanRunning}
-                className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
-              >
-                {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRunZbScan}
+                  disabled={zbScanRunning}
+                  className="px-4 py-2 text-sm bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 rounded font-medium transition-colors"
+                >
+                  {zbScanRunning ? 'Scanning...' : 'Run Zonnebloem Scan'}
+                </button>
+
+                <button
+                  onClick={() => setZbAutoScan(!zbAutoScan)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors ${
+                    zbAutoScan
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  <span className={`inline-block w-2 h-2 rounded-full ${zbAutoScan ? 'bg-white animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                  {zbAutoScan ? 'Auto-scan ON' : 'Auto-scan'}
+                </button>
+
+                {zbAutoScan && zbAutoNext && !zbScanRunning && (
+                  <span className="text-xs text-[var(--text-muted)]">
+                    Next: {zbAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+
+                <button
+                  onClick={() => setUnderwaterMode(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors bg-[#1a1c1e] text-[#6a6d72] border border-[#3a3d41] hover:text-[#9a9da2]"
+                >
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#3a3d41]" />
+                  Underwater
+                </button>
+              </div>
             </div>
+
+            {underwaterMode && (
+              <UnderwaterMode
+                zbStocks={zbStocks}
+                kuifjeStocks={stocks}
+                onExit={() => setUnderwaterMode(false)}
+                autoScanActive={zbAutoScan}
+                autoScanNext={zbAutoNext}
+                scanRunning={zbScanRunning}
+                onRefreshStocks={zbRefreshStocks}
+              />
+            )}
 
             <ZonnebloemScanProgress
               scanTriggered={zbScanTriggered}
@@ -484,6 +689,17 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 ml-auto">
                     <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
                     <button
+                      onClick={() => {
+                        const selected = zbStocks.filter((s) => selectedIds.has(s.id));
+                        for (const s of selected) {
+                          window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank');
+                        }
+                      }}
+                      className="px-3 py-2 text-sm bg-purple-600 text-white hover:opacity-90 rounded transition-colors"
+                    >
+                      Open in Google
+                    </button>
+                    <button
                       onClick={handleBulkFavorite}
                       className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors"
                     >
@@ -535,6 +751,9 @@ export default function DashboardPage() {
                   onToggleSelectAll={toggleSelectAll}
                   onToggleFavorite={zbToggleFavorite}
                   onDelete={requestDelete}
+                  scanSessions={zbScanSessions}
+                  visibleColumns={zbVisibleColumns}
+                  onToggleColumn={zbToggleColumn}
                 />
 
                 {totalPages > 1 && (

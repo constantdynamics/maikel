@@ -158,7 +158,8 @@ function parseResults(data: TradingViewResponse | null, marketId: string): Tradi
         market: marketId,
       };
     })
-    .filter((s) => s.ticker && s.close > 0);
+    .filter((s) => s.ticker && s.close > 0)
+    .filter((s) => s.exchange !== 'OTC' && s.exchange !== 'OTCM');
 }
 
 async function fetchFromScanner(url: string, payload: object): Promise<TradingViewResponse> {
