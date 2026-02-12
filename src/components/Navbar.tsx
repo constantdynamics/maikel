@@ -23,6 +23,7 @@ const THEMES = [
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/analytics', label: 'Analytics' },
+  { href: '/kz-report', label: 'K&Z Report' },
   { href: '/scan-log', label: 'Scan Log' },
   { href: '/archive', label: 'Archive' },
   { href: '/status', label: 'Status' },
