@@ -58,6 +58,13 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
   const [completedScans, setCompletedScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
 
+  // Set browser tab title to K&Z in underwater mode
+  useEffect(() => {
+    const prev = document.title;
+    document.title = 'K&Z';
+    return () => { document.title = prev; };
+  }, []);
+
   // Poll scan progress
   const fetchStatus = useCallback(async () => {
     try {
