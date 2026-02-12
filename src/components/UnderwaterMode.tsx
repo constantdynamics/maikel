@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { ZonnebloemStock } from '@/lib/types';
+import type { ZonnebloemStock, Stock } from '@/lib/types';
 import { SpikeDotDisplay } from './ZonnebloemTable';
 
 interface ScanStatus {
@@ -19,7 +19,8 @@ interface ScanStatus {
 }
 
 interface UnderwaterModeProps {
-  stocks: ZonnebloemStock[];
+  zbStocks: ZonnebloemStock[];
+  kuifjeStocks: Stock[];
   onExit: () => void;
   autoScanActive: boolean;
   autoScanNext: Date | null;
@@ -27,7 +28,32 @@ interface UnderwaterModeProps {
   onRefreshStocks: () => void;
 }
 
-export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks }: UnderwaterModeProps) {
+// Kuifje growth dots — simplified inline renderer
+function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: number; highestGrowthPct: number | null }) {
+  const count = Math.min(eventCount, 10);
+  if (count === 0) return <span style={{ color: '#3a3d41' }}>-</span>;
+
+  const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
+    dots.push(est >= 500 ? '#22c55e' : est >= 300 ? '#facc15' : '#ffffff');
+  }
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {dots.map((color, idx) => (
+        <span
+          key={idx}
+          className="inline-block w-2 h-2 rounded-full border border-gray-600"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks }: UnderwaterModeProps) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [completedScans, setCompletedScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
@@ -49,7 +75,6 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
     fetchStatus();
     const timer = setInterval(async () => {
       const result = await fetchStatus();
-      // When a scan just completed, refresh the stock list
       if (result?.scan?.completedAt && result.scan.completedAt !== lastScanId) {
         setLastScanId(result.scan.completedAt);
         setCompletedScans(prev => prev + 1);
@@ -59,12 +84,16 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
     return () => clearInterval(timer);
   }, [fetchStatus, lastScanId, onRefreshStocks]);
 
-  // Split stocks into 8 columns — fill vertically (column 1 first, then 2, etc.)
-  const colCount = 8;
-  const rowsPerCol = Math.ceil(stocks.length / colCount);
-  const columns: ZonnebloemStock[][] = Array.from({ length: colCount }, (_, colIdx) =>
-    stocks.slice(colIdx * rowsPerCol, (colIdx + 1) * rowsPerCol)
-  );
+  // Split into columns — fill vertically
+  function splitColumns<T>(items: T[], colCount: number): T[][] {
+    const rowsPerCol = Math.ceil(items.length / colCount);
+    return Array.from({ length: colCount }, (_, colIdx) =>
+      items.slice(colIdx * rowsPerCol, (colIdx + 1) * rowsPerCol)
+    );
+  }
+
+  const zbColumns = splitColumns(zbStocks, 4);
+  const kuifjeColumns = splitColumns(kuifjeStocks, 4);
 
   const isRunning = scanStatus?.running || scanRunning;
   const scan = scanStatus?.scan;
@@ -88,7 +117,6 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
 
       {/* Scan status indicator top-right */}
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1">
-        {/* Current scan state */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
@@ -104,7 +132,6 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
           </span>
         </div>
 
-        {/* Live stats during scan */}
         {isRunning && scan && (
           <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#5a5d62' }}>
             <span>Candidates: <span style={{ color: '#7a7d82' }}>{scan.candidatesFound}</span></span>
@@ -114,7 +141,6 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
           </div>
         )}
 
-        {/* Completed scans counter + next scan time */}
         <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#4a4d52' }}>
           {completedScans > 0 && (
             <span>Completed: <span style={{ color: '#6a6d72' }}>{completedScans}</span></span>
@@ -128,44 +154,86 @@ export default function UnderwaterMode({ stocks, onExit, autoScanActive, autoSca
         </div>
       </div>
 
-      {/* Stock count */}
-      <div className="pt-16 pb-4 px-6">
-        <span
-          className="font-mono font-bold tracking-tight"
-          style={{ color: '#4a4d52', fontSize: '4rem', lineHeight: 1 }}
-        >
-          {stocks.length}
-        </span>
-        <span className="ml-3 text-sm" style={{ color: '#3a3d41' }}>
-          stocks
-        </span>
-      </div>
-
-      {/* 8-column grid */}
-      <div className="px-6 pb-8 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-x-4 gap-y-0">
-        {columns.map((col, colIdx) => (
-          <div key={colIdx}>
-            {col.map((stock) => (
-              <div
-                key={stock.id}
-                className="flex items-center gap-1.5 py-1 border-b"
-                style={{ borderColor: '#252729' }}
-              >
-                <span
-                  className="font-mono text-xs font-medium truncate"
-                  style={{ color: '#7a7d82' }}
-                >
-                  {stock.ticker}
-                </span>
-                <SpikeDotDisplay
-                  spikeCount={stock.spike_count}
-                  highestSpikePct={stock.highest_spike_pct}
-                />
+      {/* Two-panel layout */}
+      <div className="pt-14 px-4 pb-8 grid grid-cols-2 gap-4 h-full">
+        {/* LEFT: Zonnebloem */}
+        <div>
+          <div className="flex items-baseline gap-3 mb-3 px-2">
+            <span
+              className="font-mono font-bold tracking-tight"
+              style={{ color: '#4a4d52', fontSize: '2.5rem', lineHeight: 1 }}
+            >
+              {zbStocks.length}
+            </span>
+            <span className="text-xs font-medium" style={{ color: '#6a4d8a' }}>
+              Prof. Zonnebloem
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-0">
+            {zbColumns.map((col, colIdx) => (
+              <div key={colIdx}>
+                {col.map((stock) => (
+                  <div
+                    key={stock.id}
+                    className="flex items-center gap-1.5 py-1 border-b"
+                    style={{ borderColor: '#252729' }}
+                  >
+                    <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
+                      {stock.ticker}
+                    </span>
+                    <SpikeDotDisplay
+                      spikeCount={stock.spike_count}
+                      highestSpikePct={stock.highest_spike_pct}
+                    />
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
+        </div>
+
+        {/* RIGHT: Kuifje */}
+        <div>
+          <div className="flex items-baseline gap-3 mb-3 px-2">
+            <span
+              className="font-mono font-bold tracking-tight"
+              style={{ color: '#4a4d52', fontSize: '2.5rem', lineHeight: 1 }}
+            >
+              {kuifjeStocks.length}
+            </span>
+            <span className="text-xs font-medium" style={{ color: '#3d6a4d' }}>
+              Kuifje
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-0">
+            {kuifjeColumns.map((col, colIdx) => (
+              <div key={colIdx}>
+                {col.map((stock) => (
+                  <div
+                    key={stock.id}
+                    className="flex items-center gap-1.5 py-1 border-b"
+                    style={{ borderColor: '#252729' }}
+                  >
+                    <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
+                      {stock.ticker}
+                    </span>
+                    <KuifjeDotsDisplay
+                      eventCount={stock.growth_event_count}
+                      highestGrowthPct={stock.highest_growth_pct}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Subtle divider line between panels */}
+      <div
+        className="fixed top-14 bottom-0 left-1/2 w-px"
+        style={{ backgroundColor: '#2a2d31' }}
+      />
     </div>
   );
 }
