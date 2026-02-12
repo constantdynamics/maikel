@@ -172,9 +172,15 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
                 className="flex items-center gap-1.5 py-1 border-b"
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
-                <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
+                  style={{ color: '#7a7d82' }}
+                >
                   {stock.ticker}
-                </span>
+                </a>
                 <SpikeDotDisplay
                   spikeCount={stock.spike_count}
                   highestSpikePct={stock.highest_spike_pct}
@@ -204,9 +210,15 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
                 className="flex items-center gap-1.5 py-1 border-b"
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
-                <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
+                  style={{ color: '#7a7d82' }}
+                >
                   {stock.ticker}
-                </span>
+                </a>
                 <KuifjeDotsDisplay
                   eventCount={stock.growth_event_count}
                   highestGrowthPct={stock.highest_growth_pct}
