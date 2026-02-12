@@ -157,7 +157,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           <div className="flex items-baseline gap-3 mb-3 px-2">
             <span
               className="font-mono font-bold tracking-tight"
-              style={{ color: '#4a4d52', fontSize: '2.5rem', lineHeight: 1 }}
+              style={{ color: '#b0b3b8', fontSize: '2.5rem', lineHeight: 1 }}
             >
               {zbStocks.length}
             </span>
@@ -189,7 +189,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           <div className="flex items-baseline gap-3 mb-3 px-2">
             <span
               className="font-mono font-bold tracking-tight"
-              style={{ color: '#4a4d52', fontSize: '2.5rem', lineHeight: 1 }}
+              style={{ color: '#b0b3b8', fontSize: '2.5rem', lineHeight: 1 }}
             >
               {kuifjeStocks.length}
             </span>
