@@ -93,25 +93,25 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   const { data } = await supabase.from('settings').select('key, value');
 
   const defaults: Settings = {
-    ath_decline_min: 85,
+    ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 200,
+    growth_threshold_pct: 100,
     min_growth_events: 2,
-    min_consecutive_days: 5,
-    growth_lookback_years: 3,
+    min_consecutive_days: 4,
+    growth_lookback_years: 5,
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
     excluded_sectors: [],
-    included_volatile_sectors: [],  // Empty = don't scan any volatile sectors
-    market_cap_categories: ['micro', 'small', 'mid', 'large'],  // All by default
-    auto_scan_interval_minutes: 5,
+    included_volatile_sectors: ['Biotechnology', 'Pharmaceuticals', 'Drug Manufacturers'],
+    market_cap_categories: ['micro', 'small', 'mid', 'large'],
+    auto_scan_interval_minutes: 15,
     // NovaBay-type filter defaults
     enable_stable_spike_filter: false,
-    stable_max_decline_pct: 10,    // Max 10% decline allowed
-    stable_min_spike_pct: 100,     // Require 100% spike (2x)
-    stable_lookback_months: 12,    // Look back 12 months
+    stable_max_decline_pct: 10,
+    stable_min_spike_pct: 100,
+    stable_lookback_months: 12,
     // Scanner variety
-    skip_recently_scanned_hours: 0, // Don't skip by default
+    skip_recently_scanned_hours: 0,
   };
 
   if (!data) return defaults;

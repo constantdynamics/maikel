@@ -132,12 +132,12 @@ type SettingsTab = 'kuifje' | 'zonnebloem' | 'system';
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('kuifje');
   const [settings, setSettings] = useState<Settings>({
-    ath_decline_min: 85,
+    ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 200,
+    growth_threshold_pct: 100,
     min_growth_events: 2,
-    min_consecutive_days: 5,
-    growth_lookback_years: 3,
+    min_consecutive_days: 4,
+    growth_lookback_years: 5,
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
     excluded_sectors: [],

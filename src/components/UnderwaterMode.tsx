@@ -84,17 +84,6 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     return () => clearInterval(timer);
   }, [fetchStatus, lastScanId, onRefreshStocks]);
 
-  // Split into columns — fill vertically
-  function splitColumns<T>(items: T[], colCount: number): T[][] {
-    const rowsPerCol = Math.ceil(items.length / colCount);
-    return Array.from({ length: colCount }, (_, colIdx) =>
-      items.slice(colIdx * rowsPerCol, (colIdx + 1) * rowsPerCol)
-    );
-  }
-
-  const zbColumns = splitColumns(zbStocks, 4);
-  const kuifjeColumns = splitColumns(kuifjeStocks, 4);
-
   const isRunning = scanStatus?.running || scanRunning;
   const scan = scanStatus?.scan;
   const elapsed = scan?.startedAt && isRunning
@@ -155,7 +144,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
       </div>
 
       {/* Two-panel layout */}
-      <div className="pt-14 px-4 pb-8 grid grid-cols-2 gap-4 h-full">
+      <div className="pt-14 px-4 pb-8 grid grid-cols-2 gap-4" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
         {/* LEFT: Zonnebloem */}
         <div>
           <div className="flex items-baseline gap-3 mb-3 px-2">
@@ -169,24 +158,20 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
               Prof. Zonnebloem
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-0">
-            {zbColumns.map((col, colIdx) => (
-              <div key={colIdx}>
-                {col.map((stock) => (
-                  <div
-                    key={stock.id}
-                    className="flex items-center gap-1.5 py-1 border-b"
-                    style={{ borderColor: '#252729' }}
-                  >
-                    <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
-                      {stock.ticker}
-                    </span>
-                    <SpikeDotDisplay
-                      spikeCount={stock.spike_count}
-                      highestSpikePct={stock.highest_spike_pct}
-                    />
-                  </div>
-                ))}
+          <div style={{ columnCount: 4, columnGap: '0.75rem' }}>
+            {zbStocks.map((stock) => (
+              <div
+                key={stock.id}
+                className="flex items-center gap-1.5 py-1 border-b"
+                style={{ borderColor: '#252729', breakInside: 'avoid' }}
+              >
+                <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
+                  {stock.ticker}
+                </span>
+                <SpikeDotDisplay
+                  spikeCount={stock.spike_count}
+                  highestSpikePct={stock.highest_spike_pct}
+                />
               </div>
             ))}
           </div>
@@ -205,24 +190,20 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
               Kuifje
             </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-0">
-            {kuifjeColumns.map((col, colIdx) => (
-              <div key={colIdx}>
-                {col.map((stock) => (
-                  <div
-                    key={stock.id}
-                    className="flex items-center gap-1.5 py-1 border-b"
-                    style={{ borderColor: '#252729' }}
-                  >
-                    <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
-                      {stock.ticker}
-                    </span>
-                    <KuifjeDotsDisplay
-                      eventCount={stock.growth_event_count}
-                      highestGrowthPct={stock.highest_growth_pct}
-                    />
-                  </div>
-                ))}
+          <div style={{ columnCount: 4, columnGap: '0.75rem' }}>
+            {kuifjeStocks.map((stock) => (
+              <div
+                key={stock.id}
+                className="flex items-center gap-1.5 py-1 border-b"
+                style={{ borderColor: '#252729', breakInside: 'avoid' }}
+              >
+                <span className="font-mono text-xs font-medium truncate" style={{ color: '#7a7d82' }}>
+                  {stock.ticker}
+                </span>
+                <KuifjeDotsDisplay
+                  eventCount={stock.growth_event_count}
+                  highestGrowthPct={stock.highest_growth_pct}
+                />
               </div>
             ))}
           </div>
