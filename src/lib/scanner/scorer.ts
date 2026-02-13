@@ -222,6 +222,33 @@ export function calculateFiveYearLow(history: OHLCData[]): {
 }
 
 /**
+ * Calculate the 3-year low from price history.
+ * Filters history to only include the last 3 years of data.
+ */
+export function calculateThreeYearLow(history: OHLCData[]): {
+  price: number;
+  date: string;
+} | null {
+  if (history.length === 0) return null;
+
+  const threeYearsAgo = new Date();
+  threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+  const cutoffDate = threeYearsAgo.toISOString().split('T')[0];
+
+  let minPrice = Infinity;
+  let minDate = '';
+
+  for (const day of history) {
+    if (day.date >= cutoffDate && day.low > 0 && day.low < minPrice) {
+      minPrice = day.low;
+      minDate = day.date;
+    }
+  }
+
+  return minPrice < Infinity ? { price: minPrice, date: minDate } : null;
+}
+
+/**
  * NovaBay-type analysis: Find stocks with stable base and upward spikes
  *
  * A "stable with spikes" stock:

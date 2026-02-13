@@ -11,6 +11,7 @@ interface MaikelKuifjeStock {
   company_name: string;
   current_price: number | null;
   purchase_limit: number | null;
+  three_year_low: number | null;
   exchange: string | null;
   sector: string | null;
 }
@@ -20,9 +21,21 @@ interface MaikelZonnebloemStock {
   ticker: string;
   company_name: string;
   current_price: number | null;
+  three_year_low: number | null;
   exchange: string | null;
   sector: string | null;
   highest_spike_pct: number | null;
+}
+
+/**
+ * Calculate suggested buy limit: 15% above the 3-year low.
+ * Falls back to existing purchase_limit if three_year_low is unavailable.
+ */
+function calculateBuyLimit(threeYearLow: number | null, fallbackLimit: number | null): number | null {
+  if (threeYearLow && threeYearLow > 0) {
+    return Math.round(threeYearLow * 1.15 * 100) / 100; // 15% above 3-year low, rounded to 2 decimals
+  }
+  return fallbackLimit;
 }
 
 function maikelToDefogStock(
@@ -65,9 +78,9 @@ export async function syncScannerToDefog(
   ]);
 
   const kuifjeStocks: MaikelKuifjeStock[] = kuifjeRes.ok ? await kuifjeRes.json() : [];
-  const zbStocks: MaikelZonnebloemStock[] = zbRes.ok
-    ? (await zbRes.json()).stocks || []
-    : [];
+  // Zonnebloem API returns array directly (not wrapped in { stocks: [...] })
+  const zbJson = zbRes.ok ? await zbRes.json() : [];
+  const zbStocks: MaikelZonnebloemStock[] = Array.isArray(zbJson) ? zbJson : (zbJson.stocks || []);
 
   const tabs = getTabs();
 
@@ -108,41 +121,71 @@ export async function syncScannerToDefog(
   }
 
   // Sync Kuifje stocks — only add new, never remove
+  // Buy limit = 15% above 3-year low (falls back to scanner's purchase_limit)
   const kuifjeExistingTickers = new Set(kuifjeTab.stocks.map((s) => s.ticker));
   const kuifjeNewStocks: DefogStock[] = [];
   for (const stock of kuifjeStocks) {
     if (!kuifjeExistingTickers.has(stock.ticker)) {
-      kuifjeNewStocks.push(maikelToDefogStock(stock, stock.purchase_limit));
+      const buyLimit = calculateBuyLimit(stock.three_year_low, stock.purchase_limit);
+      kuifjeNewStocks.push(maikelToDefogStock(stock, buyLimit));
       kuifjeAdded++;
     }
   }
 
   // Sync Zonnebloem stocks — only add new, never remove
+  // Buy limit = 15% above 3-year low
   const zbExistingTickers = new Set(zbTab.stocks.map((s) => s.ticker));
   const zbNewStocks: DefogStock[] = [];
   for (const stock of zbStocks) {
     if (!zbExistingTickers.has(stock.ticker)) {
-      zbNewStocks.push(maikelToDefogStock(stock, null));
+      const buyLimit = calculateBuyLimit(stock.three_year_low, null);
+      zbNewStocks.push(maikelToDefogStock(stock, buyLimit));
       zbAdded++;
     }
   }
 
-  // Apply updates — append new stocks, keep all existing
+  // Build lookup maps for updating existing stocks' buy limits
+  const kuifjeByTicker = new Map(kuifjeStocks.map((s) => [s.ticker, s]));
+  const zbByTicker = new Map(zbStocks.map((s) => [s.ticker, s]));
+
+  // Apply updates — append new stocks, update buyLimit for existing stocks without one
   const kuifjeTabId = kuifjeTab.id;
   const zbTabId = zbTab.id;
 
   setTabs((currentTabs) =>
     currentTabs.map((tab) => {
       if (tab.id === kuifjeTabId) {
+        // Update existing stocks that have null buyLimit with new calculated limit
+        const updatedStocks = tab.stocks.map((s) => {
+          if (s.buyLimit == null) {
+            const scanner = kuifjeByTicker.get(s.ticker);
+            if (scanner) {
+              const newLimit = calculateBuyLimit(scanner.three_year_low, scanner.purchase_limit);
+              if (newLimit != null) return { ...s, buyLimit: newLimit };
+            }
+          }
+          return s;
+        });
         return {
           ...tab,
-          stocks: [...tab.stocks, ...kuifjeNewStocks],
+          stocks: [...updatedStocks, ...kuifjeNewStocks],
         };
       }
       if (tab.id === zbTabId) {
+        // Update existing stocks that have null buyLimit with new calculated limit
+        const updatedStocks = tab.stocks.map((s) => {
+          if (s.buyLimit == null) {
+            const scanner = zbByTicker.get(s.ticker);
+            if (scanner) {
+              const newLimit = calculateBuyLimit(scanner.three_year_low, null);
+              if (newLimit != null) return { ...s, buyLimit: newLimit };
+            }
+          }
+          return s;
+        });
         return {
           ...tab,
-          stocks: [...tab.stocks, ...zbNewStocks],
+          stocks: [...updatedStocks, ...zbNewStocks],
         };
       }
       return tab;

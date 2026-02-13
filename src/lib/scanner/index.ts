@@ -3,7 +3,7 @@ import { fetchMultiMarketLosers, fetchMultiMarketHighDecline, MARKETS, DEFAULT_M
 import type { TradingViewStock } from './tradingview';
 import * as yahoo from './yahoo';
 import * as alphavantage from './alphavantage';
-import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow, analyzeStableWithSpikes } from './scorer';
+import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow, calculateThreeYearLow, analyzeStableWithSpikes } from './scorer';
 import {
   validateStockData,
   validatePriceHistory,
@@ -318,6 +318,7 @@ async function deepScanStock(
 
   // MATCH! Save to database
   const fiveYearLow = calculateFiveYearLow(history);
+  const threeYearLow = calculateThreeYearLow(history);
   const purchaseLimit = fiveYearLow ? fiveYearLow.price * settings.purchase_limit_multiplier : null;
 
   let confidenceScore = 100;
@@ -368,6 +369,7 @@ async function deepScanStock(
     all_time_high: effectiveATH,
     ath_decline_pct: athDeclinePct,
     five_year_low: fiveYearLow?.price || null,
+    three_year_low: threeYearLow?.price || null,
     purchase_limit: purchaseLimit,
     score: growthAnalysis.score,
     growth_event_count: growthAnalysis.events.length,

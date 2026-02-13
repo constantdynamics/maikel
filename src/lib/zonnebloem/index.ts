@@ -463,6 +463,14 @@ async function deepScanCandidate(
     // Check for stock splits (may invalidate spike data)
     const splits = detectStockSplit(history);
 
+    // Calculate 3-year low from the fetched history
+    let threeYearLow: number | null = null;
+    for (const day of history) {
+      if (day.low > 0 && (threeYearLow === null || day.low < threeYearLow)) {
+        threeYearLow = day.low;
+      }
+    }
+
     // Analyze spike events
     const spikeAnalysis = analyzeSpikeEvents(
       history,
@@ -532,6 +540,7 @@ async function deepScanCandidate(
       market: candidate.market,
       country: candidate.country || null,
       current_price: candidate.close,
+      three_year_low: threeYearLow,
       base_price_median: spikeAnalysis.basePriceMedian,
       price_12m_ago: spikeAnalysis.priceChange12m !== null
         ? candidate.close / (1 + spikeAnalysis.priceChange12m / 100)

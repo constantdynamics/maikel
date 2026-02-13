@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS zonnebloem_stocks (
   market VARCHAR(50),
   country VARCHAR(100),
   current_price DECIMAL(12, 4),
+  three_year_low DECIMAL(12, 4),
   base_price_median DECIMAL(12, 4),
   price_12m_ago DECIMAL(12, 4),
   price_change_12m_pct DECIMAL(8, 4),
