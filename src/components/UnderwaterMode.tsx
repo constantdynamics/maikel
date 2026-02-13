@@ -126,14 +126,22 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         Ground Mode
       </button>
 
-      {/* Font size toggle */}
-      <button
-        onClick={cycleFontSize}
-        className="fixed top-4 left-36 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors bg-[#2a2d31] text-[#8a8d91] hover:text-white hover:bg-[#3a3d41] border border-[#3a3d41]"
-        title="Adjust number size"
-      >
-        <span style={{ fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}>A</span>
-      </button>
+      {/* Font size slider */}
+      <div className="fixed top-4 left-36 z-50 flex items-center gap-2 px-3 py-1.5 rounded bg-[#2a2d31] border border-[#3a3d41]">
+        <input
+          type="range"
+          min={0}
+          max={FONT_SIZES.length - 1}
+          value={fontSizeIdx}
+          onChange={(e) => {
+            const val = Number(e.target.value);
+            setFontSizeIdx(val);
+            localStorage.setItem('underwater-font-size', String(val));
+          }}
+          className="w-16 h-1 accent-purple-500 cursor-pointer"
+          style={{ WebkitAppearance: 'none', appearance: 'none', background: '#3a3d41', borderRadius: 2 }}
+        />
+      </div>
 
       {/* Scan status indicator top-right */}
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1">
