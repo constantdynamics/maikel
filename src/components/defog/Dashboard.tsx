@@ -1459,7 +1459,7 @@ export function Dashboard() {
   if (showArchive) {
     return (
       <div className={`min-h-screen ${fontClass}`} style={{ backgroundColor: colors.bg }}>
-        <header className="sticky top-0 z-40" style={{ backgroundColor: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
+        <header className="sticky top-0 z-20" style={{ backgroundColor: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
           <div className="px-6 py-3 flex items-center justify-between">
             <button
               onClick={() => setShowArchive(false)}
@@ -1486,7 +1486,7 @@ export function Dashboard() {
   return (
     <div className={`min-h-screen flex flex-col overflow-x-hidden ${fontClass}`} style={{ backgroundColor: colors.bg }}>
       {/* Header - floating bar with backdrop blur */}
-      <header className="sticky top-0 z-40 backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
+      <header className="sticky top-0 z-20 backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
         <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
           <button
             onClick={() => {
@@ -1839,7 +1839,7 @@ export function Dashboard() {
                 Columns
               </button>
               {showColumnMenu && (
-                <div className="absolute top-full right-0 mt-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg shadow-lg z-50 p-3 min-w-[320px] max-h-[70vh] overflow-y-auto">
+                <div className="absolute top-full right-0 mt-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg shadow-lg z-30 p-3 min-w-[320px] max-h-[70vh] overflow-y-auto">
                   <div className="text-xs text-gray-500 mb-2 pb-2 border-b border-[#3d3d3d]">
                     Column Settings
                   </div>
@@ -2008,7 +2008,7 @@ export function Dashboard() {
 
         {/* Floating Selection Action Bar - Fixed at BOTTOM when stocks selected */}
         {selectedStocks.size > 0 && !isAllView && activeTab && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#1a1a1a]/95 backdrop-blur-sm border-t border-[#00ff88]/30 shadow-lg">
+          <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#1a1a1a]/95 backdrop-blur-sm border-t border-[#00ff88]/30 shadow-lg">
             <div className="max-w-7xl mx-auto px-4 py-3">
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <span className="text-sm text-[#00ff88] font-medium">
@@ -2037,7 +2037,7 @@ export function Dashboard() {
                       Verplaats
                     </button>
                     {showMoveMenu && (
-                      <div className="absolute bottom-full left-0 mb-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg shadow-lg z-50 min-w-[150px]">
+                      <div className="absolute bottom-full left-0 mb-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg shadow-lg z-30 min-w-[150px]">
                         {store.tabs
                           .filter((tab) => tab.id !== activeTab.id)
                           .map((tab) => (
@@ -2458,7 +2458,7 @@ export function Dashboard() {
 
       {/* Floating buttons bottom-right: scroll-to-top, add stock, version */}
       {!(selectedStocks.size > 0 && !isAllView && activeTab) && (
-        <div className="fixed bottom-4 right-4 flex flex-col items-center gap-2 z-40">
+        <div className="fixed bottom-4 right-4 flex flex-col items-center gap-2 z-20">
           {/* Scroll to top button */}
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}

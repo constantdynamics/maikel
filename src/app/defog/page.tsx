@@ -6,6 +6,9 @@ import { useStore } from '@/lib/defog/store';
 import { Dashboard } from '@/components/defog/Dashboard';
 import { syncScannerToDefog } from '@/lib/defog/scannerSync';
 import { SmartRefreshEngine } from '@/lib/defog/services/smartRefresh';
+import { saveToLocalStorage, loadFromLocalStorage, getSessionPassword } from '@/lib/defog/utils/storage';
+
+const SESSION_PASSWORD = 'maikel-integrated';
 
 interface RefreshStats {
   totalAttempts: number;
@@ -22,25 +25,76 @@ interface RefreshStats {
 }
 
 export default function DefogPage() {
-  const { setAuthenticated, setLoading, isLoading } = useStore();
+  const store = useStore();
+  const { setAuthenticated, setLoading, isLoading } = store;
   const [ready, setReady] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [refreshStats, setRefreshStats] = useState<RefreshStats | null>(null);
   const [showRefreshPanel, setShowRefreshPanel] = useState(false);
   const engineRef = useRef<SmartRefreshEngine | null>(null);
 
+  // ── 1. Initialize: set auth + load persisted data from IndexedDB ──
   useEffect(() => {
-    setAuthenticated(true);
-    setLoading(false);
-
-    if (typeof window !== 'undefined') {
-      if (!sessionStorage.getItem('session-password')) {
-        sessionStorage.setItem('session-password', 'maikel-integrated');
+    async function init() {
+      if (typeof window !== 'undefined') {
+        if (!sessionStorage.getItem('session-password')) {
+          sessionStorage.setItem('session-password', SESSION_PASSWORD);
+        }
       }
+
+      // Load persisted state from IndexedDB
+      const password = getSessionPassword() || SESSION_PASSWORD;
+      const saved = await loadFromLocalStorage(password);
+      if (saved) {
+        useStore.getState().loadState(saved);
+        console.log('[Defog] Loaded persisted state:', saved.tabs?.length, 'tabs');
+      }
+
+      setAuthenticated(true);
+      setLoading(false);
+      setReady(true);
     }
-    setReady(true);
+
+    init();
   }, [setAuthenticated, setLoading]);
 
+  // ── 2. Auto-save to IndexedDB on every state change (debounced 1s) ──
+  useEffect(() => {
+    if (!ready) return;
+
+    const password = getSessionPassword() || SESSION_PASSWORD;
+
+    const timer = setTimeout(async () => {
+      try {
+        await saveToLocalStorage(
+          {
+            tabs: store.tabs,
+            archive: store.archive,
+            notifications: store.notifications,
+            limitHistory: store.limitHistory,
+            settings: store.settings,
+            lastSyncTime: new Date().toISOString(),
+            encryptionKeyHash: store.encryptionKeyHash,
+          },
+          password,
+        );
+      } catch (e) {
+        console.error('[Defog] Auto-save failed:', e);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [
+    ready,
+    store.tabs,
+    store.archive,
+    store.notifications,
+    store.limitHistory,
+    store.settings,
+    store.encryptionKeyHash,
+  ]);
+
+  // ── 3. Scanner sync ──
   const runSync = useCallback(async () => {
     try {
       const result = await syncScannerToDefog(
@@ -59,68 +113,51 @@ export default function DefogPage() {
     }
   }, []);
 
-  // Auto-sync scanner results on page load
   useEffect(() => {
     if (ready) runSync();
   }, [ready, runSync]);
 
-  // Re-sync every 60 seconds
   useEffect(() => {
     if (!ready) return;
     const interval = setInterval(runSync, 60_000);
     return () => clearInterval(interval);
   }, [ready, runSync]);
 
-  // Smart Refresh Engine — auto-start on page load
+  // ── 4. Smart Refresh Engine ──
   useEffect(() => {
     if (!ready) return;
 
     const engine = new SmartRefreshEngine(
       () => useStore.getState().tabs,
-      // onStockUpdated
       (tabId, stockId, data) => {
         useStore.setState((state) => ({
           tabs: state.tabs.map((tab) =>
             tab.id === tabId
-              ? {
-                  ...tab,
-                  stocks: tab.stocks.map((s) =>
-                    s.id === stockId ? { ...s, ...data } : s
-                  ),
-                }
+              ? { ...tab, stocks: tab.stocks.map((s) => s.id === stockId ? { ...s, ...data } : s) }
               : tab
           ),
         }));
       },
-      // onStatsChanged
       (stats) => setRefreshStats(stats),
     );
 
     engineRef.current = engine;
     engine.start();
-
-    return () => {
-      engine.stop();
-      engineRef.current = null;
-    };
+    return () => { engine.stop(); engineRef.current = null; };
   }, [ready]);
 
   const toggleEngine = () => {
     const engine = engineRef.current;
     if (!engine) return;
-    if (engine.isPaused()) {
-      engine.resume();
-    } else if (engine.isRunning()) {
-      engine.pause();
-    } else {
-      engine.start();
-    }
+    if (engine.isPaused()) engine.resume();
+    else if (engine.isRunning()) engine.pause();
+    else engine.start();
   };
 
   return (
     <AuthGuard>
       <div
-        className="defog-container min-h-screen relative"
+        className="defog-container relative"
         style={{
           '--color-bg-primary': '#1a1a1a',
           '--color-bg-secondary': '#2d2d2d',
@@ -130,24 +167,32 @@ export default function DefogPage() {
           '--color-warning': '#ffaa00',
           backgroundColor: '#1a1a1a',
           color: '#ffffff',
+          minHeight: 'calc(100vh - 60px)',
         } as React.CSSProperties}
       >
-        {/* Sync notification toast */}
+        {/* Sync toast — uses z-30 to stay below navbar z-50 */}
         {syncMessage && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-green-600/90 text-white text-sm font-medium shadow-lg backdrop-blur-sm">
+          <div className="fixed top-16 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-lg bg-green-600/90 text-white text-sm font-medium shadow-lg backdrop-blur-sm">
             {syncMessage}
           </div>
         )}
 
-        {/* Smart Refresh indicator — bottom-right floating */}
-        <div className="fixed bottom-4 right-4 z-50">
+        {isLoading || !ready ? (
+          <div className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 60px)' }}>
+            <div className="text-gray-400">Loading Defog...</div>
+          </div>
+        ) : (
+          <Dashboard />
+        )}
+
+        {/* Smart Refresh indicator — z-30 to stay below navbar */}
+        <div className="fixed bottom-4 right-4 z-30">
           <button
             onClick={() => setShowRefreshPanel(!showRefreshPanel)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all shadow-lg"
             style={{
               backgroundColor: '#2a2a2a',
-              borderColor: '#3d3d3d',
-              borderWidth: 1,
+              border: '1px solid #3d3d3d',
               color: refreshStats?.isRunning
                 ? refreshStats.isPaused ? '#ffaa00' : '#00ff88'
                 : '#666',
@@ -155,9 +200,7 @@ export default function DefogPage() {
           >
             <span
               className={`inline-block w-2 h-2 rounded-full ${
-                refreshStats?.isRunning && !refreshStats.isPaused
-                  ? 'animate-pulse'
-                  : ''
+                refreshStats?.isRunning && !refreshStats.isPaused ? 'animate-pulse' : ''
               }`}
               style={{
                 backgroundColor: refreshStats?.isRunning
@@ -167,138 +210,61 @@ export default function DefogPage() {
             />
             {refreshStats?.isRunning
               ? refreshStats.isPaused
-                ? 'Refresh paused'
-                : `Refreshing ${refreshStats.currentIndex}/${refreshStats.queueLength}`
-              : 'Refresh off'}
+                ? 'Paused'
+                : `${refreshStats.currentIndex}/${refreshStats.queueLength}`
+              : 'Off'}
             {refreshStats && refreshStats.totalSuccesses > 0 && (
-              <span style={{ color: '#555' }}>
-                ({refreshStats.totalSuccesses} done)
-              </span>
+              <span style={{ color: '#555' }}>({refreshStats.totalSuccesses})</span>
             )}
           </button>
 
-          {/* Expanded panel */}
           {showRefreshPanel && refreshStats && (
-            <div
-              className="absolute bottom-12 right-0 w-80 rounded-lg p-4 shadow-xl"
+            <div className="absolute bottom-12 right-0 w-72 rounded-lg p-3 shadow-xl"
               style={{ backgroundColor: '#222', border: '1px solid #3d3d3d' }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-white">Smart Refresh</span>
-                <button
-                  onClick={toggleEngine}
-                  className="px-2.5 py-1 rounded text-xs font-medium"
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-white">Smart Refresh</span>
+                <button onClick={toggleEngine} className="px-2 py-0.5 rounded text-[10px] font-medium"
                   style={{
-                    backgroundColor: refreshStats.isRunning && !refreshStats.isPaused
-                      ? '#332200' : '#003322',
-                    color: refreshStats.isRunning && !refreshStats.isPaused
-                      ? '#ffaa00' : '#00ff88',
+                    backgroundColor: refreshStats.isRunning && !refreshStats.isPaused ? '#332200' : '#003322',
+                    color: refreshStats.isRunning && !refreshStats.isPaused ? '#ffaa00' : '#00ff88',
                   }}
                 >
-                  {refreshStats.isRunning
-                    ? refreshStats.isPaused ? 'Resume' : 'Pause'
-                    : 'Start'}
+                  {refreshStats.isRunning ? (refreshStats.isPaused ? 'Resume' : 'Pause') : 'Start'}
                 </button>
               </div>
-
-              {/* Progress */}
-              <div className="mb-3">
-                <div className="flex justify-between text-[10px] mb-1" style={{ color: '#888' }}>
-                  <span>Progress</span>
-                  <span>{refreshStats.currentIndex} / {refreshStats.queueLength}</span>
-                </div>
-                <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#333' }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: refreshStats.queueLength > 0
-                        ? `${(refreshStats.currentIndex / refreshStats.queueLength) * 100}%`
-                        : '0%',
-                      backgroundColor: '#00ff88',
-                    }}
-                  />
-                </div>
+              <div className="h-1 rounded-full overflow-hidden mb-2" style={{ backgroundColor: '#333' }}>
+                <div className="h-full rounded-full transition-all" style={{
+                  width: refreshStats.queueLength > 0 ? `${(refreshStats.currentIndex / refreshStats.queueLength) * 100}%` : '0%',
+                  backgroundColor: '#00ff88',
+                }} />
               </div>
-
-              {/* Stats grid */}
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                <div className="text-center p-2 rounded" style={{ backgroundColor: '#1a1a1a' }}>
-                  <div className="text-lg font-bold" style={{ color: '#00ff88' }}>
-                    {refreshStats.totalSuccesses}
+              <div className="grid grid-cols-3 gap-1 mb-2 text-center">
+                {[
+                  { v: refreshStats.totalSuccesses, c: '#00ff88', l: 'OK' },
+                  { v: refreshStats.totalFailures, c: '#ff3366', l: 'Fail' },
+                  { v: refreshStats.totalAttempts, c: '#888', l: 'Total' },
+                ].map((s) => (
+                  <div key={s.l} className="p-1 rounded" style={{ backgroundColor: '#1a1a1a' }}>
+                    <div className="text-sm font-bold" style={{ color: s.c }}>{s.v}</div>
+                    <div className="text-[8px]" style={{ color: '#666' }}>{s.l}</div>
                   </div>
-                  <div className="text-[9px]" style={{ color: '#666' }}>Success</div>
-                </div>
-                <div className="text-center p-2 rounded" style={{ backgroundColor: '#1a1a1a' }}>
-                  <div className="text-lg font-bold" style={{ color: '#ff3366' }}>
-                    {refreshStats.totalFailures}
-                  </div>
-                  <div className="text-[9px]" style={{ color: '#666' }}>Failed</div>
-                </div>
-                <div className="text-center p-2 rounded" style={{ backgroundColor: '#1a1a1a' }}>
-                  <div className="text-lg font-bold" style={{ color: '#888' }}>
-                    {refreshStats.totalAttempts}
-                  </div>
-                  <div className="text-[9px]" style={{ color: '#666' }}>Attempts</div>
-                </div>
+                ))}
               </div>
-
-              {/* Provider breakdown */}
-              {Object.keys(refreshStats.providerStats).length > 0 && (
-                <div className="mb-3">
-                  <div className="text-[10px] mb-1.5" style={{ color: '#666' }}>Provider stats</div>
-                  {Object.entries(refreshStats.providerStats).map(([provider, ps]) => (
-                    <div
-                      key={provider}
-                      className="flex items-center justify-between py-1 text-xs"
-                      style={{ borderBottom: '1px solid #2a2a2a' }}
-                    >
-                      <span className="font-mono" style={{ color: '#aaa' }}>{provider}</span>
-                      <span>
-                        <span style={{ color: '#00ff88' }}>{ps.successes}</span>
-                        <span style={{ color: '#444' }}> / </span>
-                        <span style={{ color: '#ff3366' }}>{ps.failures}</span>
-                      </span>
-                    </div>
-                  ))}
+              {Object.entries(refreshStats.providerStats).map(([p, s]) => (
+                <div key={p} className="flex justify-between py-0.5 text-[10px]" style={{ borderBottom: '1px solid #2a2a2a' }}>
+                  <span style={{ color: '#aaa' }}>{p}</span>
+                  <span><span style={{ color: '#00ff88' }}>{s.successes}</span> / <span style={{ color: '#ff3366' }}>{s.failures}</span></span>
                 </div>
-              )}
-
-              {/* Last action */}
-              {refreshStats.lastRefreshedTicker && (
-                <div className="text-[10px]" style={{ color: '#555' }}>
-                  Last: <span style={{ color: '#888' }}>{refreshStats.lastRefreshedTicker}</span>
-                  {refreshStats.lastRefreshedProvider && (
-                    <span> via <span style={{ color: '#666' }}>{refreshStats.lastRefreshedProvider}</span></span>
-                  )}
-                </div>
-              )}
-              {refreshStats.lastError && (
-                <div className="text-[10px] mt-1" style={{ color: '#ff3366' }}>
-                  {refreshStats.lastError}
-                </div>
-              )}
-
-              {/* Reset button */}
-              <button
-                onClick={() => {
-                  engineRef.current?.resetAll();
-                }}
-                className="mt-3 w-full py-1.5 rounded text-[10px] font-medium"
+              ))}
+              <button onClick={() => engineRef.current?.resetAll()}
+                className="mt-2 w-full py-1 rounded text-[9px]"
                 style={{ backgroundColor: '#2a1a1a', color: '#ff6666' }}
-              >
-                Reset all learning data
-              </button>
+              >Reset learning data</button>
             </div>
           )}
         </div>
 
-        {isLoading || !ready ? (
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-gray-400">Loading Defog...</div>
-          </div>
-        ) : (
-          <Dashboard />
-        )}
       </div>
     </AuthGuard>
   );

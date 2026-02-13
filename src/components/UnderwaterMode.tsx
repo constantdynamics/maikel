@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { ZonnebloemStock, Stock } from '@/lib/types';
 import { SpikeDotDisplay } from './ZonnebloemTable';
+import packageJson from '../../package.json';
 
 interface ScanStatus {
   running: boolean;
@@ -266,6 +267,11 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         className="fixed top-14 bottom-0 left-1/2 w-px"
         style={{ backgroundColor: '#2a2d31' }}
       />
+
+      {/* Version — bottom-left */}
+      <div className="fixed bottom-2 left-4 z-50 text-[10px] font-mono" style={{ color: '#333' }}>
+        v{packageJson.version}
+      </div>
     </div>
   );
 }
