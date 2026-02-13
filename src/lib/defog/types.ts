@@ -78,7 +78,7 @@ export interface FixedTabColors {
 }
 
 // View mode for responsive layout
-export type ViewMode = 'auto' | 'mobile' | 'desktop';
+export type ViewMode = 'auto' | 'mobile' | 'desktop' | 'tiles';
 
 // Device-specific display settings
 export interface DeviceDisplaySettings {

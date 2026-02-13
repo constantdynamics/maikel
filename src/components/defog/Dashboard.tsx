@@ -104,7 +104,7 @@ export function Dashboard() {
   const [isManualWeekendTaskRunning, setIsManualWeekendTaskRunning] = useState(false);
 
   // View mode hook for mobile/desktop switching
-  const { isMobileView, viewMode, setViewMode } = useViewMode(
+  const { isMobileView, isTileView, viewMode, setViewMode } = useViewMode(
     store.settings.viewMode || 'auto'
   );
 
@@ -1700,17 +1700,22 @@ export function Dashboard() {
                   <div className="relative flex items-center">
                     <button
                       onClick={() => {
-                        // Cycle through: auto -> mobile -> desktop -> auto
-                        const nextMode = viewMode === 'auto' ? 'mobile' : viewMode === 'mobile' ? 'desktop' : 'auto';
+                        // Cycle through: auto -> tiles -> mobile -> desktop -> auto
+                        const nextMode = viewMode === 'auto' ? 'tiles'
+                          : viewMode === 'tiles' ? 'mobile'
+                          : viewMode === 'mobile' ? 'desktop'
+                          : 'auto';
                         handleViewModeChange(nextMode);
                       }}
                       className={`p-2 hover:bg-white/10 rounded-lg transition-colors ${
                         viewMode !== 'auto' ? 'bg-white/5' : ''
                       }`}
-                      title={`View: ${viewMode === 'auto' ? 'Auto' : viewMode === 'mobile' ? 'Mobile' : 'Desktop'} (click to change)`}
+                      title={`View: ${viewMode === 'auto' ? 'Auto' : viewMode === 'tiles' ? 'Tiles' : viewMode === 'mobile' ? 'Cards' : 'Table'} (click to change)`}
                     >
                       {viewMode === 'auto' ? (
                         <ArrowsRightLeftIcon className="w-5 h-5 text-white" />
+                      ) : viewMode === 'tiles' ? (
+                        <QueueListIcon className="w-5 h-5 text-[#00ff88]" />
                       ) : viewMode === 'mobile' ? (
                         <DevicePhoneMobileIcon className="w-5 h-5 text-[#00ff88]" />
                       ) : (
@@ -1720,7 +1725,7 @@ export function Dashboard() {
                     {/* Small indicator showing current effective view */}
                     {viewMode !== 'auto' && (
                       <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-[#00ff88] font-medium">
-                        {viewMode === 'mobile' ? 'M' : 'D'}
+                        {viewMode === 'tiles' ? 'T' : viewMode === 'mobile' ? 'M' : 'D'}
                       </span>
                     )}
                   </div>
@@ -2214,8 +2219,11 @@ export function Dashboard() {
                 </button>
               </div>
             ) : isMobileView ? (
-              // Mobile view - use MobileStockCard
-              <div className="space-y-2">
+              // Mobile/Tiles view - use MobileStockCard
+              <div className={isTileView
+                ? 'grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'
+                : 'space-y-2'
+              }>
                 {sortedStocks.map((stock) => {
                   // Find tab info for "All" view
                   const stockTabInfo = isAllView
