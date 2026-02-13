@@ -58,6 +58,21 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
   const [completedScans, setCompletedScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
 
+  // Font size for the big total number — persists in localStorage
+  const FONT_SIZES = ['1.5rem', '2.5rem', '4rem', '6rem'];
+  const [fontSizeIdx, setFontSizeIdx] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('underwater-font-size');
+      if (saved) return Math.min(Number(saved), FONT_SIZES.length - 1);
+    }
+    return 1; // default 2.5rem
+  });
+  const cycleFontSize = () => {
+    const next = (fontSizeIdx + 1) % FONT_SIZES.length;
+    setFontSizeIdx(next);
+    localStorage.setItem('underwater-font-size', String(next));
+  };
+
   // Set browser tab title to K&Z in underwater mode
   useEffect(() => {
     const prev = document.title;
@@ -111,6 +126,15 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         Ground Mode
       </button>
 
+      {/* Font size toggle */}
+      <button
+        onClick={cycleFontSize}
+        className="fixed top-4 left-36 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors bg-[#2a2d31] text-[#8a8d91] hover:text-white hover:bg-[#3a3d41] border border-[#3a3d41]"
+        title="Adjust number size"
+      >
+        <span style={{ fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}>A</span>
+      </button>
+
       {/* Scan status indicator top-right */}
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
@@ -157,7 +181,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           <div className="flex items-baseline gap-3 mb-3 px-2">
             <span
               className="font-mono font-bold tracking-tight"
-              style={{ color: '#b0b3b8', fontSize: '2.5rem', lineHeight: 1 }}
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
             >
               {zbStocks.length}
             </span>
@@ -195,7 +219,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           <div className="flex items-baseline gap-3 mb-3 px-2">
             <span
               className="font-mono font-bold tracking-tight"
-              style={{ color: '#b0b3b8', fontSize: '2.5rem', lineHeight: 1 }}
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
             >
               {kuifjeStocks.length}
             </span>
