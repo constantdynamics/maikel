@@ -1,0 +1,233 @@
+import { useMemo } from 'react';
+import type { Stock, TileSettings } from '@/lib/defog/types';
+import { RAINBOW_PRESETS, type RainbowPreset } from './rainbowPresets';
+
+// No buy limit set - neutral gray
+const NO_LIMIT_COLOR = '#3d3d3d';
+// Below buy limit - bright brand green
+const BELOW_LIMIT_COLOR = '#00ff88';
+
+const TILE_SIZES: Record<string, number> = { small: 65, medium: 80, large: 110 };
+
+const FONT_SIZES: Record<string, Record<string, string>> = {
+  label: { xs: 'clamp(0.4rem, 1.2vw, 0.55rem)', sm: 'clamp(0.5rem, 1.5vw, 0.7rem)', md: 'clamp(0.6rem, 1.8vw, 0.8rem)', lg: 'clamp(0.75rem, 2.2vw, 1rem)', xl: 'clamp(0.9rem, 2.8vw, 1.2rem)' },
+  distance: { sm: 'clamp(0.6rem, 1.6vw, 0.85rem)', md: 'clamp(0.7rem, 2vw, 1rem)', lg: 'clamp(0.85rem, 2.5vw, 1.2rem)', xl: 'clamp(1rem, 3vw, 1.5rem)', xxl: 'clamp(1.2rem, 3.5vw, 1.8rem)' },
+  dayChange: { xs: 'clamp(0.4rem, 1vw, 0.5rem)', sm: 'clamp(0.45rem, 1.2vw, 0.6rem)', md: 'clamp(0.55rem, 1.5vw, 0.7rem)', lg: 'clamp(0.7rem, 2vw, 0.9rem)' },
+};
+
+function getDistanceColor(currentPrice: number, buyLimit: number | null, preset: RainbowPreset): string {
+  if (!buyLimit || buyLimit <= 0) return NO_LIMIT_COLOR;
+  if (currentPrice <= buyLimit) return BELOW_LIMIT_COLOR;
+  const distancePercent = ((currentPrice - buyLimit) / buyLimit) * 100;
+  for (let i = 0; i < preset.thresholds.length; i++) {
+    if (distancePercent > preset.thresholds[i]) return preset.colors[i];
+  }
+  return preset.colors[preset.colors.length - 1];
+}
+
+function getDistancePercent(currentPrice: number, buyLimit: number | null): number | null {
+  if (!buyLimit || buyLimit <= 0) return null;
+  return ((currentPrice - buyLimit) / buyLimit) * 100;
+}
+
+export function getContrastTextColor(hexColor: string): '#ffffff' | '#000000' {
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  const toLinear = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  const contrastWithWhite = (1.0 + 0.05) / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / (0.0 + 0.05);
+  return contrastWithWhite > contrastWithBlack ? '#ffffff' : '#000000';
+}
+
+function tickerHasMoreThanTwoDigits(ticker: string): boolean {
+  return (ticker.replace(/[^0-9]/g, '')).length > 2;
+}
+
+function getFreshnessDots(lastUpdated: string): number {
+  if (!lastUpdated) return 0;
+  const updated = new Date(lastUpdated).getTime();
+  if (isNaN(updated)) return 0;
+  const hoursAgo = (Date.now() - updated) / (1000 * 60 * 60);
+  if (hoursAgo < 1) return 5;
+  if (hoursAgo < 2) return 4;
+  if (hoursAgo < 3) return 3;
+  if (hoursAgo < 4) return 2;
+  if (hoursAgo < 6) return 1;
+  return 0;
+}
+
+const DEFAULT_TILE_SETTINGS: TileSettings = {
+  showLabel: 'auto', showDistance: true, showDayChange: true, showFreshness: true,
+  tileSize: 'medium', fontWeight: 'bold',
+  labelColor: 'auto', distanceColor: 'auto', dayChangeColor: '#ffffff', dotsColor: 'auto',
+  labelFontSize: 'sm', distanceFontSize: 'md', dayChangeFontSize: 'xs',
+  rainbowPreset: 'classic',
+};
+
+export type TileSortMode = 'default' | 'dayChange' | 'distance';
+
+interface MiniTilesViewProps {
+  stocks: Stock[];
+  tileSettings?: TileSettings;
+  onStockClick?: (stock: Stock) => void;
+  sortMode?: TileSortMode;
+}
+
+export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = 'default' }: MiniTilesViewProps) {
+  const settings = { ...DEFAULT_TILE_SETTINGS, ...tileSettings };
+  const minSize = TILE_SIZES[settings.tileSize] || 80;
+  const preset = RAINBOW_PRESETS.find(p => p.id === settings.rainbowPreset) || RAINBOW_PRESETS[0];
+
+  // Sort stocks based on mode
+  const displayStocks = useMemo(() => {
+    if (sortMode === 'default') return stocks;
+    const sorted = [...stocks];
+    if (sortMode === 'dayChange') {
+      sorted.sort((a, b) => a.dayChangePercent - b.dayChangePercent);
+    } else if (sortMode === 'distance') {
+      sorted.sort((a, b) => {
+        const distA = a.buyLimit ? ((a.currentPrice - a.buyLimit) / a.buyLimit) * 100 : Infinity;
+        const distB = b.buyLimit ? ((b.currentPrice - b.buyLimit) / b.buyLimit) * 100 : Infinity;
+        return distA - distB;
+      });
+    }
+    return sorted;
+  }, [stocks, sortMode]);
+
+  // Freshness stats
+  const freshStats = useMemo(() => {
+    let fresh = 0;
+    for (const s of stocks) {
+      if (s.lastUpdated) {
+        const hoursAgo = (Date.now() - new Date(s.lastUpdated).getTime()) / (1000 * 60 * 60);
+        if (hoursAgo < 1) fresh++;
+      }
+    }
+    return { fresh, total: stocks.length };
+  }, [stocks]);
+
+  if (stocks.length === 0) {
+    return <div className="text-center text-gray-500 py-8 text-sm">Geen aandelen om weer te geven</div>;
+  }
+
+  return (
+    <div>
+      <div className="grid gap-1.5 w-full" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${minSize}px, 1fr))` }}>
+        {displayStocks.map((stock) => {
+          const bgColor = getDistanceColor(stock.currentPrice, stock.buyLimit, preset);
+          const autoColor = getContrastTextColor(bgColor);
+          const freshnessDots = getFreshnessDots(stock.lastUpdated);
+          const distPct = getDistancePercent(stock.currentPrice, stock.buyLimit);
+          const isBelow = distPct !== null && distPct <= 0;
+          const absDayChange = Math.abs(stock.dayChangePercent);
+          const isBigMover = absDayChange > 3;
+          const isCrashing = stock.dayChangePercent <= -5;
+
+          // Resolve 'auto' colors to WCAG contrast
+          const labelClr = settings.labelColor === 'auto' ? autoColor : settings.labelColor;
+          const distClr = settings.distanceColor === 'auto' ? autoColor : settings.distanceColor;
+          const dayClr = settings.dayChangeColor;
+          const dotsClr = settings.dotsColor === 'auto' ? autoColor : settings.dotsColor;
+
+          // Determine label
+          let label = stock.ticker;
+          if (settings.showLabel === 'name') {
+            label = stock.displayName || stock.name || stock.ticker;
+          } else if (settings.showLabel === 'auto' && tickerHasMoreThanTwoDigits(stock.ticker)) {
+            label = stock.displayName || stock.name || stock.ticker;
+          }
+
+          // Glow/border for big movers (>3%)
+          const glowStyle: React.CSSProperties = isBigMover ? {
+            boxShadow: stock.dayChangePercent > 0
+              ? '0 0 8px 2px rgba(0,255,136,0.4), inset 0 0 4px rgba(0,255,136,0.1)'
+              : '0 0 8px 2px rgba(255,51,102,0.4), inset 0 0 4px rgba(255,51,102,0.1)',
+            border: stock.dayChangePercent > 0
+              ? '1.5px solid rgba(0,255,136,0.5)'
+              : '1.5px solid rgba(255,51,102,0.5)',
+          } : {};
+
+          return (
+            <button
+              key={stock.id}
+              onClick={() => onStockClick?.(stock)}
+              className={`rounded-md transition-transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/30 cursor-pointer select-none ${
+                isCrashing ? 'animate-pulse' : ''
+              }`}
+              style={{
+                backgroundColor: bgColor,
+                aspectRatio: '1',
+                minHeight: `${minSize}px`,
+                ...glowStyle,
+              }}
+              title={`${stock.ticker} - ${stock.name}\nPrijs: ${stock.currency} ${stock.currentPrice.toFixed(2)}\nLimiet: ${stock.buyLimit ? `${stock.currency} ${stock.buyLimit.toFixed(2)}` : 'Niet ingesteld'}\nAfstand: ${distPct !== null ? `${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%` : 'N/A'}\nDag: ${stock.dayChangePercent >= 0 ? '+' : ''}${stock.dayChangePercent.toFixed(2)}%\nUpdate: ${stock.lastUpdated ? new Date(stock.lastUpdated).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : 'Nooit'}`}
+            >
+              <div className="flex flex-col items-center justify-center h-full p-1 overflow-hidden">
+                {/* Freshness dots */}
+                {settings.showFreshness && freshnessDots > 0 && (
+                  <div className="flex gap-0.5 mb-0.5">
+                    {[1, 2, 3, 4, 5].map((dot) => (
+                      <div key={dot} className="rounded-full" style={{
+                        width: 'clamp(3px, 0.6vw, 5px)', height: 'clamp(3px, 0.6vw, 5px)',
+                        backgroundColor: dot <= freshnessDots ? dotsClr : (autoColor === '#ffffff' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'),
+                      }} />
+                    ))}
+                  </div>
+                )}
+                {settings.showFreshness && freshnessDots === 0 && (
+                  <div className="rounded-full mb-0.5" style={{ width: 'clamp(4px, 0.8vw, 6px)', height: 'clamp(4px, 0.8vw, 6px)', backgroundColor: '#ff3366', opacity: 0.7 }} />
+                )}
+
+                {/* Label */}
+                <span className="leading-tight truncate w-full text-center" style={{
+                  fontSize: FONT_SIZES.label[settings.labelFontSize] || FONT_SIZES.label.sm,
+                  fontWeight: settings.fontWeight === 'bold' ? 700 : 400,
+                  color: labelClr, opacity: 0.85,
+                }}>
+                  {label}
+                </span>
+
+                {/* Distance % */}
+                {settings.showDistance && (
+                  <span className="font-bold leading-tight" style={{
+                    fontSize: FONT_SIZES.distance[settings.distanceFontSize] || FONT_SIZES.distance.md,
+                    color: distClr,
+                  }}>
+                    {distPct !== null ? <>{isBelow ? '' : '+'}{distPct.toFixed(1)}%</> : '—'}
+                  </span>
+                )}
+
+                {/* Day change with arrow */}
+                {settings.showDayChange && (
+                  <span className="leading-tight flex items-center gap-px" style={{
+                    fontSize: FONT_SIZES.dayChange[settings.dayChangeFontSize] || FONT_SIZES.dayChange.xs,
+                    color: isCrashing ? '#ff3366' : dayClr,
+                    opacity: isCrashing ? 1 : (autoColor === '#ffffff' ? 0.7 : 0.9),
+                    textShadow: autoColor === '#000000' ? '0 0 2px rgba(255,255,255,0.5)' : 'none',
+                  }}>
+                    <span style={{ fontSize: '0.7em', lineHeight: 1 }}>
+                      {stock.dayChangePercent >= 0 ? '▲' : '▼'}
+                    </span>
+                    {stock.dayChangePercent >= 0 ? '+' : ''}{stock.dayChangePercent.toFixed(2)}%
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Freshness counter bar */}
+      <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-gray-500">
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: freshStats.fresh > freshStats.total * 0.5 ? '#00ff88' : freshStats.fresh > 0 ? '#ffcc00' : '#ff3366' }}
+        />
+        <span>{freshStats.fresh} van {freshStats.total} aandelen vers (&lt;1u)</span>
+      </div>
+    </div>
+  );
+}

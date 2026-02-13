@@ -6,8 +6,6 @@ const MOBILE_BREAKPOINT = 768; // pixels
 export interface UseViewModeResult {
   // Current effective view (what's actually shown)
   isMobileView: boolean;
-  // Whether tile grid mode is active
-  isTileView: boolean;
   // User's preference
   viewMode: ViewMode;
   // Detected device type
@@ -44,10 +42,7 @@ export function useViewMode(savedViewMode: ViewMode = 'auto'): UseViewModeResult
   // Determine effective view based on mode and device
   const isMobileView = viewMode === 'auto'
     ? isActuallyMobile
-    : viewMode === 'mobile' || viewMode === 'tiles';
-
-  // Whether to show tile grid (multi-column card layout)
-  const isTileView = viewMode === 'tiles';
+    : viewMode === 'mobile';
 
   const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeState(mode);
@@ -68,7 +63,6 @@ export function useViewMode(savedViewMode: ViewMode = 'auto'): UseViewModeResult
 
   return {
     isMobileView,
-    isTileView,
     viewMode,
     isActuallyMobile,
     setViewMode,

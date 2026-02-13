@@ -110,6 +110,22 @@ const DEFAULT_SETTINGS: UserSettings = {
     rainbowBlocks: 40,
     skipErrorStocks: true,
   },
+  tileSettings: {
+    showLabel: 'auto',
+    showDistance: true,
+    showDayChange: true,
+    showFreshness: true,
+    tileSize: 'medium',
+    fontWeight: 'bold',
+    labelColor: 'auto',
+    distanceColor: 'auto',
+    dayChangeColor: '#ffffff',
+    dotsColor: 'auto',
+    labelFontSize: 'sm',
+    distanceFontSize: 'md',
+    dayChangeFontSize: 'xs',
+    rainbowPreset: 'classic',
+  },
 };
 
 const DEFAULT_TAB: Tab = {

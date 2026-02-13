@@ -16,6 +16,7 @@ import {
   PlayIcon,
   PauseIcon,
   CalendarDaysIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 import { useStore, selectActiveTab, enableAutoSync } from '@/lib/defog/store';
 import { checkAndAutoDownload, subscribeSyncStatus, type SyncStatus } from '@/lib/defog/services/autoSync';
@@ -39,6 +40,7 @@ import { RefreshQueueModal } from './RefreshQueueModal';
 import { ScanLogModal } from './ScanLogModal';
 import { UndoModal } from './UndoModal';
 import { startAutoBackup } from '@/lib/defog/services/backupService';
+import { MiniTilesView, type TileSortMode } from './MiniTilesView';
 
 // Color scheme configurations
 const COLOR_SCHEMES: Record<ColorScheme, { bg: string; bgCard: string; border: string }> = {
@@ -103,8 +105,19 @@ export function Dashboard() {
   const autoScanTimerRef = useRef<number | null>(null);
   const [isManualWeekendTaskRunning, setIsManualWeekendTaskRunning] = useState(false);
 
+  // Dashboard view: list or tiles (separate from mobile/desktop view mode)
+  const [dashboardView, setDashboardView] = useState<'list' | 'tiles'>(() => {
+    try { return (localStorage.getItem('defog-dashboard-view') as 'list' | 'tiles') || 'list'; } catch { return 'list'; }
+  });
+  const [tileSortMode, setTileSortMode] = useState<TileSortMode>('default');
+
+  const handleDashboardViewChange = useCallback((view: 'list' | 'tiles') => {
+    setDashboardView(view);
+    try { localStorage.setItem('defog-dashboard-view', view); } catch { /* ignore */ }
+  }, []);
+
   // View mode hook for mobile/desktop switching
-  const { isMobileView, isTileView, viewMode, setViewMode } = useViewMode(
+  const { isMobileView, viewMode, setViewMode } = useViewMode(
     store.settings.viewMode || 'auto'
   );
 
@@ -1696,26 +1709,36 @@ export function Dashboard() {
                     </button>
                   )}
 
+                  {/* Tiles / List Toggle */}
+                  <button
+                    onClick={() => handleDashboardViewChange(dashboardView === 'list' ? 'tiles' : 'list')}
+                    className={`p-2 hover:bg-white/10 rounded-lg transition-colors ${
+                      dashboardView === 'tiles' ? 'bg-white/5' : ''
+                    }`}
+                    title={dashboardView === 'list' ? 'Switch to mini tiles view' : 'Switch to list view'}
+                  >
+                    {dashboardView === 'tiles' ? (
+                      <QueueListIcon className="w-5 h-5 text-[#00ff88]" />
+                    ) : (
+                      <Squares2X2Icon className="w-5 h-5 text-white" />
+                    )}
+                  </button>
+
                   {/* View Mode Toggle - always visible */}
                   <div className="relative flex items-center">
                     <button
                       onClick={() => {
-                        // Cycle through: auto -> tiles -> mobile -> desktop -> auto
-                        const nextMode = viewMode === 'auto' ? 'tiles'
-                          : viewMode === 'tiles' ? 'mobile'
-                          : viewMode === 'mobile' ? 'desktop'
-                          : 'auto';
+                        // Cycle through: auto -> mobile -> desktop -> auto
+                        const nextMode = viewMode === 'auto' ? 'mobile' : viewMode === 'mobile' ? 'desktop' : 'auto';
                         handleViewModeChange(nextMode);
                       }}
                       className={`p-2 hover:bg-white/10 rounded-lg transition-colors ${
                         viewMode !== 'auto' ? 'bg-white/5' : ''
                       }`}
-                      title={`View: ${viewMode === 'auto' ? 'Auto' : viewMode === 'tiles' ? 'Tiles' : viewMode === 'mobile' ? 'Cards' : 'Table'} (click to change)`}
+                      title={`View: ${viewMode === 'auto' ? 'Auto' : viewMode === 'mobile' ? 'Mobile' : 'Desktop'} (click to change)`}
                     >
                       {viewMode === 'auto' ? (
                         <ArrowsRightLeftIcon className="w-5 h-5 text-white" />
-                      ) : viewMode === 'tiles' ? (
-                        <QueueListIcon className="w-5 h-5 text-[#00ff88]" />
                       ) : viewMode === 'mobile' ? (
                         <DevicePhoneMobileIcon className="w-5 h-5 text-[#00ff88]" />
                       ) : (
@@ -1725,7 +1748,7 @@ export function Dashboard() {
                     {/* Small indicator showing current effective view */}
                     {viewMode !== 'auto' && (
                       <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-[#00ff88] font-medium">
-                        {viewMode === 'tiles' ? 'T' : viewMode === 'mobile' ? 'M' : 'D'}
+                        {viewMode === 'mobile' ? 'M' : 'D'}
                       </span>
                     )}
                   </div>
@@ -2218,12 +2241,48 @@ export function Dashboard() {
                   Add Stock
                 </button>
               </div>
+            ) : dashboardView === 'tiles' ? (
+              // Mini tiles view - compact colored grid
+              <div>
+                {/* Tile sort controls */}
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-[10px] text-gray-500 mr-1">Sorteer:</span>
+                  {([
+                    ['default', 'Standaard'],
+                    ['dayChange', 'Dag %  (rood→groen)'],
+                    ['distance', 'Afstand (dichtbij eerst)'],
+                  ] as const).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      onClick={() => setTileSortMode(mode as TileSortMode)}
+                      className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                        tileSortMode === mode
+                          ? 'bg-[#00ff88] text-black font-medium'
+                          : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <MiniTilesView
+                  stocks={sortedStocks}
+                  tileSettings={store.settings.tileSettings}
+                  sortMode={tileSortMode}
+                  onStockClick={(stock) => {
+                    const stockTabInfo = isAllView
+                      ? allStocksWithTabs.find(s => s.stock.id === stock.id)
+                      : null;
+                    const tabId = stockTabInfo?.tabId || activeTab?.id;
+                    if (tabId) {
+                      refreshSingleStock({ tabId, stock });
+                    }
+                  }}
+                />
+              </div>
             ) : isMobileView ? (
-              // Mobile/Tiles view - use MobileStockCard
-              <div className={isTileView
-                ? 'grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'
-                : 'space-y-2'
-              }>
+              // Mobile view - use MobileStockCard
+              <div className="space-y-2">
                 {sortedStocks.map((stock) => {
                   // Find tab info for "All" view
                   const stockTabInfo = isAllView

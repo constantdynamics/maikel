@@ -78,7 +78,7 @@ export interface FixedTabColors {
 }
 
 // View mode for responsive layout
-export type ViewMode = 'auto' | 'mobile' | 'desktop' | 'tiles';
+export type ViewMode = 'auto' | 'mobile' | 'desktop';
 
 // Device-specific display settings
 export interface DeviceDisplaySettings {
@@ -218,6 +218,24 @@ export interface UserSettings {
   customColumnTitle: string;  // Title for the custom checkbox column
   fixedTabColors: FixedTabColors;  // Color customization for fixed tabs (All, Top, Purchased)
   scanPriorityWeights: ScanPriorityWeights;  // Configurable scan priority weights
+  tileSettings: TileSettings;  // Mini tiles view customization
+}
+
+export interface TileSettings {
+  showLabel: 'ticker' | 'name' | 'auto';  // auto = name when ticker has >2 digits
+  showDistance: boolean;       // Show distance to limit percentage
+  showDayChange: boolean;     // Show today's price change
+  showFreshness: boolean;     // Show freshness dots
+  tileSize: 'small' | 'medium' | 'large';  // Tile min-width: 65/80/110px
+  fontWeight: 'normal' | 'bold';  // Label font weight
+  labelColor: string;         // Color for ticker/name ('auto' = WCAG contrast)
+  distanceColor: string;      // Color for distance % ('auto' = WCAG contrast)
+  dayChangeColor: string;     // Color for day change text
+  dotsColor: string;          // Color for freshness dots ('auto' = WCAG contrast)
+  labelFontSize: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  distanceFontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
+  dayChangeFontSize: 'xs' | 'sm' | 'md' | 'lg';
+  rainbowPreset: string;      // Preset ID for rainbow colors
 }
 
 export interface ScanPriorityWeights {
