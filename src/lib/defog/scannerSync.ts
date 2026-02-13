@@ -148,14 +148,25 @@ export async function syncScannerToDefog(
   const kuifjeByTicker = new Map(kuifjeStocks.map((s) => [s.ticker, s]));
   const zbByTicker = new Map(zbStocks.map((s) => [s.ticker, s]));
 
-  // Apply updates — append new stocks, update buyLimit for existing stocks without one
+  // Apply updates — ensure tabs exist, append new stocks, update buyLimits
   const kuifjeTabId = kuifjeTab.id;
   const zbTabId = zbTab.id;
+  const newKuifjeTab = !tabs.find((t) => t.name === 'Kuifje') ? kuifjeTab : null;
+  const newZbTab = !tabs.find((t) => t.name === 'Prof. Zonnebloem') ? zbTab : null;
 
-  setTabs((currentTabs) =>
-    currentTabs.map((tab) => {
+  setTabs((currentTabs) => {
+    // First: ensure new tabs exist in the array
+    let result = [...currentTabs];
+    if (newKuifjeTab && !result.find((t) => t.id === kuifjeTabId)) {
+      result.push(newKuifjeTab);
+    }
+    if (newZbTab && !result.find((t) => t.id === zbTabId)) {
+      result.push(newZbTab);
+    }
+
+    // Then: map to add stocks and update buy limits
+    return result.map((tab) => {
       if (tab.id === kuifjeTabId) {
-        // Update existing stocks that have null buyLimit with new calculated limit
         const updatedStocks = tab.stocks.map((s) => {
           if (s.buyLimit == null) {
             const scanner = kuifjeByTicker.get(s.ticker);
@@ -172,7 +183,6 @@ export async function syncScannerToDefog(
         };
       }
       if (tab.id === zbTabId) {
-        // Update existing stocks that have null buyLimit with new calculated limit
         const updatedStocks = tab.stocks.map((s) => {
           if (s.buyLimit == null) {
             const scanner = zbByTicker.get(s.ticker);
@@ -189,8 +199,8 @@ export async function syncScannerToDefog(
         };
       }
       return tab;
-    })
-  );
+    });
+  });
 
   return { kuifjeAdded, zbAdded };
 }
