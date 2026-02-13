@@ -22,6 +22,7 @@ const THEMES = [
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/defog', label: 'Defog' },
   { href: '/analytics', label: 'Analytics' },
   { href: '/kz-report', label: 'K&Z Report' },
   { href: '/scan-log', label: 'Scan Log' },
