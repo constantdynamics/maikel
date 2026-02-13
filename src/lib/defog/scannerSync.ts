@@ -60,7 +60,7 @@ export async function syncScannerToDefog(
 ): Promise<{ kuifjeAdded: number; zbAdded: number }> {
   // Fetch both scanner results
   const [kuifjeRes, zbRes] = await Promise.all([
-    fetch('/api/stocks?showDeleted=false&showArchived=false'),
+    fetch('/api/stocks?showDeleted=true&showArchived=true'),
     fetch('/api/zonnebloem/stocks'),
   ]);
 
@@ -107,7 +107,7 @@ export async function syncScannerToDefog(
     newTabs = [...newTabs, zbTab];
   }
 
-  // Sync Kuifje stocks
+  // Sync Kuifje stocks — only add new, never remove
   const kuifjeExistingTickers = new Set(kuifjeTab.stocks.map((s) => s.ticker));
   const kuifjeNewStocks: DefogStock[] = [];
   for (const stock of kuifjeStocks) {
@@ -117,13 +117,7 @@ export async function syncScannerToDefog(
     }
   }
 
-  // Remove tickers from Kuifje tab that are no longer in scanner results
-  const kuifjeCurrentTickers = new Set(kuifjeStocks.map((s) => s.ticker));
-  const kuifjeFilteredStocks = kuifjeTab.stocks.filter((s) =>
-    kuifjeCurrentTickers.has(s.ticker)
-  );
-
-  // Sync Zonnebloem stocks
+  // Sync Zonnebloem stocks — only add new, never remove
   const zbExistingTickers = new Set(zbTab.stocks.map((s) => s.ticker));
   const zbNewStocks: DefogStock[] = [];
   for (const stock of zbStocks) {
@@ -133,13 +127,7 @@ export async function syncScannerToDefog(
     }
   }
 
-  // Remove tickers from ZB tab that are no longer in scanner results
-  const zbCurrentTickers = new Set(zbStocks.map((s) => s.ticker));
-  const zbFilteredStocks = zbTab.stocks.filter((s) =>
-    zbCurrentTickers.has(s.ticker)
-  );
-
-  // Apply updates
+  // Apply updates — append new stocks, keep all existing
   const kuifjeTabId = kuifjeTab.id;
   const zbTabId = zbTab.id;
 
@@ -148,14 +136,13 @@ export async function syncScannerToDefog(
       if (tab.id === kuifjeTabId) {
         return {
           ...tab,
-          // Merge old tabs' existing data with new stocks found
-          stocks: [...kuifjeFilteredStocks, ...kuifjeNewStocks],
+          stocks: [...tab.stocks, ...kuifjeNewStocks],
         };
       }
       if (tab.id === zbTabId) {
         return {
           ...tab,
-          stocks: [...zbFilteredStocks, ...zbNewStocks],
+          stocks: [...tab.stocks, ...zbNewStocks],
         };
       }
       return tab;
