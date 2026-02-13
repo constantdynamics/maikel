@@ -38,8 +38,11 @@ export async function saveToLocalStorage(
     encryptionKeyHash: state.encryptionKeyHash,
   };
 
-  const encryptedData = await encrypt(JSON.stringify(dataToSave), password);
+  const json = JSON.stringify(dataToSave);
+  console.log('[Defog Storage] Saving', Math.round(json.length / 1024), 'KB to IndexedDB...');
+  const encryptedData = await encrypt(json, password);
   await database.put(STORE_NAME, encryptedData, DATA_KEY);
+  console.log('[Defog Storage] Save complete');
 }
 
 export async function loadFromLocalStorage(
@@ -49,11 +52,19 @@ export async function loadFromLocalStorage(
     const database = await getDB();
     const encryptedData = await database.get(STORE_NAME, DATA_KEY);
 
-    if (!encryptedData) return null;
+    if (!encryptedData) {
+      console.log('[Defog Storage] No saved data found in IndexedDB');
+      return null;
+    }
 
+    console.log('[Defog Storage] Found encrypted data, decrypting...');
     const decryptedData = await decrypt(encryptedData, password);
-    return JSON.parse(decryptedData);
-  } catch {
+    const parsed = JSON.parse(decryptedData);
+    console.log('[Defog Storage] Loaded successfully:', parsed.tabs?.length, 'tabs,',
+      parsed.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0), 'stocks');
+    return parsed;
+  } catch (e) {
+    console.error('[Defog Storage] Load failed:', e);
     return null;
   }
 }

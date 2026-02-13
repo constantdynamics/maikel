@@ -4,6 +4,26 @@ const SALT_LENGTH = 16;
 const IV_LENGTH = 12;
 const PBKDF2_ITERATIONS = 100000;
 
+// Safe conversion for large Uint8Arrays (no stack overflow from spread)
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000; // 32KB chunks
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 export async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey(
@@ -47,14 +67,12 @@ export async function encrypt(data: string, password: string): Promise<string> {
   combined.set(iv, salt.length);
   combined.set(new Uint8Array(encryptedData), salt.length + iv.length);
 
-  return btoa(String.fromCharCode(...combined));
+  return uint8ArrayToBase64(combined);
 }
 
 export async function decrypt(encryptedString: string, password: string): Promise<string> {
   const decoder = new TextDecoder();
-  const combined = new Uint8Array(
-    atob(encryptedString).split('').map(c => c.charCodeAt(0))
-  );
+  const combined = base64ToUint8Array(encryptedString);
 
   const salt = combined.slice(0, SALT_LENGTH);
   const iv = combined.slice(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);

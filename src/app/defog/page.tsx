@@ -44,10 +44,24 @@ export default function DefogPage() {
 
       // Load persisted state from IndexedDB
       const password = getSessionPassword() || SESSION_PASSWORD;
-      const saved = await loadFromLocalStorage(password);
+      let saved = await loadFromLocalStorage(password);
+
+      // Fallback: try localStorage backup (saved on beforeunload)
+      if (!saved) {
+        try {
+          const backup = localStorage.getItem('defog-state-backup');
+          if (backup) {
+            saved = JSON.parse(backup);
+            console.log('[Defog] Loaded from localStorage backup');
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
       if (saved) {
         useStore.getState().loadState(saved);
         console.log('[Defog] Loaded persisted state:', saved.tabs?.length, 'tabs');
+      } else {
+        console.log('[Defog] No persisted state found');
       }
 
       setAuthenticated(true);
@@ -58,30 +72,34 @@ export default function DefogPage() {
     init();
   }, [setAuthenticated, setLoading]);
 
-  // ── 2. Auto-save to IndexedDB on every state change (debounced 1s) ──
+  // ── 2. Auto-save to IndexedDB on every state change (debounced 500ms) ──
+  // Also save immediately on beforeunload to prevent data loss on refresh
   useEffect(() => {
     if (!ready) return;
 
     const password = getSessionPassword() || SESSION_PASSWORD;
 
-    const timer = setTimeout(async () => {
+    const doSave = async () => {
       try {
+        const state = useStore.getState();
         await saveToLocalStorage(
           {
-            tabs: store.tabs,
-            archive: store.archive,
-            notifications: store.notifications,
-            limitHistory: store.limitHistory,
-            settings: store.settings,
+            tabs: state.tabs,
+            archive: state.archive,
+            notifications: state.notifications,
+            limitHistory: state.limitHistory,
+            settings: state.settings,
             lastSyncTime: new Date().toISOString(),
-            encryptionKeyHash: store.encryptionKeyHash,
+            encryptionKeyHash: state.encryptionKeyHash,
           },
           password,
         );
       } catch (e) {
         console.error('[Defog] Auto-save failed:', e);
       }
-    }, 1000);
+    };
+
+    const timer = setTimeout(doSave, 500);
 
     return () => clearTimeout(timer);
   }, [
@@ -93,6 +111,32 @@ export default function DefogPage() {
     store.settings,
     store.encryptionKeyHash,
   ]);
+
+  // Save on page unload (refresh/close) - synchronous fallback
+  useEffect(() => {
+    if (!ready) return;
+
+    const handleBeforeUnload = () => {
+      const password = getSessionPassword() || SESSION_PASSWORD;
+      const state = useStore.getState();
+      const dataToSave = {
+        tabs: state.tabs,
+        archive: state.archive,
+        notifications: state.notifications,
+        limitHistory: state.limitHistory,
+        settings: state.settings,
+        lastSyncTime: new Date().toISOString(),
+        encryptionKeyHash: state.encryptionKeyHash,
+      };
+      // Use synchronous localStorage as fallback (IndexedDB is async and may not complete)
+      try {
+        localStorage.setItem('defog-state-backup', JSON.stringify(dataToSave));
+      } catch { /* quota exceeded - ignore */ }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [ready]);
 
   // ── 3. Scanner sync ──
   const runSync = useCallback(async () => {
