@@ -17,6 +17,8 @@ const FONT_SIZES: Record<string, Record<string, string>> = {
 
 function getDistanceColor(currentPrice: number, buyLimit: number | null, preset: RainbowPreset): string {
   if (!buyLimit || buyLimit <= 0) return NO_LIMIT_COLOR;
+  // Price 0 means not yet scanned — show as neutral gray, not green
+  if (currentPrice <= 0) return NO_LIMIT_COLOR;
   if (currentPrice <= buyLimit) return BELOW_LIMIT_COLOR;
   const distancePercent = ((currentPrice - buyLimit) / buyLimit) * 100;
   for (let i = 0; i < preset.thresholds.length; i++) {
@@ -81,18 +83,29 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = '
   const minSize = TILE_SIZES[settings.tileSize] || 80;
   const preset = RAINBOW_PRESETS.find(p => p.id === settings.rainbowPreset) || RAINBOW_PRESETS[0];
 
-  // Sort stocks based on mode
+  // Sort stocks based on mode — price-0 (not yet scanned) always at bottom
   const displayStocks = useMemo(() => {
-    if (sortMode === 'default') return stocks;
     const sorted = [...stocks];
+    const withPriceZeroBottom = (compare: (a: Stock, b: Stock) => number) => (a: Stock, b: Stock) => {
+      const aZero = a.currentPrice <= 0;
+      const bZero = b.currentPrice <= 0;
+      if (aZero && !bZero) return 1;
+      if (!aZero && bZero) return -1;
+      if (aZero && bZero) return a.ticker.localeCompare(b.ticker);
+      return compare(a, b);
+    };
+
     if (sortMode === 'dayChange') {
-      sorted.sort((a, b) => a.dayChangePercent - b.dayChangePercent);
+      sorted.sort(withPriceZeroBottom((a, b) => a.dayChangePercent - b.dayChangePercent));
     } else if (sortMode === 'distance') {
-      sorted.sort((a, b) => {
+      sorted.sort(withPriceZeroBottom((a, b) => {
         const distA = a.buyLimit ? ((a.currentPrice - a.buyLimit) / a.buyLimit) * 100 : Infinity;
         const distB = b.buyLimit ? ((b.currentPrice - b.buyLimit) / b.buyLimit) * 100 : Infinity;
         return distA - distB;
-      });
+      }));
+    } else {
+      // Default sort: also push price-0 to bottom
+      sorted.sort(withPriceZeroBottom((a, b) => 0));
     }
     return sorted;
   }, [stocks, sortMode]);

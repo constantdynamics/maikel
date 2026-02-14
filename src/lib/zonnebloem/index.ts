@@ -534,6 +534,7 @@ async function deepScanCandidate(
     // Upsert stock (try with scan_session_id, fallback without if column doesn't exist)
     const stockData: Record<string, unknown> = {
       ticker,
+      yahoo_ticker: candidate.yahooTicker || ticker,
       company_name: candidate.name || ticker,
       sector: candidate.sector || null,
       exchange: candidate.exchange || null,
@@ -563,13 +564,15 @@ async function deepScanCandidate(
       { onConflict: 'ticker' },
     );
 
-    // Fallback: if scan_session_id column doesn't exist yet, retry without it
+    // Fallback: if columns don't exist yet, retry without them
+    if (upsertError?.message?.includes('yahoo_ticker')) {
+      delete stockData.yahoo_ticker;
+      const retry = await supabase.from('zonnebloem_stocks').upsert(stockData, { onConflict: 'ticker' });
+      upsertError = retry.error;
+    }
     if (upsertError?.message?.includes('scan_session_id')) {
       delete stockData.scan_session_id;
-      const retry = await supabase.from('zonnebloem_stocks').upsert(
-        stockData,
-        { onConflict: 'ticker' },
-      );
+      const retry = await supabase.from('zonnebloem_stocks').upsert(stockData, { onConflict: 'ticker' });
       upsertError = retry.error;
     }
 

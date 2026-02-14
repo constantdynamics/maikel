@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS zonnebloem_stocks (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   ticker VARCHAR(20) NOT NULL,
+  yahoo_ticker VARCHAR(30),
   company_name VARCHAR(255) NOT NULL,
   sector VARCHAR(100),
   exchange VARCHAR(50),

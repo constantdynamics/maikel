@@ -19,9 +19,11 @@ interface MaikelKuifjeStock {
 interface MaikelZonnebloemStock {
   id: string;
   ticker: string;
+  yahoo_ticker: string | null;
   company_name: string;
   current_price: number | null;
   three_year_low: number | null;
+  base_price_median: number | null;
   exchange: string | null;
   sector: string | null;
   highest_spike_pct: number | null;
@@ -29,22 +31,76 @@ interface MaikelZonnebloemStock {
 
 /**
  * Calculate suggested buy limit: 15% above the 3-year low.
- * Falls back to existing purchase_limit if three_year_low is unavailable.
+ * Falls back to existing purchase_limit, then base_price_median * 1.15.
  */
-function calculateBuyLimit(threeYearLow: number | null, fallbackLimit: number | null): number | null {
+function calculateBuyLimit(
+  threeYearLow: number | null,
+  fallbackLimit: number | null,
+  basePriceMedian?: number | null,
+): number | null {
   if (threeYearLow && threeYearLow > 0) {
-    return Math.round(threeYearLow * 1.15 * 100) / 100; // 15% above 3-year low, rounded to 2 decimals
+    return Math.round(threeYearLow * 1.15 * 100) / 100; // 15% above 3-year low
   }
-  return fallbackLimit;
+  if (fallbackLimit && fallbackLimit > 0) {
+    return fallbackLimit;
+  }
+  // Last resort: use base price median (Zonnebloem stocks have this)
+  if (basePriceMedian && basePriceMedian > 0) {
+    return Math.round(basePriceMedian * 1.15 * 100) / 100;
+  }
+  return null;
+}
+
+/**
+ * Determine the best ticker for Defog (that data providers can resolve).
+ * For Zonnebloem stocks, use yahoo_ticker if available (e.g., "0A91.F" or "LMND").
+ * For Kuifje stocks, ticker is typically already a proper US ticker.
+ */
+function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock): string {
+  // Zonnebloem stocks have yahoo_ticker which includes the proper exchange suffix
+  if ('yahoo_ticker' in m && m.yahoo_ticker) {
+    return m.yahoo_ticker;
+  }
+  return m.ticker;
+}
+
+/**
+ * Determine the exchange for Defog based on the yahoo_ticker suffix.
+ */
+function getDefogExchange(m: MaikelKuifjeStock | MaikelZonnebloemStock): string {
+  const ticker = getDefogTicker(m);
+  // Extract exchange from Yahoo suffix
+  if (ticker.includes('.')) {
+    const suffix = ticker.split('.').pop()?.toUpperCase();
+    const suffixToExchange: Record<string, string> = {
+      'L': 'LSE', 'DE': 'XETRA', 'F': 'FRA', 'PA': 'EPA', 'MC': 'BME',
+      'MI': 'MIL', 'ST': 'STO', 'OL': 'OSL', 'CO': 'CSE', 'HE': 'HEL',
+      'SW': 'SIX', 'AS': 'AMS', 'BR': 'BRU', 'WA': 'WSE', 'VI': 'VIE',
+      'LS': 'ELI', 'AT': 'ATHEX', 'IS': 'BIST', 'TA': 'TASE',
+      'HK': 'HKEX', 'T': 'TSE', 'NS': 'NSE', 'BO': 'BSE',
+      'KS': 'KRX', 'KQ': 'KOSDAQ', 'TW': 'TWSE', 'SI': 'SGX',
+      'AX': 'ASX', 'NZ': 'NZX', 'JK': 'IDX', 'KL': 'MYX',
+      'BK': 'SET', 'SS': 'SSE', 'SZ': 'SZSE',
+      'TO': 'TSX', 'V': 'TSXV', 'SA': 'BVMF', 'MX': 'BMV',
+      'JO': 'JSE', 'SR': 'TADAWUL',
+    };
+    if (suffix && suffixToExchange[suffix]) {
+      return suffixToExchange[suffix];
+    }
+  }
+  return m.exchange || 'US';
 }
 
 function maikelToDefogStock(
   m: MaikelKuifjeStock | MaikelZonnebloemStock,
   buyLimit: number | null,
 ): DefogStock {
+  const ticker = getDefogTicker(m);
+  const exchange = getDefogExchange(m);
+
   return {
     id: uuidv4(),
-    ticker: m.ticker,
+    ticker,
     name: m.company_name || m.ticker,
     buyLimit: buyLimit,
     currentPrice: m.current_price || 0,
@@ -57,7 +113,7 @@ function maikelToDefogStock(
     historicalData: [],
     lastUpdated: new Date().toISOString(),
     currency: 'USD',
-    exchange: m.exchange || 'UNKNOWN',
+    exchange,
     alertSettings: { customThresholds: [], enabled: true },
   };
 }
@@ -125,7 +181,8 @@ export async function syncScannerToDefog(
   const kuifjeExistingTickers = new Set(kuifjeTab.stocks.map((s) => s.ticker));
   const kuifjeNewStocks: DefogStock[] = [];
   for (const stock of kuifjeStocks) {
-    if (!kuifjeExistingTickers.has(stock.ticker)) {
+    const defogTicker = getDefogTicker(stock);
+    if (!kuifjeExistingTickers.has(defogTicker)) {
       const buyLimit = calculateBuyLimit(stock.three_year_low, stock.purchase_limit);
       kuifjeNewStocks.push(maikelToDefogStock(stock, buyLimit));
       kuifjeAdded++;
@@ -133,20 +190,21 @@ export async function syncScannerToDefog(
   }
 
   // Sync Zonnebloem stocks — only add new, never remove
-  // Buy limit = 15% above 3-year low
+  // Buy limit = 15% above 3-year low, fallback to base_price_median * 1.15
   const zbExistingTickers = new Set(zbTab.stocks.map((s) => s.ticker));
   const zbNewStocks: DefogStock[] = [];
   for (const stock of zbStocks) {
-    if (!zbExistingTickers.has(stock.ticker)) {
-      const buyLimit = calculateBuyLimit(stock.three_year_low, null);
+    const defogTicker = getDefogTicker(stock);
+    if (!zbExistingTickers.has(defogTicker)) {
+      const buyLimit = calculateBuyLimit(stock.three_year_low, null, stock.base_price_median);
       zbNewStocks.push(maikelToDefogStock(stock, buyLimit));
       zbAdded++;
     }
   }
 
-  // Build lookup maps for updating existing stocks' buy limits
-  const kuifjeByTicker = new Map(kuifjeStocks.map((s) => [s.ticker, s]));
-  const zbByTicker = new Map(zbStocks.map((s) => [s.ticker, s]));
+  // Build lookup maps for updating existing stocks' buy limits (keyed by defog ticker)
+  const kuifjeByTicker = new Map(kuifjeStocks.map((s) => [getDefogTicker(s), s]));
+  const zbByTicker = new Map(zbStocks.map((s) => [getDefogTicker(s), s]));
 
   // Apply updates — ensure tabs exist, append new stocks, update buyLimits
   const kuifjeTabId = kuifjeTab.id;
@@ -187,7 +245,7 @@ export async function syncScannerToDefog(
           if (s.buyLimit == null) {
             const scanner = zbByTicker.get(s.ticker);
             if (scanner) {
-              const newLimit = calculateBuyLimit(scanner.three_year_low, null);
+              const newLimit = calculateBuyLimit(scanner.three_year_low, null, scanner.base_price_median);
               if (newLimit != null) return { ...s, buyLimit: newLimit };
             }
           }

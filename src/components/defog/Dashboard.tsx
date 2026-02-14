@@ -1307,22 +1307,31 @@ export function Dashboard() {
 
   // Sort stocks
   const sortedStocks = useMemo(() => {
-    // For "All" view, combine all stocks and sort by day change by default
+    // Helper: stocks with price 0 (not yet scanned) always sort to bottom
+    const priceZeroSort = (a: Stock, b: Stock, normalCompare: () => number) => {
+      const aZero = a.currentPrice <= 0;
+      const bZero = b.currentPrice <= 0;
+      if (aZero && !bZero) return 1;  // a to bottom
+      if (!aZero && bZero) return -1; // b to bottom
+      if (aZero && bZero) return a.ticker.localeCompare(b.ticker); // both zero: alphabetical
+      return normalCompare();
+    };
+
+    // For "All" view, combine all stocks and sort by distance to limit
     if (isAllView) {
       const stocks = allStocksWithTabs.map(s => s.stock);
-      return stocks.sort((a, b) => {
-        // Default sort by distance to limit for all view
+      return stocks.sort((a, b) => priceZeroSort(a, b, () => {
         const distA = a.buyLimit !== null ? ((a.currentPrice - a.buyLimit) / a.buyLimit) * 100 : Infinity;
         const distB = b.buyLimit !== null ? ((b.currentPrice - b.buyLimit) / b.buyLimit) * 100 : Infinity;
         return distA - distB;
-      });
+      }));
     }
 
     if (!activeTab) return [];
 
     const stocks = [...activeTab.stocks];
 
-    stocks.sort((a, b) => {
+    stocks.sort((a, b) => priceZeroSort(a, b, () => {
       let comparison = 0;
 
       switch (activeTab.sortField) {
@@ -1349,7 +1358,7 @@ export function Dashboard() {
       }
 
       return activeTab.sortDirection === 'asc' ? comparison : -comparison;
-    });
+    }));
 
     return stocks;
   }, [activeTab, isAllView, allStocksWithTabs]);
@@ -1835,14 +1844,7 @@ export function Dashboard() {
           </div>
         )}
 
-        {/* Buy Signals */}
-        <BuySignals
-          signals={buySignals}
-          onMarkAsPurchased={store.archiveStock}
-          displayOptions={store.settings.buySignalDisplay}
-        />
-
-        {/* Tabs + Columns row - below Buy Signals */}
+        {/* Tabs + Columns row */}
         <div className="flex items-center justify-between mb-4 mt-4">
           <TabBar
             tabs={store.tabs}
@@ -2356,6 +2358,13 @@ export function Dashboard() {
             )}
           </div>
         )}
+
+        {/* Buy Signals - at bottom of page */}
+        <BuySignals
+          signals={buySignals}
+          onMarkAsPurchased={store.archiveStock}
+          displayOptions={store.settings.buySignalDisplay}
+        />
 
       </main>
 
