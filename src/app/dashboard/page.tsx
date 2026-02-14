@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { getSelectedMarkets } from '@/components/MarketSelector';
 import StockTable from '@/components/StockTable';
 import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
@@ -420,7 +419,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-4">
         <ExportReminder onExport={handleExport} />
 
@@ -819,6 +818,6 @@ export default function DashboardPage() {
 
         <FixedUI />
       </div>
-    </AuthGuard>
+    </>
   );
 }

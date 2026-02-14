@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { supabase } from '@/lib/supabase';
 import type { Stock } from '@/lib/types';
 
@@ -128,16 +127,16 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <AuthGuard>
+      <>
         <div className="flex items-center justify-center py-20">
           <div className="text-[var(--text-muted)] animate-pulse">Loading analytics...</div>
         </div>
-      </AuthGuard>
+      </>
     );
   }
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Analytics</h1>
 
@@ -304,6 +303,6 @@ export default function AnalyticsPage() {
           </div>
         )}
       </div>
-    </AuthGuard>
+    </>
   );
 }

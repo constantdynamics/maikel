@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { supabase } from '@/lib/supabase';
 import { downloadCSV, formatDate } from '@/lib/utils';
 import type { Archive } from '@/lib/types';
@@ -57,7 +56,7 @@ export default function ArchivePage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Archives</h1>
@@ -135,6 +134,6 @@ export default function ArchivePage() {
           </div>
         )}
       </div>
-    </AuthGuard>
+    </>
   );
 }

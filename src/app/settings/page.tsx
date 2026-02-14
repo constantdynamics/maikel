@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import BackupStatus from '@/components/BackupStatus';
 import { supabase } from '@/lib/supabase';
 import type { Settings, MarketCapCategory, ZonnebloemSettings } from '@/lib/types';
@@ -282,9 +281,9 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <AuthGuard>
+      <>
         <div className="text-slate-400 py-8 text-center">Loading settings...</div>
-      </AuthGuard>
+      </>
     );
   }
 
@@ -295,7 +294,7 @@ export default function SettingsPage() {
   ];
 
   return (
-    <AuthGuard>
+    <>
       <div className="max-w-2xl space-y-6">
         {/* Header with save button */}
         <div className="flex items-center justify-between">
@@ -931,6 +930,6 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
-    </AuthGuard>
+    </>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { useStore } from '@/lib/defog/store';
 import { Dashboard } from '@/components/defog/Dashboard';
 import { syncScannerToDefog } from '@/lib/defog/scannerSync';
@@ -221,7 +220,7 @@ export default function DefogPage() {
   };
 
   return (
-    <AuthGuard>
+    <>
       <div
         className="defog-container relative"
         style={{
@@ -332,6 +331,6 @@ export default function DefogPage() {
         </div>
 
       </div>
-    </AuthGuard>
+    </>
   );
 }

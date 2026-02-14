@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { supabase } from '@/lib/supabase';
 import { formatCurrency, formatPercent, formatDate } from '@/lib/utils';
@@ -100,7 +99,7 @@ export default function RecycleBinPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Recycle Bin</h1>
@@ -197,6 +196,6 @@ export default function RecycleBinPage() {
           onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
         />
       </div>
-    </AuthGuard>
+    </>
   );
 }
