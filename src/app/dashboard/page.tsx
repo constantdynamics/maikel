@@ -184,18 +184,31 @@ export default function DashboardPage() {
   async function handleRunScan(markets: string[]) {
     setScanRunning(true);
     setScanTriggered(true);
+    console.log(`[Kuifje] Starting scan for markets: ${markets.join(', ')}`);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/scan', {
+      if (!session?.access_token) {
+        console.error('[Kuifje] No auth token available');
+        setScanRunning(false);
+        return;
+      }
+      const res = await fetch('/api/scan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ markets }),
       });
-    } catch {
+      const result = await res.json();
+      if (!res.ok) {
+        console.error(`[Kuifje] Scan failed (${res.status}):`, result);
+      } else {
+        console.log(`[Kuifje] Scan result:`, result);
+      }
+    } catch (err) {
+      console.error('[Kuifje] Scan error:', err);
       setScanRunning(false);
     }
   }
