@@ -59,7 +59,7 @@ export default function Navbar() {
   const currentTheme = THEMES.find(t => t.id === theme) || THEMES[0];
 
   return (
-    <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3 relative z-50 shrink-0">
+    <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3 sticky top-0 z-50 shrink-0">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/dashboard" className="flex items-center">
