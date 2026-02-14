@@ -269,7 +269,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
       />
 
       {/* Version — bottom-left */}
-      <div className="fixed bottom-2 left-4 z-50 text-[10px] font-mono" style={{ color: '#333' }}>
+      <div className="fixed bottom-2 left-4 z-50 text-[10px] font-mono font-bold" style={{ color: 'var(--accent-primary)' }}>
         v{packageJson.version}
       </div>
     </div>

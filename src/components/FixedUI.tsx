@@ -1,9 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import packageJson from '../../package.json';
-
-const APP_VERSION = packageJson.version;
 
 export default function FixedUI() {
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -23,11 +20,6 @@ export default function FixedUI() {
 
   return (
     <>
-      {/* Version badge - bottom left */}
-      <div className="fixed-version">
-        <span className="text-[var(--accent-primary)]">v{APP_VERSION}</span>
-      </div>
-
       {/* Scroll to top button - bottom right */}
       <button
         onClick={scrollToTop}
