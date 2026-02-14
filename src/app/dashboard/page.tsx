@@ -243,8 +243,14 @@ export default function DashboardPage() {
     setScanTriggered(false);
     refreshStocks();
     if (kuifjeAutoScan) {
-      kuifjeAutoLastRun.current = Date.now();
-      setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      if (underwaterMode) {
+        // In underwater mode: restart scan immediately (small delay to let state settle)
+        setTimeout(() => handleRunScan(getSelectedMarkets()), 3000);
+        setKuifjeAutoNext(new Date(Date.now() + 3000));
+      } else {
+        kuifjeAutoLastRun.current = Date.now();
+        setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
     }
   }
 
@@ -495,6 +501,14 @@ export default function DashboardPage() {
                     Next: {kuifjeAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+
+                <button
+                  onClick={() => setUnderwaterMode(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors bg-[#1a1c1e] text-[#6a6d72] border border-[#3a3d41] hover:text-[#9a9da2]"
+                >
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#3a3d41]" />
+                  Underwater
+                </button>
               </div>
             </div>
 
@@ -642,18 +656,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {underwaterMode && (
-              <UnderwaterMode
-                zbStocks={zbStocks}
-                kuifjeStocks={stocks}
-                onExit={() => setUnderwaterMode(false)}
-                autoScanActive={zbAutoScan}
-                autoScanNext={zbAutoNext}
-                scanRunning={zbScanRunning}
-                onRefreshStocks={zbRefreshStocks}
-              />
-            )}
-
             <ZonnebloemScanProgress
               scanTriggered={zbScanTriggered}
               onScanComplete={handleZbScanComplete}
@@ -787,6 +789,22 @@ export default function DashboardPage() {
               </>
             )}
           </>
+        )}
+
+        {underwaterMode && (
+          <UnderwaterMode
+            zbStocks={zbStocks}
+            kuifjeStocks={stocks}
+            onExit={() => setUnderwaterMode(false)}
+            autoScanActive={zbAutoScan}
+            autoScanNext={zbAutoNext}
+            scanRunning={zbScanRunning}
+            onRefreshStocks={zbRefreshStocks}
+            kuifjeAutoScanActive={kuifjeAutoScan}
+            kuifjeAutoScanNext={kuifjeAutoNext}
+            kuifjeScanRunning={scanRunning}
+            onRefreshKuifjeStocks={refreshStocks}
+          />
         )}
 
         <ConfirmDialog

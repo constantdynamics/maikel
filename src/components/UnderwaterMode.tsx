@@ -19,14 +19,31 @@ interface ScanStatus {
   } | null;
 }
 
+interface KuifjeScanStatus {
+  running: boolean;
+  scan: {
+    status: string;
+    stocksScanned: number;
+    stocksFound: number;
+    startedAt: string;
+    completedAt: string | null;
+  } | null;
+}
+
 interface UnderwaterModeProps {
   zbStocks: ZonnebloemStock[];
   kuifjeStocks: Stock[];
   onExit: () => void;
+  // Zonnebloem scan
   autoScanActive: boolean;
   autoScanNext: Date | null;
   scanRunning: boolean;
   onRefreshStocks: () => void;
+  // Kuifje scan
+  kuifjeAutoScanActive: boolean;
+  kuifjeAutoScanNext: Date | null;
+  kuifjeScanRunning: boolean;
+  onRefreshKuifjeStocks: () => void;
 }
 
 // Kuifje growth dots — simplified inline renderer
@@ -54,10 +71,13 @@ function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: numbe
   );
 }
 
-export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks }: UnderwaterModeProps) {
+export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks, kuifjeAutoScanActive, kuifjeAutoScanNext, kuifjeScanRunning, onRefreshKuifjeStocks }: UnderwaterModeProps) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [kuifjeScanStatus, setKuifjeScanStatus] = useState<KuifjeScanStatus | null>(null);
   const [completedScans, setCompletedScans] = useState(0);
+  const [completedKuifjeScans, setCompletedKuifjeScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
+  const [lastKuifjeScanId, setLastKuifjeScanId] = useState<string | null>(null);
 
   // Font size for the big total number — persists in localStorage
   const FONT_SIZES = ['1.5rem', '2.5rem', '4rem', '6rem'];
@@ -81,8 +101,8 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     return () => { document.title = prev; };
   }, []);
 
-  // Poll scan progress
-  const fetchStatus = useCallback(async () => {
+  // Poll Zonnebloem scan progress
+  const fetchZbStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/zonnebloem/scan/progress');
       if (res.ok) {
@@ -94,23 +114,50 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     return null;
   }, []);
 
+  // Poll Kuifje scan progress
+  const fetchKuifjeStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/scan/progress');
+      if (res.ok) {
+        const json = await res.json();
+        setKuifjeScanStatus(json);
+        return json as KuifjeScanStatus;
+      }
+    } catch { /* silent */ }
+    return null;
+  }, []);
+
   useEffect(() => {
-    fetchStatus();
+    fetchZbStatus();
+    fetchKuifjeStatus();
     const timer = setInterval(async () => {
-      const result = await fetchStatus();
-      if (result?.scan?.completedAt && result.scan.completedAt !== lastScanId) {
-        setLastScanId(result.scan.completedAt);
+      const zbResult = await fetchZbStatus();
+      if (zbResult?.scan?.completedAt && zbResult.scan.completedAt !== lastScanId) {
+        setLastScanId(zbResult.scan.completedAt);
         setCompletedScans(prev => prev + 1);
         onRefreshStocks();
       }
+
+      const kResult = await fetchKuifjeStatus();
+      if (kResult?.scan?.completedAt && kResult.scan.completedAt !== lastKuifjeScanId) {
+        setLastKuifjeScanId(kResult.scan.completedAt);
+        setCompletedKuifjeScans(prev => prev + 1);
+        onRefreshKuifjeStocks();
+      }
     }, 5000);
     return () => clearInterval(timer);
-  }, [fetchStatus, lastScanId, onRefreshStocks]);
+  }, [fetchZbStatus, fetchKuifjeStatus, lastScanId, lastKuifjeScanId, onRefreshStocks, onRefreshKuifjeStocks]);
 
-  const isRunning = scanStatus?.running || scanRunning;
-  const scan = scanStatus?.scan;
-  const elapsed = scan?.startedAt && isRunning
-    ? Math.round((Date.now() - new Date(scan.startedAt).getTime()) / 1000)
+  const zbIsRunning = scanStatus?.running || scanRunning;
+  const zbScan = scanStatus?.scan;
+  const zbElapsed = zbScan?.startedAt && zbIsRunning
+    ? Math.round((Date.now() - new Date(zbScan.startedAt).getTime()) / 1000)
+    : null;
+
+  const kIsRunning = kuifjeScanStatus?.running || kuifjeScanRunning;
+  const kScan = kuifjeScanStatus?.scan;
+  const kElapsed = kScan?.startedAt && kIsRunning
+    ? Math.round((Date.now() - new Date(kScan.startedAt).getTime()) / 1000)
     : null;
 
   return (
@@ -144,40 +191,69 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         />
       </div>
 
-      {/* Scan status indicator top-right */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1">
+      {/* Scan status indicators top-right — both scanners */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1.5">
+        {/* Zonnebloem status */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
-              isRunning ? 'bg-purple-400 animate-pulse' : autoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+              zbIsRunning ? 'bg-purple-400 animate-pulse' : autoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
             }`}
           />
-          <span style={{ color: isRunning ? '#c084fc' : '#6a6d72' }}>
-            {isRunning
-              ? `Scanning${elapsed ? ` (${elapsed}s)` : ''}...`
+          <span style={{ color: zbIsRunning ? '#c084fc' : '#6a6d72' }}>
+            {zbIsRunning
+              ? `Zonnebloem${zbElapsed ? ` (${zbElapsed}s)` : ''}...`
               : autoScanActive
-                ? 'Starting next scan...'
-                : 'Auto-scan off'}
+                ? 'Zonnebloem waiting...'
+                : 'Zonnebloem off'}
           </span>
+          {zbIsRunning && zbScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{zbScan.stocksDeepScanned}</span>
+              {' / '}
+              <span style={{ color: '#22c55e' }}>{zbScan.stocksMatched}</span>
+            </span>
+          )}
+          {!zbIsRunning && completedScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedScans}</span>
+          )}
         </div>
 
-        {isRunning && scan && (
-          <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#5a5d62' }}>
-            <span>Candidates: <span style={{ color: '#7a7d82' }}>{scan.candidatesFound}</span></span>
-            <span>Scanned: <span style={{ color: '#7a7d82' }}>{scan.stocksDeepScanned}</span></span>
-            <span>Matches: <span style={{ color: '#22c55e' }}>{scan.stocksMatched}</span></span>
-            <span>New: <span style={{ color: '#c084fc' }}>{scan.newStocksFound}</span></span>
-          </div>
-        )}
+        {/* Kuifje status */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              kIsRunning ? 'bg-green-400 animate-pulse' : kuifjeAutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+            }`}
+          />
+          <span style={{ color: kIsRunning ? '#4ade80' : '#6a6d72' }}>
+            {kIsRunning
+              ? `Kuifje${kElapsed ? ` (${kElapsed}s)` : ''}...`
+              : kuifjeAutoScanActive
+                ? 'Kuifje waiting...'
+                : 'Kuifje off'}
+          </span>
+          {kIsRunning && kScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{kScan.stocksScanned}</span>
+              {' / '}
+              <span style={{ color: '#22c55e' }}>{kScan.stocksFound}</span>
+            </span>
+          )}
+          {!kIsRunning && completedKuifjeScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedKuifjeScans}</span>
+          )}
+        </div>
 
+        {/* Next scan times */}
         <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#4a4d52' }}>
-          {completedScans > 0 && (
-            <span>Completed: <span style={{ color: '#6a6d72' }}>{completedScans}</span></span>
+          {autoScanActive && autoScanNext && !zbIsRunning && (
+            <span>Z next: <span style={{ color: '#6a6d72' }}>{autoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
-          {autoScanActive && autoScanNext && !isRunning && (
-            <span>Next: <span style={{ color: '#6a6d72' }}>{autoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+          {kuifjeAutoScanActive && kuifjeAutoScanNext && !kIsRunning && (
+            <span>K next: <span style={{ color: '#6a6d72' }}>{kuifjeAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
-          {!autoScanActive && (
+          {!autoScanActive && !kuifjeAutoScanActive && (
             <span>Auto-scan is off</span>
           )}
         </div>
