@@ -97,7 +97,7 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   const defaults: Settings = {
     ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 50,
+    growth_threshold_pct: 30,
     min_growth_events: 1,
     min_consecutive_days: 2,
     growth_lookback_years: 5,
@@ -305,10 +305,13 @@ async function deepScanStock(
   );
 
   if (growthAnalysis.events.length < settings.min_growth_events) {
+    const nearMissInfo = growthAnalysis.highestGrowthPct > 0
+      ? ` (best growth: ${growthAnalysis.highestGrowthPct.toFixed(1)}%, needed: ${settings.growth_threshold_pct}%)`
+      : ' (no growth detected at all)';
     return {
       detail: {
         ...baseDetail, result: 'rejected',
-        rejectReason: `Only ${growthAnalysis.events.length} growth events (need ${settings.min_growth_events}+)`,
+        rejectReason: `Only ${growthAnalysis.events.length} growth events (need ${settings.min_growth_events}+)${nearMissInfo}`,
         yahooHistoryDays: history.length, yahooATH: yahooATHResult?.price, yahooDeclineFromATH: athDeclinePct,
         growthEvents: growthAnalysis.events.length, growthScore: growthAnalysis.score, highestGrowthPct: growthAnalysis.highestGrowthPct,
       },
@@ -739,17 +742,41 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
     // Build rejection summary for debugging
     const rejectionSummary: Record<string, number> = {};
+    const growthNearMisses: number[] = []; // Track highest growth % for stocks that failed growth check
     for (const detail of scanDetails) {
       if (detail.result === 'rejected' && detail.rejectReason) {
         // Generalize reasons (strip specific numbers for grouping)
         const reason = detail.rejectReason
           .replace(/\d+\.\d+/g, 'X')
           .replace(/\$[\d.]+/g, '$X')
-          .replace(/Only \d+/g, 'Only N');
+          .replace(/Only \d+/g, 'Only N')
+          .replace(/\(best growth: X%, needed: X%\)/, '(see near-miss summary)')
+          .replace(/\(no growth detected at all\)/, '(no growth)');
         rejectionSummary[reason] = (rejectionSummary[reason] || 0) + 1;
+        // Collect near-miss growth data
+        if (detail.highestGrowthPct && detail.highestGrowthPct > 0) {
+          growthNearMisses.push(detail.highestGrowthPct);
+        }
       } else if (detail.result === 'error' && detail.errorMessage) {
         const reason = `ERROR: ${detail.errorMessage.split(':')[0]}`;
         rejectionSummary[reason] = (rejectionSummary[reason] || 0) + 1;
+      }
+    }
+
+    // Near-miss analysis: show distribution of growth percentages for rejected stocks
+    if (growthNearMisses.length > 0) {
+      growthNearMisses.sort((a, b) => b - a);
+      const threshold = settings.growth_threshold_pct;
+      const above40 = growthNearMisses.filter(g => g >= threshold * 0.8).length;
+      const above60 = growthNearMisses.filter(g => g >= threshold * 0.6).length;
+      const above80 = growthNearMisses.filter(g => g >= threshold * 0.4).length;
+      console.log(`[Kuifje] Near-miss growth analysis (${growthNearMisses.length} stocks with some growth):`);
+      console.log(`  Top 5 highest growth: ${growthNearMisses.slice(0, 5).map(g => g.toFixed(1) + '%').join(', ')}`);
+      console.log(`  Within 80% of threshold (≥${(threshold * 0.8).toFixed(0)}%): ${above40} stocks`);
+      console.log(`  Within 60% of threshold (≥${(threshold * 0.6).toFixed(0)}%): ${above60} stocks`);
+      console.log(`  Within 40% of threshold (≥${(threshold * 0.4).toFixed(0)}%): ${above80} stocks`);
+      if (growthNearMisses.length > 0 && above40 > 0) {
+        console.log(`  💡 Consider lowering growth_threshold_pct from ${threshold}% to ${(threshold * 0.7).toFixed(0)}% to capture ${above40}+ more stocks`);
       }
     }
 

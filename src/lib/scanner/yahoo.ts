@@ -139,7 +139,14 @@ export async function getHistoricalData(
     };
 
     const result = data?.chart?.result?.[0];
-    if (!result?.timestamp || !result?.indicators?.quote?.[0]) return [];
+    if (!result?.timestamp || !result?.indicators?.quote?.[0]) {
+      // Log why Yahoo returned empty data for debugging
+      const chartError = (data as { chart?: { error?: { code?: string; description?: string } } })?.chart?.error;
+      if (chartError) {
+        console.warn(`Yahoo: ${ticker} - API error: ${chartError.code} - ${chartError.description}`);
+      }
+      return [];
+    }
 
     const timestamps = result.timestamp;
     const quote = result.indicators.quote[0];

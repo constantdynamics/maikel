@@ -110,7 +110,7 @@ const SECTORS = [
 const KUIFJE_RECOMMENDED_DEFAULTS: Settings = {
   ath_decline_min: 60,
   ath_decline_max: 100,
-  growth_threshold_pct: 50,
+  growth_threshold_pct: 30,
   min_growth_events: 1,
   min_consecutive_days: 2,
   growth_lookback_years: 5,
@@ -134,7 +134,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 50,
+    growth_threshold_pct: 30,
     min_growth_events: 1,
     min_consecutive_days: 2,
     growth_lookback_years: 5,
