@@ -361,7 +361,8 @@ async function deepScanStock(
 
   const today = new Date().toISOString().split('T')[0];
 
-  await supabase.from('stocks').upsert({
+  // Build stock data for upsert
+  const stockData: Record<string, unknown> = {
     ticker,
     company_name: tvStock.name || ticker,
     sector: tvStock.sector || null,
@@ -392,7 +393,47 @@ async function deepScanStock(
     // Reset visibility flags so re-discovered stocks reappear
     is_deleted: false,
     is_archived: false,
-  }, { onConflict: 'ticker' });
+  };
+
+  let { error: upsertError } = await supabase.from('stocks').upsert(
+    stockData,
+    { onConflict: 'ticker' },
+  );
+
+  // Fallback: if a column doesn't exist yet, remove it and retry
+  if (upsertError) {
+    console.error(`[Kuifje] Upsert failed for ${ticker}: ${upsertError.message}`);
+
+    // Try removing potentially missing columns one at a time
+    const optionalColumns = ['three_year_low', 'scan_number', 'scan_date',
+      'twelve_month_low', 'twelve_month_max_decline_pct', 'twelve_month_max_spike_pct', 'is_stable_with_spikes'];
+    for (const col of optionalColumns) {
+      if (upsertError?.message?.includes(col)) {
+        console.warn(`[Kuifje] Removing column '${col}' and retrying upsert for ${ticker}`);
+        delete stockData[col];
+        const retry = await supabase.from('stocks').upsert(stockData, { onConflict: 'ticker' });
+        upsertError = retry.error;
+        if (!upsertError) break;
+      }
+    }
+  }
+
+  if (upsertError) {
+    console.error(`[Kuifje] Final upsert FAILED for ${ticker}: ${upsertError.message}`);
+    return {
+      detail: {
+        ...baseDetail, result: 'error',
+        errorMessage: `DB upsert failed: ${upsertError.message}`,
+        yahooHistoryDays: history.length, yahooATH: yahooATHResult?.price, yahooDeclineFromATH: athDeclinePct,
+        growthEvents: growthAnalysis.events.length, growthScore: growthAnalysis.score, highestGrowthPct: growthAnalysis.highestGrowthPct,
+      },
+      isMatch: false,
+      apiCallsYahoo,
+      apiCallsAlphaVantage,
+    };
+  }
+
+  console.log(`[Kuifje] Successfully saved ${ticker} to database`);
 
   await supabase.from('growth_events').delete().eq('ticker', ticker);
   if (growthAnalysis.events.length > 0) {
