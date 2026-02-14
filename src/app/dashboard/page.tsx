@@ -205,7 +205,13 @@ export default function DashboardPage() {
       if (!res.ok) {
         console.error(`[Kuifje] Scan failed (${res.status}):`, result);
       } else {
-        console.log(`[Kuifje] Scan result:`, result);
+        console.log(`[Kuifje] Scan result: ${result.stocksFound}/${result.stocksScanned} matches (${result.durationSeconds}s)`);
+        if (result.effectiveSettings) {
+          console.log(`[Kuifje] Settings used:`, result.effectiveSettings);
+        }
+        if (result.rejectionSummary && Object.keys(result.rejectionSummary).length > 0) {
+          console.log(`[Kuifje] Rejection breakdown:`, result.rejectionSummary);
+        }
       }
     } catch (err) {
       console.error('[Kuifje] Scan error:', err);

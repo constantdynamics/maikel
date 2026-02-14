@@ -87,6 +87,8 @@ interface ScanResult {
   apiCallsYahoo: number;
   apiCallsAlphaVantage: number;
   markets: string[];
+  effectiveSettings?: Partial<Settings>;
+  rejectionSummary?: Record<string, number>;
 }
 
 async function getSettings(supabase: ReturnType<typeof createServiceClient>): Promise<Settings> {
@@ -735,6 +737,22 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
       );
     }
 
+    // Build rejection summary for debugging
+    const rejectionSummary: Record<string, number> = {};
+    for (const detail of scanDetails) {
+      if (detail.result === 'rejected' && detail.rejectReason) {
+        // Generalize reasons (strip specific numbers for grouping)
+        const reason = detail.rejectReason
+          .replace(/\d+\.\d+/g, 'X')
+          .replace(/\$[\d.]+/g, '$X')
+          .replace(/Only \d+/g, 'Only N');
+        rejectionSummary[reason] = (rejectionSummary[reason] || 0) + 1;
+      } else if (detail.result === 'error' && detail.errorMessage) {
+        const reason = `ERROR: ${detail.errorMessage.split(':')[0]}`;
+        rejectionSummary[reason] = (rejectionSummary[reason] || 0) + 1;
+      }
+    }
+
     return {
       status: errors.length === 0 ? 'completed' : 'partial',
       stocksScanned,
@@ -746,6 +764,14 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
       apiCallsYahoo,
       apiCallsAlphaVantage,
       markets,
+      effectiveSettings: {
+        growth_threshold_pct: settings.growth_threshold_pct,
+        min_growth_events: settings.min_growth_events,
+        min_consecutive_days: settings.min_consecutive_days,
+        ath_decline_min: settings.ath_decline_min,
+        ath_decline_max: settings.ath_decline_max,
+      },
+      rejectionSummary,
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);

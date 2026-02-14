@@ -60,8 +60,8 @@ export function analyzeGrowthEvents(
         peakIdx = j;
       }
 
-      // Check if close price is above target
-      if (history[j].close >= targetPrice) {
+      // Check if high price reached target (consistent with peakPrice tracking)
+      if (history[j].high >= targetPrice) {
         reachedTarget = true;
         daysAboveTarget++;
         maxDaysAboveTarget = Math.max(maxDaysAboveTarget, daysAboveTarget);
@@ -69,9 +69,8 @@ export function analyzeGrowthEvents(
         daysAboveTarget = 0;
       }
 
-      // If price drops below 80% of trough, this growth cycle is over
-      // (new trough territory - will be caught by a different trough)
-      if (history[j].close < troughPrice * 0.8) {
+      // If price drops below 50% of trough, this growth cycle is over
+      if (history[j].close < troughPrice * 0.5) {
         break;
       }
     }
