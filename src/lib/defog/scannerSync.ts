@@ -30,23 +30,12 @@ interface MaikelZonnebloemStock {
 }
 
 /**
- * Calculate suggested buy limit: 15% above the 3-year low.
- * Falls back to existing purchase_limit, then base_price_median * 1.15.
+ * Calculate suggested buy limit: ONLY 15% above the 3-year low.
+ * No fallbacks — if three_year_low is unavailable, returns null.
  */
-function calculateBuyLimit(
-  threeYearLow: number | null,
-  fallbackLimit: number | null,
-  basePriceMedian?: number | null,
-): number | null {
+function calculateBuyLimit(threeYearLow: number | null): number | null {
   if (threeYearLow && threeYearLow > 0) {
-    return Math.round(threeYearLow * 1.15 * 100) / 100; // 15% above 3-year low
-  }
-  if (fallbackLimit && fallbackLimit > 0) {
-    return fallbackLimit;
-  }
-  // Last resort: use base price median (Zonnebloem stocks have this)
-  if (basePriceMedian && basePriceMedian > 0) {
-    return Math.round(basePriceMedian * 1.15 * 100) / 100;
+    return Math.round(threeYearLow * 1.15 * 100) / 100;
   }
   return null;
 }
@@ -91,11 +80,87 @@ function getDefogExchange(m: MaikelKuifjeStock | MaikelZonnebloemStock): string 
   return m.exchange || 'US';
 }
 
+/**
+ * Normalize a company name for duplicate detection.
+ * Strips common suffixes, lowercases, and removes punctuation.
+ */
+function normalizeCompanyName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[.,]/g, '')
+    .replace(/\b(inc|corp|corporation|ltd|limited|plc|ag|sa|nv|se|co|company|group|holdings|international)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Determine the "base" ticker (without exchange suffix).
+ * E.g., "SES.SI" → "SES", "0J9J.L" → "0J9J", "LMND" → "LMND"
+ */
+function getBaseTicker(ticker: string): string {
+  const dotIndex = ticker.indexOf('.');
+  return dotIndex > 0 ? ticker.substring(0, dotIndex) : ticker;
+}
+
+/**
+ * Score a ticker — higher is better. Tickers with a dot suffix (exchange code)
+ * are preferred because they are more specific and resolve better in data providers.
+ */
+function tickerQualityScore(ticker: string): number {
+  // Prefer tickers with exchange suffix (e.g., "SES.SI" > "SES")
+  return ticker.includes('.') ? 1 : 0;
+}
+
+/**
+ * Deduplicate a list of scanner stocks by company name.
+ * When duplicates are found:
+ *  - Picks the ticker with exchange suffix (dot notation) as the "correct" one
+ *  - Uses the lowest buy limit among duplicates
+ */
+function deduplicateScannerStocks<T extends { company_name: string; three_year_low: number | null }>(
+  stocks: T[],
+  getTickerFn: (s: T) => string,
+): T[] {
+  const byName = new Map<string, { stock: T; ticker: string; buyLimit: number | null }>();
+
+  for (const stock of stocks) {
+    const normalizedName = normalizeCompanyName(stock.company_name);
+    const ticker = getTickerFn(stock);
+    const buyLimit = calculateBuyLimit(stock.three_year_low);
+    const existing = byName.get(normalizedName);
+
+    if (!existing) {
+      byName.set(normalizedName, { stock, ticker, buyLimit });
+      continue;
+    }
+
+    // Duplicate found — pick best ticker and lowest limit
+    const existingScore = tickerQualityScore(existing.ticker);
+    const newScore = tickerQualityScore(ticker);
+    const bestStock = newScore > existingScore ? stock : existing.stock;
+
+    // Take the lowest non-null buy limit
+    let bestLimit = existing.buyLimit;
+    if (buyLimit != null && (bestLimit == null || buyLimit < bestLimit)) {
+      bestLimit = buyLimit;
+    }
+
+    byName.set(normalizedName, {
+      stock: bestStock,
+      ticker: getTickerFn(bestStock),
+      buyLimit: bestLimit,
+    });
+  }
+
+  return Array.from(byName.values()).map((v) => v.stock);
+}
+
 function maikelToDefogStock(
   m: MaikelKuifjeStock | MaikelZonnebloemStock,
   buyLimit: number | null,
+  overrideTicker?: string,
 ): DefogStock {
-  const ticker = getDefogTicker(m);
+  const ticker = overrideTicker || getDefogTicker(m);
   const exchange = getDefogExchange(m);
 
   return {
@@ -119,9 +184,66 @@ function maikelToDefogStock(
 }
 
 /**
+ * Check if a stock already exists in a tab, matching by:
+ *  1. Exact ticker match
+ *  2. Same base ticker (e.g., "SES" matches "SES.SI")
+ *  3. Same normalized company name
+ * Returns the matched existing stock if found.
+ */
+function findExistingStock(
+  existingStocks: DefogStock[],
+  newTicker: string,
+  newName: string,
+  existingNameMap: Map<string, DefogStock>,
+  existingBaseTickerMap: Map<string, DefogStock>,
+  existingTickerSet: Set<string>,
+): DefogStock | null {
+  // 1. Exact ticker match
+  if (existingTickerSet.has(newTicker)) {
+    return existingStocks.find((s) => s.ticker === newTicker) || null;
+  }
+
+  // 2. Base ticker match (e.g., incoming "SES.SI" matches existing "SES")
+  const newBase = getBaseTicker(newTicker);
+  const baseMatch = existingBaseTickerMap.get(newBase);
+  if (baseMatch) return baseMatch;
+
+  // 3. Company name match
+  const normalizedNew = normalizeCompanyName(newName);
+  const nameMatch = existingNameMap.get(normalizedNew);
+  if (nameMatch) return nameMatch;
+
+  return null;
+}
+
+/**
+ * Build lookup maps for efficient duplicate detection from existing Defog stocks.
+ */
+function buildExistingStockMaps(stocks: DefogStock[]) {
+  const tickerSet = new Set<string>();
+  const nameMap = new Map<string, DefogStock>();
+  const baseTickerMap = new Map<string, DefogStock>();
+
+  for (const stock of stocks) {
+    tickerSet.add(stock.ticker);
+    nameMap.set(normalizeCompanyName(stock.name), stock);
+    baseTickerMap.set(getBaseTicker(stock.ticker), stock);
+  }
+
+  return { tickerSet, nameMap, baseTickerMap };
+}
+
+/**
  * Sync Maikel scanner results into Defog tabs.
  * Creates "Kuifje" and "Prof. Zonnebloem" tabs if they don't exist.
- * Adds new stocks (by ticker) and updates existing ones.
+ * Adds new stocks (by ticker AND company name) and updates existing ones.
+ *
+ * Deduplication:
+ *  - Within scanner results: group by company name, pick best ticker (with dot suffix)
+ *  - Against existing Defog stocks: match by ticker, base ticker, or company name
+ *  - When duplicates found: use lowest buy limit, upgrade to better ticker
+ *
+ * Buy limit = ONLY three_year_low * 1.15. No fallbacks.
  */
 export async function syncScannerToDefog(
   getTabs: () => Tab[],
@@ -129,14 +251,17 @@ export async function syncScannerToDefog(
 ): Promise<{ kuifjeAdded: number; zbAdded: number }> {
   // Fetch both scanner results
   const [kuifjeRes, zbRes] = await Promise.all([
-    fetch('/api/stocks?showDeleted=true&showArchived=true'),
+    fetch('/api/stocks'),
     fetch('/api/zonnebloem/stocks'),
   ]);
 
-  const kuifjeStocks: MaikelKuifjeStock[] = kuifjeRes.ok ? await kuifjeRes.json() : [];
-  // Zonnebloem API returns array directly (not wrapped in { stocks: [...] })
+  const kuifjeStocksRaw: MaikelKuifjeStock[] = kuifjeRes.ok ? await kuifjeRes.json() : [];
   const zbJson = zbRes.ok ? await zbRes.json() : [];
-  const zbStocks: MaikelZonnebloemStock[] = Array.isArray(zbJson) ? zbJson : (zbJson.stocks || []);
+  const zbStocksRaw: MaikelZonnebloemStock[] = Array.isArray(zbJson) ? zbJson : (zbJson.stocks || []);
+
+  // Deduplicate incoming scanner results by company name
+  const kuifjeStocks = deduplicateScannerStocks(kuifjeStocksRaw, getDefogTicker);
+  const zbStocks = deduplicateScannerStocks(zbStocksRaw, getDefogTicker);
 
   const tabs = getTabs();
 
@@ -144,7 +269,6 @@ export async function syncScannerToDefog(
   let kuifjeTab = tabs.find((t) => t.name === 'Kuifje');
   let zbTab = tabs.find((t) => t.name === 'Prof. Zonnebloem');
 
-  let newTabs = [...tabs];
   let kuifjeAdded = 0;
   let zbAdded = 0;
 
@@ -159,7 +283,6 @@ export async function syncScannerToDefog(
       sortDirection: 'asc',
       createdAt: new Date().toISOString(),
     };
-    newTabs = [...newTabs, kuifjeTab];
   }
 
   // Create Zonnebloem tab if needed
@@ -173,88 +296,160 @@ export async function syncScannerToDefog(
       sortDirection: 'asc',
       createdAt: new Date().toISOString(),
     };
-    newTabs = [...newTabs, zbTab];
   }
 
-  // Sync Kuifje stocks — only add new, never remove
-  // Buy limit = 15% above 3-year low (falls back to scanner's purchase_limit)
-  const kuifjeExistingTickers = new Set(kuifjeTab.stocks.map((s) => s.ticker));
+  // ── Kuifje: build new stocks and updates ──
+  const kuifjeMaps = buildExistingStockMaps(kuifjeTab.stocks);
   const kuifjeNewStocks: DefogStock[] = [];
+  // Track updates to existing stocks: stockId → { ticker?, buyLimit? }
+  const kuifjeUpdates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
+
   for (const stock of kuifjeStocks) {
     const defogTicker = getDefogTicker(stock);
-    if (!kuifjeExistingTickers.has(defogTicker)) {
-      const buyLimit = calculateBuyLimit(stock.three_year_low, stock.purchase_limit);
+    const buyLimit = calculateBuyLimit(stock.three_year_low);
+
+    const existing = findExistingStock(
+      kuifjeTab.stocks, defogTicker, stock.company_name,
+      kuifjeMaps.nameMap, kuifjeMaps.baseTickerMap, kuifjeMaps.tickerSet,
+    );
+
+    if (existing) {
+      // Duplicate found — potentially update ticker and/or buy limit
+      const updates: { ticker?: string; buyLimit?: number | null } = {};
+
+      // Upgrade ticker if the new one is better (has exchange suffix)
+      if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
+        updates.ticker = defogTicker;
+      }
+
+      // Use the lowest non-null buy limit
+      if (buyLimit != null) {
+        if (existing.buyLimit == null || buyLimit < existing.buyLimit) {
+          updates.buyLimit = buyLimit;
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        // Merge with any previous updates for this stock
+        const prev = kuifjeUpdates.get(existing.id) || {};
+        kuifjeUpdates.set(existing.id, { ...prev, ...updates });
+      }
+    } else {
+      // New stock
       kuifjeNewStocks.push(maikelToDefogStock(stock, buyLimit));
+      // Also add to maps so subsequent duplicates within this batch are caught
+      kuifjeMaps.tickerSet.add(defogTicker);
+      kuifjeMaps.nameMap.set(normalizeCompanyName(stock.company_name), kuifjeNewStocks[kuifjeNewStocks.length - 1]);
+      kuifjeMaps.baseTickerMap.set(getBaseTicker(defogTicker), kuifjeNewStocks[kuifjeNewStocks.length - 1]);
       kuifjeAdded++;
     }
   }
 
-  // Sync Zonnebloem stocks — only add new, never remove
-  // Buy limit = 15% above 3-year low, fallback to base_price_median * 1.15
-  const zbExistingTickers = new Set(zbTab.stocks.map((s) => s.ticker));
+  // ── Zonnebloem: build new stocks and updates ──
+  const zbMaps = buildExistingStockMaps(zbTab.stocks);
   const zbNewStocks: DefogStock[] = [];
+  const zbUpdates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
+
   for (const stock of zbStocks) {
     const defogTicker = getDefogTicker(stock);
-    if (!zbExistingTickers.has(defogTicker)) {
-      const buyLimit = calculateBuyLimit(stock.three_year_low, null, stock.base_price_median);
+    const buyLimit = calculateBuyLimit(stock.three_year_low);
+
+    const existing = findExistingStock(
+      zbTab.stocks, defogTicker, stock.company_name,
+      zbMaps.nameMap, zbMaps.baseTickerMap, zbMaps.tickerSet,
+    );
+
+    if (existing) {
+      const updates: { ticker?: string; buyLimit?: number | null } = {};
+
+      if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
+        updates.ticker = defogTicker;
+      }
+
+      if (buyLimit != null) {
+        if (existing.buyLimit == null || buyLimit < existing.buyLimit) {
+          updates.buyLimit = buyLimit;
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const prev = zbUpdates.get(existing.id) || {};
+        zbUpdates.set(existing.id, { ...prev, ...updates });
+      }
+    } else {
       zbNewStocks.push(maikelToDefogStock(stock, buyLimit));
+      zbMaps.tickerSet.add(defogTicker);
+      zbMaps.nameMap.set(normalizeCompanyName(stock.company_name), zbNewStocks[zbNewStocks.length - 1]);
+      zbMaps.baseTickerMap.set(getBaseTicker(defogTicker), zbNewStocks[zbNewStocks.length - 1]);
       zbAdded++;
     }
   }
 
-  // Build lookup maps for updating existing stocks' buy limits (keyed by defog ticker)
+  // Build lookup maps for updating existing stocks' buy limits (for stocks that had null buyLimit)
   const kuifjeByTicker = new Map(kuifjeStocks.map((s) => [getDefogTicker(s), s]));
   const zbByTicker = new Map(zbStocks.map((s) => [getDefogTicker(s), s]));
 
-  // Apply updates — ensure tabs exist, append new stocks, update buyLimits
+  // Apply updates
   const kuifjeTabId = kuifjeTab.id;
   const zbTabId = zbTab.id;
-  const newKuifjeTab = !tabs.find((t) => t.name === 'Kuifje') ? kuifjeTab : null;
-  const newZbTab = !tabs.find((t) => t.name === 'Prof. Zonnebloem') ? zbTab : null;
+  const needNewKuifjeTab = !tabs.find((t) => t.name === 'Kuifje');
+  const needNewZbTab = !tabs.find((t) => t.name === 'Prof. Zonnebloem');
 
   setTabs((currentTabs) => {
-    // First: ensure new tabs exist in the array
     let result = [...currentTabs];
-    if (newKuifjeTab && !result.find((t) => t.id === kuifjeTabId)) {
-      result.push(newKuifjeTab);
+
+    // Add new tabs if needed
+    if (needNewKuifjeTab && !result.find((t) => t.id === kuifjeTabId)) {
+      result.push(kuifjeTab!);
     }
-    if (newZbTab && !result.find((t) => t.id === zbTabId)) {
-      result.push(newZbTab);
+    if (needNewZbTab && !result.find((t) => t.id === zbTabId)) {
+      result.push(zbTab!);
     }
 
-    // Then: map to add stocks and update buy limits
     return result.map((tab) => {
       if (tab.id === kuifjeTabId) {
         const updatedStocks = tab.stocks.map((s) => {
+          // Apply duplicate-merge updates (ticker upgrade, lower limit)
+          const update = kuifjeUpdates.get(s.id);
+          if (update) {
+            return {
+              ...s,
+              ...(update.ticker ? { ticker: update.ticker } : {}),
+              ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
+            };
+          }
+          // Fill in null buyLimits from scanner data (3Y low only)
           if (s.buyLimit == null) {
             const scanner = kuifjeByTicker.get(s.ticker);
             if (scanner) {
-              const newLimit = calculateBuyLimit(scanner.three_year_low, scanner.purchase_limit);
+              const newLimit = calculateBuyLimit(scanner.three_year_low);
               if (newLimit != null) return { ...s, buyLimit: newLimit };
             }
           }
           return s;
         });
-        return {
-          ...tab,
-          stocks: [...updatedStocks, ...kuifjeNewStocks],
-        };
+        return { ...tab, stocks: [...updatedStocks, ...kuifjeNewStocks] };
       }
       if (tab.id === zbTabId) {
         const updatedStocks = tab.stocks.map((s) => {
+          const update = zbUpdates.get(s.id);
+          if (update) {
+            return {
+              ...s,
+              ...(update.ticker ? { ticker: update.ticker } : {}),
+              ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
+            };
+          }
           if (s.buyLimit == null) {
             const scanner = zbByTicker.get(s.ticker);
             if (scanner) {
-              const newLimit = calculateBuyLimit(scanner.three_year_low, null, scanner.base_price_median);
+              const newLimit = calculateBuyLimit(scanner.three_year_low);
               if (newLimit != null) return { ...s, buyLimit: newLimit };
             }
           }
           return s;
         });
-        return {
-          ...tab,
-          stocks: [...updatedStocks, ...zbNewStocks],
-        };
+        return { ...tab, stocks: [...updatedStocks, ...zbNewStocks] };
       }
       return tab;
     });
