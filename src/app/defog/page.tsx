@@ -7,6 +7,7 @@ import { Dashboard } from '@/components/defog/Dashboard';
 import { syncScannerToDefog } from '@/lib/defog/scannerSync';
 import { SmartRefreshEngine } from '@/lib/defog/services/smartRefresh';
 import { saveToLocalStorage, loadFromLocalStorage, getSessionPassword } from '@/lib/defog/utils/storage';
+import { loadDefogStateFromCloud, scheduleCloudSave } from '@/lib/defog/services/maikelCloudSync';
 
 const SESSION_PASSWORD = 'maikel-integrated';
 
@@ -45,6 +46,7 @@ export default function DefogPage() {
       // Load persisted state from IndexedDB
       const password = getSessionPassword() || SESSION_PASSWORD;
       let saved = await loadFromLocalStorage(password);
+      let source = 'IndexedDB';
 
       // Fallback: try localStorage backup (saved on beforeunload)
       if (!saved) {
@@ -52,16 +54,32 @@ export default function DefogPage() {
           const backup = localStorage.getItem('defog-state-backup');
           if (backup) {
             saved = JSON.parse(backup);
+            source = 'localStorage backup';
             console.log('[Defog] Loaded from localStorage backup');
           }
         } catch { /* ignore parse errors */ }
       }
 
+      // Fallback: try Maikel Supabase cloud backup
+      if (!saved) {
+        try {
+          console.log('[Defog] No local data found, trying cloud...');
+          const { data: cloudData } = await loadDefogStateFromCloud();
+          if (cloudData) {
+            saved = cloudData;
+            source = 'Maikel cloud';
+            console.log('[Defog] Restored from Maikel cloud backup!');
+          }
+        } catch (e) {
+          console.error('[Defog] Cloud restore failed:', e);
+        }
+      }
+
       if (saved) {
         useStore.getState().loadState(saved);
-        console.log('[Defog] Loaded persisted state:', saved.tabs?.length, 'tabs');
+        console.log(`[Defog] Loaded persisted state from ${source}:`, saved.tabs?.length, 'tabs');
       } else {
-        console.log('[Defog] No persisted state found');
+        console.log('[Defog] No persisted state found (local or cloud)');
       }
 
       setAuthenticated(true);
@@ -82,18 +100,20 @@ export default function DefogPage() {
     const doSave = async () => {
       try {
         const state = useStore.getState();
-        await saveToLocalStorage(
-          {
-            tabs: state.tabs,
-            archive: state.archive,
-            notifications: state.notifications,
-            limitHistory: state.limitHistory,
-            settings: state.settings,
-            lastSyncTime: new Date().toISOString(),
-            encryptionKeyHash: state.encryptionKeyHash,
-          },
-          password,
-        );
+        const dataToSave = {
+          tabs: state.tabs,
+          archive: state.archive,
+          purchasedStocks: state.purchasedStocks,
+          notifications: state.notifications,
+          limitHistory: state.limitHistory,
+          settings: state.settings,
+          lastSyncTime: new Date().toISOString(),
+          encryptionKeyHash: state.encryptionKeyHash,
+        };
+        // Save to IndexedDB (local)
+        await saveToLocalStorage(dataToSave, password);
+        // Also schedule cloud save to Maikel Supabase (debounced 3s)
+        scheduleCloudSave(dataToSave);
       } catch (e) {
         console.error('[Defog] Auto-save failed:', e);
       }
@@ -106,6 +126,7 @@ export default function DefogPage() {
     ready,
     store.tabs,
     store.archive,
+    store.purchasedStocks,
     store.notifications,
     store.limitHistory,
     store.settings,
@@ -122,6 +143,7 @@ export default function DefogPage() {
       const dataToSave = {
         tabs: state.tabs,
         archive: state.archive,
+        purchasedStocks: state.purchasedStocks,
         notifications: state.notifications,
         limitHistory: state.limitHistory,
         settings: state.settings,

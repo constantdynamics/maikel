@@ -174,6 +174,7 @@ export async function saveWatchlistToCloud(data: Omit<WatchlistData, 'id' | 'use
       .update({
         tabs: data.tabs,
         archive: data.archive,
+        purchased_stocks: data.purchased_stocks || [],
         settings: data.settings,
         limit_history: data.limit_history,
         updated_at: new Date().toISOString(),
