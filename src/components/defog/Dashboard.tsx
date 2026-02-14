@@ -1270,29 +1270,40 @@ export function Dashboard() {
   const isTopMoversView = store.activeTabId === '__topmovers__';
   const isPurchasedView = store.activeTabId === '__purchased__';
 
-  // Get all stocks from all tabs (for "All" view), deduplicated cross-tab
+  // Get all stocks from all tabs (for "All" view), deduplicated cross-tab AND within-tab
   const allStocksWithTabs = useMemo(() => {
     const result: Array<{ stock: Stock; tabId: string; tabName: string; tabColor: string }> = [];
-    // Track seen stocks by normalized name and base ticker to deduplicate cross-tab
-    const seenNames = new Set<string>();
-    const seenBaseTickers = new Set<string>();
+    // Multiple keys to catch duplicates: normalized name, base ticker, AND full ticker
+    const seenKeys = new Set<string>();
+
+    const addKey = (key: string) => seenKeys.add(key.trim().toUpperCase());
+    const hasKey = (key: string) => seenKeys.has(key.trim().toUpperCase());
 
     for (const tab of store.tabs) {
       for (const stock of tab.stocks) {
+        // Base ticker: strip exchange suffix (SES.SI → SES, 0J9J.L → 0J9J)
+        const ticker = stock.ticker.trim();
+        const dotIdx = ticker.indexOf('.');
+        const baseTicker = dotIdx > 0 ? ticker.substring(0, dotIdx) : ticker;
+
+        // Normalized company name: strip common suffixes
         const normName = stock.name
           .toLowerCase()
           .replace(/[.,]/g, '')
           .replace(/\b(inc|corp|corporation|ltd|limited|plc|ag|sa|nv|se|co|company|group|holdings|international)\b/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
-        const baseTicker = stock.ticker.includes('.') ? stock.ticker.substring(0, stock.ticker.indexOf('.')) : stock.ticker;
 
-        // Skip if we've already seen this company (by name or base ticker)
-        if (seenNames.has(normName) || seenBaseTickers.has(baseTicker)) {
+        // Skip if ANY key matches a previously seen stock
+        if (hasKey(`T:${ticker}`) || hasKey(`B:${baseTicker}`) || (normName && hasKey(`N:${normName}`))) {
           continue;
         }
-        seenNames.add(normName);
-        seenBaseTickers.add(baseTicker);
+
+        // Register all keys for this stock
+        addKey(`T:${ticker}`);
+        addKey(`B:${baseTicker}`);
+        if (normName) addKey(`N:${normName}`);
+
         result.push({ stock, tabId: tab.id, tabName: tab.name, tabColor: tab.accentColor });
       }
     }
@@ -2289,13 +2300,15 @@ export function Dashboard() {
                   stocks={sortedStocks}
                   tileSettings={store.settings.tileSettings}
                   sortMode={tileSortMode}
-                  onStockClick={(stock) => {
-                    const stockTabInfo = isAllView
-                      ? allStocksWithTabs.find(s => s.stock.id === stock.id)
-                      : null;
-                    const tabId = stockTabInfo?.tabId || activeTab?.id;
-                    if (tabId) {
-                      refreshSingleStock({ tabId, stock });
+                  onRefreshStocks={(selectedStocksList) => {
+                    for (const stock of selectedStocksList) {
+                      const stockTabInfo = isAllView
+                        ? allStocksWithTabs.find(s => s.stock.id === stock.id)
+                        : null;
+                      const tabId = stockTabInfo?.tabId || activeTab?.id;
+                      if (tabId) {
+                        refreshSingleStock({ tabId, stock });
+                      }
                     }
                   }}
                 />

@@ -21,9 +21,33 @@ const defaultFilters: FilterConfig = {
 };
 
 const defaultSort: SortConfig = {
-  column: 'score',
+  column: 'growth_event_count',
   direction: 'desc',
 };
+
+/**
+ * Medal ranking sort key for Kuifje stocks (same as underwater mode).
+ * Sort like medal table: green count desc, then yellow count desc, then white count desc.
+ */
+function getKuifjeDotColors(eventCount: number, highestGrowthPct: number | null): string[] {
+  const count = Math.min(eventCount, 10);
+  if (count === 0) return [];
+  const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
+    dots.push(est >= 500 ? 'green' : est >= 300 ? 'yellow' : 'white');
+  }
+  return dots;
+}
+
+function kuifjeMedalKey(stock: Stock): [number, number, number] {
+  const dots = getKuifjeDotColors(stock.growth_event_count, stock.highest_growth_pct);
+  const green = dots.filter(d => d === 'green').length;
+  const yellow = dots.filter(d => d === 'yellow').length;
+  const white = dots.filter(d => d === 'white').length;
+  return [green, yellow, white];
+}
 
 export function useStocks() {
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -120,8 +144,14 @@ export function useStocks() {
       result = result.filter((s) => s.is_stable_with_spikes === true);
     }
 
-    // Sort
+    // Sort — medal ranking for growth_event_count (like underwater mode)
     result.sort((a, b) => {
+      if (sort.column === 'growth_event_count') {
+        const [aG, aY, aW] = kuifjeMedalKey(a);
+        const [bG, bY, bW] = kuifjeMedalKey(b);
+        const comparison = (bG - aG) || (bY - aY) || (bW - aW);
+        return sort.direction === 'asc' ? -comparison : comparison;
+      }
       const aVal = a[sort.column];
       const bVal = b[sort.column];
       if (aVal === null || aVal === undefined) return 1;

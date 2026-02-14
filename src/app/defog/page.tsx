@@ -10,6 +10,64 @@ import { loadDefogStateFromCloud, scheduleCloudSave } from '@/lib/defog/services
 
 const SESSION_PASSWORD = 'maikel-integrated';
 
+/**
+ * Deduplicate stocks within ALL tabs after loading from storage.
+ * Groups by base ticker (strip exchange suffix) and normalized name.
+ * Keeps the stock with the exchange suffix (more specific ticker).
+ */
+function deduplicateAllTabs() {
+  const state = useStore.getState();
+  let changed = false;
+
+  const deduped = state.tabs.map((tab) => {
+    const seen = new Map<string, typeof tab.stocks[0]>();
+    const keyMap = new Map<string, string>();
+
+    for (const stock of tab.stocks) {
+      const ticker = stock.ticker.trim();
+      const dotIdx = ticker.indexOf('.');
+      const baseTicker = (dotIdx > 0 ? ticker.substring(0, dotIdx) : ticker).toUpperCase();
+      const normName = stock.name
+        .toLowerCase().replace(/[.,]/g, '')
+        .replace(/\b(inc|corp|corporation|ltd|limited|plc|ag|sa|nv|se|co|company|group|holdings|international)\b/gi, '')
+        .replace(/\s+/g, ' ').trim();
+
+      const existingKey = keyMap.get(`B:${baseTicker}`) || (normName ? keyMap.get(`N:${normName}`) : null);
+
+      if (!existingKey) {
+        const key = `${tab.id}:${stock.id}`;
+        seen.set(key, stock);
+        keyMap.set(`B:${baseTicker}`, key);
+        if (normName) keyMap.set(`N:${normName}`, key);
+        continue;
+      }
+
+      // Duplicate found: keep the one with exchange suffix (more specific)
+      changed = true;
+      const existing = seen.get(existingKey)!;
+      const newHasDot = ticker.includes('.');
+      const existingHasDot = existing.ticker.includes('.');
+      if (newHasDot && !existingHasDot) {
+        seen.set(existingKey, {
+          ...stock,
+          buyLimit: existing.buyLimit != null && stock.buyLimit != null
+            ? Math.min(existing.buyLimit, stock.buyLimit)
+            : stock.buyLimit ?? existing.buyLimit,
+        });
+      }
+      keyMap.set(`B:${baseTicker}`, existingKey);
+      if (normName) keyMap.set(`N:${normName}`, existingKey);
+    }
+
+    return { ...tab, stocks: Array.from(seen.values()) };
+  });
+
+  if (changed) {
+    useStore.setState({ tabs: deduped });
+    console.log('[Defog] Cleaned up duplicate stocks in tabs');
+  }
+}
+
 interface RefreshStats {
   totalAttempts: number;
   totalSuccesses: number;
@@ -77,6 +135,9 @@ export default function DefogPage() {
       if (saved) {
         useStore.getState().loadState(saved);
         console.log(`[Defog] Loaded persisted state from ${source}:`, saved.tabs?.length, 'tabs');
+
+        // Deduplicate all tabs on load (clean up historical duplicates)
+        deduplicateAllTabs();
       } else {
         console.log('[Defog] No persisted state found (local or cloud)');
       }

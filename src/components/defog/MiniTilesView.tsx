@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import type { Stock, TileSettings } from '@/lib/defog/types';
 import { RAINBOW_PRESETS, type RainbowPreset } from './rainbowPresets';
 
@@ -61,6 +61,11 @@ function getFreshnessDots(lastUpdated: string): number {
   return 0;
 }
 
+function openGoogleSearch(stock: Stock) {
+  const query = encodeURIComponent(`${stock.ticker} ${stock.name || ''} stock`);
+  window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer');
+}
+
 const DEFAULT_TILE_SETTINGS: TileSettings = {
   showLabel: 'auto', showDistance: true, showDayChange: true, showFreshness: true,
   tileSize: 'medium', fontWeight: 'bold',
@@ -75,13 +80,59 @@ interface MiniTilesViewProps {
   stocks: Stock[];
   tileSettings?: TileSettings;
   onStockClick?: (stock: Stock) => void;
+  onRefreshStocks?: (stocks: Stock[]) => void;
   sortMode?: TileSortMode;
 }
 
-export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = 'default' }: MiniTilesViewProps) {
+export function MiniTilesView({ stocks, tileSettings, onStockClick, onRefreshStocks, sortMode = 'default' }: MiniTilesViewProps) {
   const settings = { ...DEFAULT_TILE_SETTINGS, ...tileSettings };
   const minSize = TILE_SIZES[settings.tileSize] || 80;
   const preset = RAINBOW_PRESETS.find(p => p.id === settings.rainbowPreset) || RAINBOW_PRESETS[0];
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+
+  const toggleSelection = useCallback((stockId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(stockId)) {
+        next.delete(stockId);
+      } else {
+        next.add(stockId);
+      }
+      // Exit selection mode if nothing selected
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  }, []);
+
+  const handleTileClick = useCallback((stock: Stock) => {
+    if (selectionMode) {
+      toggleSelection(stock.id);
+    } else {
+      // Default: open Google search in new tab
+      openGoogleSearch(stock);
+    }
+  }, [selectionMode, toggleSelection]);
+
+  const handleBulkGoogleSearch = useCallback(() => {
+    const selected = stocks.filter(s => selectedIds.has(s.id));
+    for (const stock of selected) {
+      openGoogleSearch(stock);
+    }
+  }, [stocks, selectedIds]);
+
+  const handleBulkRefresh = useCallback(() => {
+    if (!onRefreshStocks) return;
+    const selected = stocks.filter(s => selectedIds.has(s.id));
+    onRefreshStocks(selected);
+    clearSelection();
+  }, [stocks, selectedIds, onRefreshStocks, clearSelection]);
 
   // Sort stocks based on mode — price-0 (not yet scanned) always at bottom
   const displayStocks = useMemo(() => {
@@ -105,7 +156,7 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = '
       }));
     } else {
       // Default sort: also push price-0 to bottom
-      sorted.sort(withPriceZeroBottom((a, b) => 0));
+      sorted.sort(withPriceZeroBottom(() => 0));
     }
     return sorted;
   }, [stocks, sortMode]);
@@ -128,6 +179,61 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = '
 
   return (
     <div>
+      {/* Selection mode toggle */}
+      <div className="flex items-center justify-between mb-2">
+        <button
+          onClick={() => {
+            if (selectionMode) {
+              clearSelection();
+            } else {
+              setSelectionMode(true);
+            }
+          }}
+          className={`px-3 py-1 text-xs rounded transition-colors ${
+            selectionMode
+              ? 'bg-[#00ff88] text-black font-medium'
+              : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d]'
+          }`}
+        >
+          {selectionMode ? `Selectie (${selectedIds.size})` : 'Selecteren'}
+        </button>
+
+        {/* Bulk actions */}
+        {selectionMode && selectedIds.size > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkGoogleSearch}
+              className="px-3 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center gap-1"
+              title="Open geselecteerde aandelen in Google"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Google ({selectedIds.size})
+            </button>
+            {onRefreshStocks && (
+              <button
+                onClick={handleBulkRefresh}
+                className="px-3 py-1 text-xs rounded bg-purple-600 text-white hover:bg-purple-700 transition-colors flex items-center gap-1"
+                title="Koers verversen van geselecteerde aandelen"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Verversen ({selectedIds.size})
+              </button>
+            )}
+            <button
+              onClick={clearSelection}
+              className="px-2 py-1 text-xs rounded bg-[#3d3d3d] text-gray-400 hover:bg-[#4d4d4d] transition-colors"
+              title="Selectie wissen"
+            >
+              Wissen
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="grid gap-1.5 w-full" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${minSize}px, 1fr))` }}>
         {displayStocks.map((stock) => {
           const bgColor = getDistanceColor(stock.currentPrice, stock.buyLimit, preset);
@@ -138,6 +244,7 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = '
           const absDayChange = Math.abs(stock.dayChangePercent);
           const isBigMover = absDayChange > 3;
           const isCrashing = stock.dayChangePercent <= -5;
+          const isSelected = selectedIds.has(stock.id);
 
           // Resolve 'auto' colors to WCAG contrast
           const labelClr = settings.labelColor === 'auto' ? autoColor : settings.labelColor;
@@ -163,72 +270,105 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, sortMode = '
               : '1.5px solid rgba(255,51,102,0.5)',
           } : {};
 
+          // Selection highlight
+          const selectionStyle: React.CSSProperties = isSelected ? {
+            outline: '2px solid #00ff88',
+            outlineOffset: '-2px',
+          } : {};
+
           return (
-            <button
-              key={stock.id}
-              onClick={() => onStockClick?.(stock)}
-              className={`rounded-md transition-transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/30 cursor-pointer select-none ${
-                isCrashing ? 'animate-pulse' : ''
-              }`}
-              style={{
-                backgroundColor: bgColor,
-                aspectRatio: '1',
-                minHeight: `${minSize}px`,
-                ...glowStyle,
-              }}
-              title={`${stock.ticker} - ${stock.name}\nPrijs: ${stock.currency} ${stock.currentPrice.toFixed(2)}\nLimiet: ${stock.buyLimit ? `${stock.currency} ${stock.buyLimit.toFixed(2)}` : 'Niet ingesteld'}\nAfstand: ${distPct !== null ? `${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%` : 'N/A'}\nDag: ${stock.dayChangePercent >= 0 ? '+' : ''}${stock.dayChangePercent.toFixed(2)}%\nUpdate: ${stock.lastUpdated ? new Date(stock.lastUpdated).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : 'Nooit'}`}
-            >
-              <div className="flex flex-col items-center justify-center h-full p-1 overflow-hidden">
-                {/* Freshness dots */}
-                {settings.showFreshness && freshnessDots > 0 && (
-                  <div className="flex gap-0.5 mb-0.5">
-                    {[1, 2, 3, 4, 5].map((dot) => (
-                      <div key={dot} className="rounded-full" style={{
-                        width: 'clamp(3px, 0.6vw, 5px)', height: 'clamp(3px, 0.6vw, 5px)',
-                        backgroundColor: dot <= freshnessDots ? dotsClr : (autoColor === '#ffffff' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'),
-                      }} />
-                    ))}
+            <div key={stock.id} className="relative">
+              {/* Checkbox in selection mode */}
+              {selectionMode && (
+                <div
+                  className="absolute top-0.5 left-0.5 z-10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelection(stock.id);
+                  }}
+                >
+                  <div
+                    className={`w-4 h-4 rounded border-2 flex items-center justify-center cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-[#00ff88] border-[#00ff88]'
+                        : 'bg-black/40 border-white/40 hover:border-white/70'
+                    }`}
+                  >
+                    {isSelected && (
+                      <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
                   </div>
-                )}
-                {settings.showFreshness && freshnessDots === 0 && (
-                  <div className="rounded-full mb-0.5" style={{ width: 'clamp(4px, 0.8vw, 6px)', height: 'clamp(4px, 0.8vw, 6px)', backgroundColor: '#ff3366', opacity: 0.7 }} />
-                )}
+                </div>
+              )}
 
-                {/* Label */}
-                <span className="leading-tight truncate w-full text-center" style={{
-                  fontSize: FONT_SIZES.label[settings.labelFontSize] || FONT_SIZES.label.sm,
-                  fontWeight: settings.fontWeight === 'bold' ? 700 : 400,
-                  color: labelClr, opacity: 0.85,
-                }}>
-                  {label}
-                </span>
+              <button
+                onClick={() => handleTileClick(stock)}
+                className={`w-full rounded-md transition-transform hover:scale-105 active:scale-95 focus:outline-none cursor-pointer select-none ${
+                  isCrashing ? 'animate-pulse' : ''
+                }`}
+                style={{
+                  backgroundColor: bgColor,
+                  aspectRatio: '1',
+                  minHeight: `${minSize}px`,
+                  ...glowStyle,
+                  ...selectionStyle,
+                }}
+                title={`${stock.ticker} - ${stock.name}\nPrijs: ${stock.currency} ${stock.currentPrice.toFixed(2)}\nLimiet: ${stock.buyLimit ? `${stock.currency} ${stock.buyLimit.toFixed(2)}` : 'Niet ingesteld'}\nAfstand: ${distPct !== null ? `${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%` : 'N/A'}\nDag: ${stock.dayChangePercent >= 0 ? '+' : ''}${stock.dayChangePercent.toFixed(2)}%\nUpdate: ${stock.lastUpdated ? new Date(stock.lastUpdated).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : 'Nooit'}\nKlik om te zoeken in Google`}
+              >
+                <div className="flex flex-col items-center justify-center h-full p-1 overflow-hidden">
+                  {/* Freshness dots */}
+                  {settings.showFreshness && freshnessDots > 0 && (
+                    <div className="flex gap-0.5 mb-0.5">
+                      {[1, 2, 3, 4, 5].map((dot) => (
+                        <div key={dot} className="rounded-full" style={{
+                          width: 'clamp(3px, 0.6vw, 5px)', height: 'clamp(3px, 0.6vw, 5px)',
+                          backgroundColor: dot <= freshnessDots ? dotsClr : (autoColor === '#ffffff' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'),
+                        }} />
+                      ))}
+                    </div>
+                  )}
+                  {settings.showFreshness && freshnessDots === 0 && (
+                    <div className="rounded-full mb-0.5" style={{ width: 'clamp(4px, 0.8vw, 6px)', height: 'clamp(4px, 0.8vw, 6px)', backgroundColor: '#ff3366', opacity: 0.7 }} />
+                  )}
 
-                {/* Distance % */}
-                {settings.showDistance && (
-                  <span className="font-bold leading-tight" style={{
-                    fontSize: FONT_SIZES.distance[settings.distanceFontSize] || FONT_SIZES.distance.md,
-                    color: distClr,
+                  {/* Label */}
+                  <span className="leading-tight truncate w-full text-center" style={{
+                    fontSize: FONT_SIZES.label[settings.labelFontSize] || FONT_SIZES.label.sm,
+                    fontWeight: settings.fontWeight === 'bold' ? 700 : 400,
+                    color: labelClr, opacity: 0.85,
                   }}>
-                    {distPct !== null ? <>{isBelow ? '' : '+'}{distPct.toFixed(1)}%</> : '—'}
+                    {label}
                   </span>
-                )}
 
-                {/* Day change with arrow */}
-                {settings.showDayChange && (
-                  <span className="leading-tight flex items-center gap-px" style={{
-                    fontSize: FONT_SIZES.dayChange[settings.dayChangeFontSize] || FONT_SIZES.dayChange.xs,
-                    color: isCrashing ? '#ff3366' : dayClr,
-                    opacity: isCrashing ? 1 : (autoColor === '#ffffff' ? 0.7 : 0.9),
-                    textShadow: autoColor === '#000000' ? '0 0 2px rgba(255,255,255,0.5)' : 'none',
-                  }}>
-                    <span style={{ fontSize: '0.7em', lineHeight: 1 }}>
-                      {stock.dayChangePercent >= 0 ? '▲' : '▼'}
+                  {/* Distance % */}
+                  {settings.showDistance && (
+                    <span className="font-bold leading-tight" style={{
+                      fontSize: FONT_SIZES.distance[settings.distanceFontSize] || FONT_SIZES.distance.md,
+                      color: distClr,
+                    }}>
+                      {distPct !== null ? <>{isBelow ? '' : '+'}{distPct.toFixed(1)}%</> : '—'}
                     </span>
-                    {stock.dayChangePercent >= 0 ? '+' : ''}{stock.dayChangePercent.toFixed(2)}%
-                  </span>
-                )}
-              </div>
-            </button>
+                  )}
+
+                  {/* Day change with arrow */}
+                  {settings.showDayChange && (
+                    <span className="leading-tight flex items-center gap-px" style={{
+                      fontSize: FONT_SIZES.dayChange[settings.dayChangeFontSize] || FONT_SIZES.dayChange.xs,
+                      color: isCrashing ? '#ff3366' : dayClr,
+                      opacity: isCrashing ? 1 : (autoColor === '#ffffff' ? 0.7 : 0.9),
+                      textShadow: autoColor === '#000000' ? '0 0 2px rgba(255,255,255,0.5)' : 'none',
+                    }}>
+                      <span style={{ fontSize: '0.7em', lineHeight: 1 }}>
+                        {stock.dayChangePercent >= 0 ? '▲' : '▼'}
+                      </span>
+                      {stock.dayChangePercent >= 0 ? '+' : ''}{stock.dayChangePercent.toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              </button>
+            </div>
           );
         })}
       </div>
