@@ -405,21 +405,20 @@ async function deepScanStock(
     { onConflict: 'ticker' },
   );
 
-  // Fallback: if a column doesn't exist yet, remove it and retry
-  if (upsertError) {
-    console.error(`[Kuifje] Upsert failed for ${ticker}: ${upsertError.message}`);
+  // Fallback: if a column doesn't exist yet, remove ALL optional columns and retry
+  if (upsertError && upsertError.message?.includes('column')) {
+    console.warn(`[Kuifje] Upsert failed for ${ticker}: ${upsertError.message}. Removing all optional columns and retrying...`);
 
-    // Try removing potentially missing columns one at a time
+    // Remove ALL optional columns at once to avoid one-by-one retry failures
     const optionalColumns = ['three_year_low', 'scan_number', 'scan_date',
       'twelve_month_low', 'twelve_month_max_decline_pct', 'twelve_month_max_spike_pct', 'is_stable_with_spikes'];
     for (const col of optionalColumns) {
-      if (upsertError?.message?.includes(col)) {
-        console.warn(`[Kuifje] Removing column '${col}' and retrying upsert for ${ticker}`);
-        delete stockData[col];
-        const retry = await supabase.from('stocks').upsert(stockData, { onConflict: 'ticker' });
-        upsertError = retry.error;
-        if (!upsertError) break;
-      }
+      delete stockData[col];
+    }
+    const retry = await supabase.from('stocks').upsert(stockData, { onConflict: 'ticker' });
+    upsertError = retry.error;
+    if (!upsertError) {
+      console.log(`[Kuifje] Retry succeeded for ${ticker} (without optional columns)`);
     }
   }
 
