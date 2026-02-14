@@ -1270,11 +1270,29 @@ export function Dashboard() {
   const isTopMoversView = store.activeTabId === '__topmovers__';
   const isPurchasedView = store.activeTabId === '__purchased__';
 
-  // Get all stocks from all tabs (for "All" view)
+  // Get all stocks from all tabs (for "All" view), deduplicated cross-tab
   const allStocksWithTabs = useMemo(() => {
     const result: Array<{ stock: Stock; tabId: string; tabName: string; tabColor: string }> = [];
+    // Track seen stocks by normalized name and base ticker to deduplicate cross-tab
+    const seenNames = new Set<string>();
+    const seenBaseTickers = new Set<string>();
+
     for (const tab of store.tabs) {
       for (const stock of tab.stocks) {
+        const normName = stock.name
+          .toLowerCase()
+          .replace(/[.,]/g, '')
+          .replace(/\b(inc|corp|corporation|ltd|limited|plc|ag|sa|nv|se|co|company|group|holdings|international)\b/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        const baseTicker = stock.ticker.includes('.') ? stock.ticker.substring(0, stock.ticker.indexOf('.')) : stock.ticker;
+
+        // Skip if we've already seen this company (by name or base ticker)
+        if (seenNames.has(normName) || seenBaseTickers.has(baseTicker)) {
+          continue;
+        }
+        seenNames.add(normName);
+        seenBaseTickers.add(baseTicker);
         result.push({ stock, tabId: tab.id, tabName: tab.name, tabColor: tab.accentColor });
       }
     }

@@ -32,10 +32,17 @@ interface MaikelZonnebloemStock {
 /**
  * Calculate suggested buy limit: ONLY 15% above the 3-year low.
  * No fallbacks — if three_year_low is unavailable, returns null.
+ * Returns null if the calculated limit would be above the current price
+ * (stale 3Y-low data makes the limit meaningless).
  */
-function calculateBuyLimit(threeYearLow: number | null): number | null {
+function calculateBuyLimit(threeYearLow: number | null, currentPrice?: number | null): number | null {
   if (threeYearLow && threeYearLow > 0) {
-    return Math.round(threeYearLow * 1.15 * 100) / 100;
+    const limit = Math.round(threeYearLow * 1.15 * 100) / 100;
+    // Don't set a limit above the current price — it's meaningless
+    if (currentPrice && currentPrice > 0 && limit > currentPrice) {
+      return null;
+    }
+    return limit;
   }
   return null;
 }
@@ -117,7 +124,7 @@ function tickerQualityScore(ticker: string): number {
  *  - Picks the ticker with exchange suffix (dot notation) as the "correct" one
  *  - Uses the lowest buy limit among duplicates
  */
-function deduplicateScannerStocks<T extends { company_name: string; three_year_low: number | null }>(
+function deduplicateScannerStocks<T extends { company_name: string; three_year_low: number | null; current_price: number | null }>(
   stocks: T[],
   getTickerFn: (s: T) => string,
 ): T[] {
@@ -126,7 +133,7 @@ function deduplicateScannerStocks<T extends { company_name: string; three_year_l
   for (const stock of stocks) {
     const normalizedName = normalizeCompanyName(stock.company_name);
     const ticker = getTickerFn(stock);
-    const buyLimit = calculateBuyLimit(stock.three_year_low);
+    const buyLimit = calculateBuyLimit(stock.three_year_low, stock.current_price);
     const existing = byName.get(normalizedName);
 
     if (!existing) {
@@ -214,6 +221,54 @@ function findExistingStock(
   if (nameMatch) return nameMatch;
 
   return null;
+}
+
+/**
+ * Remove duplicate stocks already existing within a Defog tab.
+ * Groups by normalized company name AND base ticker. Keeps the entry
+ * with the best ticker (exchange suffix preferred) and lowest buy limit.
+ */
+function deduplicateExistingTabStocks(stocks: DefogStock[]): DefogStock[] {
+  // Key = normalized company name OR base ticker (whichever matches first)
+  const seen = new Map<string, DefogStock>();
+  const baseTickerToKey = new Map<string, string>();
+
+  for (const stock of stocks) {
+    const normName = normalizeCompanyName(stock.name);
+    const baseTicker = getBaseTicker(stock.ticker);
+
+    // Check if we've seen this company name or base ticker before
+    const existingKeyByName = seen.has(normName) ? normName : null;
+    const existingKeyByTicker = baseTickerToKey.get(baseTicker) || null;
+    const existingKey = existingKeyByName || existingKeyByTicker;
+
+    if (!existingKey) {
+      // New stock — track it
+      seen.set(normName, stock);
+      baseTickerToKey.set(baseTicker, normName);
+      continue;
+    }
+
+    const existing = seen.get(existingKey)!;
+
+    // Merge: keep the better ticker and lower buy limit
+    const keepNew = tickerQualityScore(stock.ticker) > tickerQualityScore(existing.ticker);
+    const merged: DefogStock = {
+      ...(keepNew ? stock : existing),
+      // Take the lowest non-null buy limit
+      buyLimit:
+        stock.buyLimit != null && existing.buyLimit != null
+          ? Math.min(stock.buyLimit, existing.buyLimit)
+          : stock.buyLimit ?? existing.buyLimit,
+    };
+
+    seen.set(existingKey, merged);
+    // Also map the base ticker of the discarded entry
+    baseTickerToKey.set(getBaseTicker(stock.ticker), existingKey);
+    baseTickerToKey.set(getBaseTicker(existing.ticker), existingKey);
+  }
+
+  return Array.from(seen.values());
 }
 
 /**
@@ -306,7 +361,7 @@ export async function syncScannerToDefog(
 
   for (const stock of kuifjeStocks) {
     const defogTicker = getDefogTicker(stock);
-    const buyLimit = calculateBuyLimit(stock.three_year_low);
+    const buyLimit = calculateBuyLimit(stock.three_year_low, stock.current_price);
 
     const existing = findExistingStock(
       kuifjeTab.stocks, defogTicker, stock.company_name,
@@ -327,6 +382,10 @@ export async function syncScannerToDefog(
         if (existing.buyLimit == null || buyLimit < existing.buyLimit) {
           updates.buyLimit = buyLimit;
         }
+      }
+      // Clear existing buy limit if it's above current price (stale data)
+      if (existing.buyLimit != null && stock.current_price && stock.current_price > 0 && existing.buyLimit > stock.current_price) {
+        updates.buyLimit = buyLimit; // will be null if 3Y low * 1.15 > current price
       }
 
       if (Object.keys(updates).length > 0) {
@@ -352,7 +411,7 @@ export async function syncScannerToDefog(
 
   for (const stock of zbStocks) {
     const defogTicker = getDefogTicker(stock);
-    const buyLimit = calculateBuyLimit(stock.three_year_low);
+    const buyLimit = calculateBuyLimit(stock.three_year_low, stock.current_price);
 
     const existing = findExistingStock(
       zbTab.stocks, defogTicker, stock.company_name,
@@ -370,6 +429,10 @@ export async function syncScannerToDefog(
         if (existing.buyLimit == null || buyLimit < existing.buyLimit) {
           updates.buyLimit = buyLimit;
         }
+      }
+      // Clear existing buy limit if it's above current price (stale data)
+      if (existing.buyLimit != null && stock.current_price && stock.current_price > 0 && existing.buyLimit > stock.current_price) {
+        updates.buyLimit = buyLimit; // will be null if 3Y low * 1.15 > current price
       }
 
       if (Object.keys(updates).length > 0) {
@@ -422,13 +485,14 @@ export async function syncScannerToDefog(
           if (s.buyLimit == null) {
             const scanner = kuifjeByTicker.get(s.ticker);
             if (scanner) {
-              const newLimit = calculateBuyLimit(scanner.three_year_low);
+              const newLimit = calculateBuyLimit(scanner.three_year_low, scanner.current_price);
               if (newLimit != null) return { ...s, buyLimit: newLimit };
             }
           }
           return s;
         });
-        return { ...tab, stocks: [...updatedStocks, ...kuifjeNewStocks] };
+        // Deduplicate: merge existing duplicates (e.g., SES + SES.SI)
+        return { ...tab, stocks: deduplicateExistingTabStocks([...updatedStocks, ...kuifjeNewStocks]) };
       }
       if (tab.id === zbTabId) {
         const updatedStocks = tab.stocks.map((s) => {
@@ -443,13 +507,14 @@ export async function syncScannerToDefog(
           if (s.buyLimit == null) {
             const scanner = zbByTicker.get(s.ticker);
             if (scanner) {
-              const newLimit = calculateBuyLimit(scanner.three_year_low);
+              const newLimit = calculateBuyLimit(scanner.three_year_low, scanner.current_price);
               if (newLimit != null) return { ...s, buyLimit: newLimit };
             }
           }
           return s;
         });
-        return { ...tab, stocks: [...updatedStocks, ...zbNewStocks] };
+        // Deduplicate: merge existing duplicates (e.g., 0J9J + 0J9J.L)
+        return { ...tab, stocks: deduplicateExistingTabStocks([...updatedStocks, ...zbNewStocks]) };
       }
       return tab;
     });
