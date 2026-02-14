@@ -95,9 +95,9 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   const defaults: Settings = {
     ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 100,
-    min_growth_events: 2,
-    min_consecutive_days: 4,
+    growth_threshold_pct: 50,
+    min_growth_events: 1,
+    min_consecutive_days: 2,
     growth_lookback_years: 5,
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
@@ -536,10 +536,11 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
   try {
     const settings = await getSettings(supabase);
+    console.log(`[Kuifje] Settings: ATH decline ${settings.ath_decline_min}-${settings.ath_decline_max}%, growth threshold ${settings.growth_threshold_pct}%, min events ${settings.min_growth_events}, min days ${settings.min_consecutive_days}`);
 
     // Get scan number for today (1st, 2nd, 3rd scan, etc.)
     const scanNumber = await getTodayScanNumber(supabase);
-    console.log(`Starting scan #${scanNumber} for today`);
+    console.log(`[Kuifje] Starting scan #${scanNumber} for today`);
 
     // Get recently scanned tickers to skip (for more variety)
     const recentlyScanned = await getRecentlyScannedTickers(supabase, settings.skip_recently_scanned_hours);
@@ -693,9 +694,12 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
           scanDetails.push(result.value.detail);
           apiCallsYahoo += result.value.apiCallsYahoo;
           apiCallsAlphaVantage += result.value.apiCallsAlphaVantage;
+          const d = result.value.detail;
           if (result.value.isMatch) {
             stocksFound++;
-            console.log(`  >>> MATCH: ${result.value.detail.ticker}`);
+            console.log(`  >>> MATCH: ${d.ticker} (growth events: ${d.growthEvents}, highest: ${d.highestGrowthPct?.toFixed(0)}%)`);
+          } else {
+            console.log(`  --- ${d.ticker}: ${d.result === 'rejected' ? d.rejectReason : d.result === 'error' ? d.errorMessage : 'no match'}`);
           }
         } else {
           const ticker = batch[j].ticker;

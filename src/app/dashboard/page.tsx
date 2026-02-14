@@ -528,7 +528,7 @@ export default function DashboardPage() {
                   Click &ldquo;Run Scan&rdquo; to start scanning for high-potential recovery stocks.
                 </p>
                 <p className="text-[var(--text-muted)] text-sm mb-6">
-                  Scans for stocks with 85-100% ATH decline and multiple 200%+ growth events.
+                  Scans for stocks with significant ATH decline and recovery growth events.
                 </p>
                 <button
                   onClick={() => handleRunScan(['us', 'ca'])}

@@ -8,13 +8,11 @@ export interface GrowthEventAnalysis {
 }
 
 /**
- * Analyze price history for 200%+ growth events.
+ * Analyze price history for growth events (recovery from troughs).
  *
- * A growth event: price increases 200%+ from a local trough to a subsequent peak.
- * For example: stock drops to $1, then reaches $3 at some point = 200% growth event.
- *
- * The user wants: "het moet 2x 200% groeien vanaf een onbepaald punt" -
- * meaning 2+ times where the stock grew 200% from ANY low point.
+ * A growth event: price increases X%+ from a local trough to a subsequent peak.
+ * Default threshold is 50% (configurable via settings).
+ * For example: stock drops to $1, then reaches $1.50+ = 50% growth event.
  *
  * Scoring: triangular numbers (1 event = 1pt, 2 = 3pts, 3 = 6pts, n = n*(n+1)/2)
  */
