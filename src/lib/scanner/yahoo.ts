@@ -7,9 +7,9 @@ const YAHOO_BASE2 = 'https://query2.finance.yahoo.com';
 
 // Rotate between user agents to reduce blocking
 const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
 ];
 let uaIndex = 0;
 
@@ -24,10 +24,146 @@ interface YahooQuoteResult {
   fiftyTwoWeekHigh?: number;
 }
 
-// Store cookies from Yahoo for session continuity
+// Yahoo session state: cookie + crumb for authenticated API access
 let yahooCookies = '';
+let yahooCrumb = '';
+let crumbInitialized = false;
+let crumbInitPromise: Promise<void> | null = null;
+
+/**
+ * Initialize Yahoo session: get cookies from fc.yahoo.com, then fetch crumb.
+ * Yahoo Finance API requires a valid crumb token since 2023.
+ * Without it, most API endpoints return 401/403.
+ */
+async function initYahooCrumb(): Promise<void> {
+  // Prevent concurrent initialization
+  if (crumbInitPromise) return crumbInitPromise;
+
+  crumbInitPromise = (async () => {
+    try {
+      const ua = USER_AGENTS[0];
+
+      // Step 1: Visit fc.yahoo.com to get session cookies
+      // This is a lightweight endpoint that sets the required A1/A3 cookies
+      const cookieRes = await fetch('https://fc.yahoo.com', {
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        redirect: 'manual', // Don't follow redirects, we just need cookies
+      });
+
+      // Extract cookies from response - handle Set-Cookie properly
+      const cookies = extractCookies(cookieRes);
+      if (cookies) {
+        yahooCookies = cookies;
+      }
+
+      // Step 2: Fetch the crumb using our session cookies
+      const crumbRes = await fetch(`${YAHOO_BASE2}/v1/test/getcrumb`, {
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/plain',
+          'Cookie': yahooCookies,
+        },
+      });
+
+      if (crumbRes.ok) {
+        yahooCrumb = await crumbRes.text();
+        crumbInitialized = true;
+        console.log(`[Yahoo] Crumb initialized successfully (crumb length: ${yahooCrumb.length})`);
+      } else {
+        console.warn(`[Yahoo] Crumb fetch failed: HTTP ${crumbRes.status}. Trying alternate method...`);
+
+        // Alternate method: fetch consent page to get cookies
+        const consentRes = await fetch('https://consent.yahoo.com/v2/collectConsent?sessionId=1', {
+          headers: {
+            'User-Agent': ua,
+            'Accept': 'text/html',
+          },
+          redirect: 'manual',
+        });
+        const consentCookies = extractCookies(consentRes);
+        if (consentCookies) {
+          yahooCookies = consentCookies;
+        }
+
+        // Retry crumb with new cookies
+        const crumbRetry = await fetch(`${YAHOO_BASE2}/v1/test/getcrumb`, {
+          headers: {
+            'User-Agent': ua,
+            'Accept': 'text/plain',
+            'Cookie': yahooCookies,
+          },
+        });
+        if (crumbRetry.ok) {
+          yahooCrumb = await crumbRetry.text();
+          crumbInitialized = true;
+          console.log(`[Yahoo] Crumb initialized via consent method (crumb length: ${yahooCrumb.length})`);
+        } else {
+          console.error(`[Yahoo] Crumb fetch FAILED even with consent cookies: HTTP ${crumbRetry.status}`);
+        }
+      }
+    } catch (error) {
+      console.error('[Yahoo] Crumb initialization error:', error);
+    } finally {
+      crumbInitPromise = null;
+    }
+  })();
+
+  return crumbInitPromise;
+}
+
+/**
+ * Properly extract cookies from a response's Set-Cookie headers.
+ * Handles the fact that Set-Cookie values can contain commas in dates
+ * (e.g., "Expires=Thu, 01 Jan 2026 00:00:00 GMT").
+ */
+function extractCookies(res: Response): string {
+  // Use getSetCookie() if available (modern Node.js)
+  const rawHeaders = (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.();
+
+  if (rawHeaders && rawHeaders.length > 0) {
+    return rawHeaders
+      .map((c: string) => c.split(';')[0].trim())
+      .filter(Boolean)
+      .join('; ');
+  }
+
+  // Fallback: parse set-cookie header manually
+  // This is tricky because multiple Set-Cookie headers get joined with commas
+  const setCookie = res.headers.get('set-cookie');
+  if (!setCookie) return '';
+
+  // Split carefully: a new cookie starts after a comma followed by a cookie name (word=)
+  // Not after commas inside date strings like "Thu, 01 Jan 2026"
+  const cookieParts: string[] = [];
+  const parts = setCookie.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_]*=)/);
+  for (const part of parts) {
+    const nameValue = part.split(';')[0].trim();
+    if (nameValue && nameValue.includes('=')) {
+      cookieParts.push(nameValue);
+    }
+  }
+
+  return cookieParts.join('; ');
+}
+
+/**
+ * Add crumb parameter to a Yahoo Finance API URL.
+ */
+function addCrumb(url: string): string {
+  if (!yahooCrumb) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}crumb=${encodeURIComponent(yahooCrumb)}`;
+}
 
 async function yahooFetch(url: string): Promise<unknown> {
+  // Ensure crumb is initialized before any API call
+  if (!crumbInitialized) {
+    await initYahooCrumb();
+  }
+
   const ua = USER_AGENTS[uaIndex % USER_AGENTS.length];
   uaIndex++;
 
@@ -40,18 +176,38 @@ async function yahooFetch(url: string): Promise<unknown> {
     headers['Cookie'] = yahooCookies;
   }
 
-  const res = await fetch(url, { headers });
+  // Add crumb to the URL for authenticated access
+  const urlWithCrumb = addCrumb(url);
+  const res = await fetch(urlWithCrumb, { headers });
 
-  // Store cookies for subsequent requests
-  const setCookie = res.headers.get('set-cookie');
-  if (setCookie) {
-    yahooCookies = setCookie.split(',').map((c) => c.split(';')[0].trim()).join('; ');
+  // Update cookies from response
+  const newCookies = extractCookies(res);
+  if (newCookies) {
+    yahooCookies = newCookies;
   }
 
   if (!res.ok) {
+    // If we got 401/403, our crumb might be stale - reinitialize and retry once
+    if ((res.status === 401 || res.status === 403) && crumbInitialized) {
+      console.warn(`[Yahoo] Got ${res.status}, reinitializing crumb...`);
+      crumbInitialized = false;
+      yahooCrumb = '';
+      await initYahooCrumb();
+
+      if (yahooCrumb) {
+        const retryUrl = addCrumb(url);
+        const retryHeaders = { ...headers, Cookie: yahooCookies };
+        const retryRes = await fetch(retryUrl, { headers: retryHeaders });
+        if (retryRes.ok) {
+          return retryRes.json();
+        }
+        console.error(`[Yahoo] Retry after crumb refresh also failed: HTTP ${retryRes.status}`);
+      }
+    }
+
     // Try alternate Yahoo endpoint on failure
     if (url.includes('query1.finance.yahoo.com')) {
-      const altUrl = url.replace('query1.finance.yahoo.com', 'query2.finance.yahoo.com');
+      const altUrl = addCrumb(url.replace('query1.finance.yahoo.com', 'query2.finance.yahoo.com'));
       const altRes = await fetch(altUrl, { headers });
       if (altRes.ok) {
         return altRes.json();
@@ -143,7 +299,12 @@ export async function getHistoricalData(
       // Log why Yahoo returned empty data for debugging
       const chartError = (data as { chart?: { error?: { code?: string; description?: string } } })?.chart?.error;
       if (chartError) {
-        console.warn(`Yahoo: ${ticker} - API error: ${chartError.code} - ${chartError.description}`);
+        console.warn(`[Yahoo] ${ticker} - API error: ${chartError.code} - ${chartError.description}`);
+      } else {
+        // Log the actual response shape for debugging
+        const dataKeys = data ? Object.keys(data as object) : ['null'];
+        const chartKeys = (data as { chart?: object })?.chart ? Object.keys((data as { chart: object }).chart) : ['missing'];
+        console.warn(`[Yahoo] ${ticker} - Empty result. Response keys: ${dataKeys.join(',')}, chart keys: ${chartKeys.join(',')}, crumb: ${crumbInitialized ? 'yes' : 'NO'}`);
       }
       return [];
     }

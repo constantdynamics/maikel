@@ -674,6 +674,21 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
     // =========================================================
     const BATCH_SIZE = 5;
 
+    // Diagnostic: test Yahoo connectivity with the first candidate before bulk scanning
+    if (preFiltered.length > 0) {
+      const testTicker = preFiltered[0].ticker;
+      console.log(`[Kuifje] Testing Yahoo connectivity with ${testTicker}...`);
+      try {
+        const testHistory = await yahoo.getHistoricalData(testTicker, 1);
+        console.log(`[Kuifje] Yahoo test: ${testTicker} returned ${testHistory.length} data points`);
+        if (testHistory.length === 0) {
+          console.error(`[Kuifje] WARNING: Yahoo returned 0 data points for test ticker ${testTicker}. Yahoo API may be blocked or crumb authentication may have failed.`);
+        }
+      } catch (err) {
+        console.error(`[Kuifje] Yahoo connectivity test FAILED for ${testTicker}:`, err);
+      }
+    }
+
     for (let i = 0; i < preFiltered.length; i += BATCH_SIZE) {
       if (isTimedOut()) {
         const timeoutMsg = `Time limit reached after ${stocksScanned}/${preFiltered.length} stocks (${Math.round((Date.now() - startTime) / 1000)}s). Results saved.`;
@@ -733,6 +748,22 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
     }
 
     await saveProgress(true);
+
+    // Log deep scan phase breakdown
+    const deepScanDetails = scanDetails.filter(d => d.phase === 'deep_scan');
+    const deepErrors = deepScanDetails.filter(d => d.result === 'error');
+    const deepRejected = deepScanDetails.filter(d => d.result === 'rejected');
+    const deepMatches = deepScanDetails.filter(d => d.result === 'match');
+    console.log(`[Kuifje] Deep scan breakdown: ${deepMatches.length} matches, ${deepRejected.length} rejected, ${deepErrors.length} errors out of ${deepScanDetails.length} scanned`);
+    if (deepErrors.length > 0) {
+      // Group error messages to see the most common failure
+      const errorGroups: Record<string, number> = {};
+      for (const d of deepErrors) {
+        const msg = (d.errorMessage || 'unknown').split(':')[0];
+        errorGroups[msg] = (errorGroups[msg] || 0) + 1;
+      }
+      console.log(`[Kuifje] Error breakdown:`, JSON.stringify(errorGroups));
+    }
 
     if (errors.length > 0) {
       await supabase.from('error_logs').insert(
