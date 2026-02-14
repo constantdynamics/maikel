@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { ZonnebloemStock, Stock } from '@/lib/types';
 import { SpikeDotDisplay } from './ZonnebloemTable';
 import packageJson from '../../package.json';
@@ -46,17 +47,41 @@ interface UnderwaterModeProps {
   onRefreshKuifjeStocks: () => void;
 }
 
-// Kuifje growth dots — simplified inline renderer
-function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: number; highestGrowthPct: number | null }) {
+/**
+ * Compute dot colors for a Kuifje stock.
+ * Green >= 500%, Yellow >= 300%, White < 300%.
+ */
+function getKuifjeDotColors(eventCount: number, highestGrowthPct: number | null): string[] {
   const count = Math.min(eventCount, 10);
-  if (count === 0) return <span style={{ color: '#3a3d41' }}>-</span>;
+  if (count === 0) return [];
 
   const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
   const dots: string[] = [];
   for (let i = 0; i < count; i++) {
     const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
-    dots.push(est >= 500 ? '#22c55e' : est >= 300 ? '#facc15' : '#ffffff');
+    dots.push(est >= 500 ? 'green' : est >= 300 ? 'yellow' : 'white');
   }
+  return dots;
+}
+
+/**
+ * Medal ranking sort key for Kuifje stocks.
+ * Sort like medal table: green count desc, then yellow count desc, then white count desc.
+ */
+function kuifjeMedalKey(stock: Stock): [number, number, number] {
+  const dots = getKuifjeDotColors(stock.growth_event_count, stock.highest_growth_pct);
+  const green = dots.filter(d => d === 'green').length;
+  const yellow = dots.filter(d => d === 'yellow').length;
+  const white = dots.filter(d => d === 'white').length;
+  return [green, yellow, white];
+}
+
+// Kuifje growth dots — simplified inline renderer
+function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: number; highestGrowthPct: number | null }) {
+  const dots = getKuifjeDotColors(eventCount, highestGrowthPct);
+  if (dots.length === 0) return <span style={{ color: '#3a3d41' }}>-</span>;
+
+  const colorMap = { green: '#22c55e', yellow: '#facc15', white: '#ffffff' };
 
   return (
     <div className="flex items-center gap-0.5">
@@ -64,7 +89,7 @@ function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: numbe
         <span
           key={idx}
           className="inline-block w-2 h-2 rounded-full border border-gray-600"
-          style={{ backgroundColor: color }}
+          style={{ backgroundColor: colorMap[color as keyof typeof colorMap] }}
         />
       ))}
     </div>
@@ -160,10 +185,22 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     ? Math.round((Date.now() - new Date(kScan.startedAt).getTime()) / 1000)
     : null;
 
-  return (
+  // Sort Kuifje stocks by medal ranking: green > yellow > white (like medal table)
+  const sortedKuifjeStocks = useMemo(() => {
+    return [...kuifjeStocks].sort((a, b) => {
+      const [aG, aY, aW] = kuifjeMedalKey(a);
+      const [bG, bY, bW] = kuifjeMedalKey(b);
+      if (bG !== aG) return bG - aG; // More green first
+      if (bY !== aY) return bY - aY; // More yellow first
+      return bW - aW; // More white first
+    });
+  }, [kuifjeStocks]);
+
+  // Use portal to escape AuthGuard's z-0 stacking context
+  const content = (
     <div
-      className="fixed inset-0 z-50 overflow-auto"
-      style={{ backgroundColor: '#1a1c1e' }}
+      className="fixed inset-0 overflow-auto"
+      style={{ backgroundColor: '#1a1c1e', zIndex: 9999 }}
     >
       {/* Toggle button top-left */}
       <button
@@ -313,7 +350,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
             </span>
           </div>
           <div style={{ columnCount: 4, columnGap: '0.75rem' }}>
-            {kuifjeStocks.map((stock) => (
+            {sortedKuifjeStocks.map((stock) => (
               <div
                 key={stock.id}
                 className="flex items-center gap-1.5 py-1 border-b"
@@ -350,4 +387,9 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
       </div>
     </div>
   );
+
+  // Portal renders outside AuthGuard's z-0 stacking context
+  return typeof document !== 'undefined'
+    ? createPortal(content, document.body)
+    : content;
 }
