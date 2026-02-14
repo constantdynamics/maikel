@@ -34,8 +34,8 @@ const ALLOWED_EXCHANGES = new Set([
   'JSE',
 ]);
 
-/** Hard timeout for entire scan - must finish before Vercel kills us (60s limit on Hobby) */
-const TOTAL_SCAN_TIMEOUT_MS = 50_000; // 50s, leaving 10s buffer
+/** Hard timeout for entire scan - maxDuration=300 allows up to 5 min on Vercel */
+const TOTAL_SCAN_TIMEOUT_MS = 240_000; // 4 min, leaving 60s buffer
 
 /** Max time for a single Yahoo Finance call */
 const PER_STOCK_TIMEOUT_MS = 15_000;
@@ -666,7 +666,7 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
     // =========================================================
     // PHASE 3: Deep scan with time-boxed parallel processing
     // =========================================================
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 5;
 
     for (let i = 0; i < preFiltered.length; i += BATCH_SIZE) {
       if (isTimedOut()) {
