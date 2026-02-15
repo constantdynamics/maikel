@@ -35,6 +35,8 @@ export default function Navbar() {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const themeRef = useRef<HTMLDivElement>(null);
 
+  const isDefogPage = pathname === '/defog';
+
   useEffect(() => {
     const saved = localStorage.getItem('theme') || 'sunflower';
     setTheme(saved);
@@ -72,9 +74,9 @@ export default function Navbar() {
       style={{
         backgroundColor: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-color)',
-        padding: '12px 16px',
       }}
     >
+      {/* ── ROW 1: Navigation links (always visible, always clickable) ── */}
       <div
         style={{
           maxWidth: '1536px',
@@ -82,22 +84,23 @@ export default function Navbar() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          padding: '8px 16px',
         }}
       >
-        {/* Left: logo + nav links — z-index ensures links stay clickable above portal overflow */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', position: 'relative', zIndex: 10, flexShrink: 0, backgroundColor: 'var(--bg-secondary)' }}>
-          <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center' }}>
+        {/* Left: logo + nav links */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
               alt="Professor Zonnebloem"
-              width={40}
-              height={40}
+              width={36}
+              height={36}
               style={{ borderRadius: '8px' }}
             />
           </Link>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -113,6 +116,7 @@ export default function Navbar() {
                     transition: 'background-color 0.15s, color 0.15s',
                     backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
                     color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                    whiteSpace: 'nowrap',
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
@@ -134,11 +138,8 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* Right: defog slot + theme picker + logout */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Portal slot for Defog toolbar buttons */}
-          <div id="navbar-defog-slot" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} />
-
+        {/* Right: theme picker + logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
           {/* Theme picker */}
           <div ref={themeRef} style={{ position: 'relative' }}>
             <button
@@ -170,7 +171,7 @@ export default function Navbar() {
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
                   boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                  zIndex: 10,
+                  zIndex: 100,
                   padding: '4px 0',
                 }}
               >
@@ -226,6 +227,29 @@ export default function Navbar() {
           </button>
         </div>
       </div>
+
+      {/* ── ROW 2: Defog toolbar (only rendered on /defog, separate row = no overlap) ── */}
+      {isDefogPage && (
+        <div
+          style={{
+            borderTop: '1px solid var(--border-color)',
+            backgroundColor: 'var(--bg-secondary)',
+          }}
+        >
+          <div
+            id="navbar-defog-slot"
+            style={{
+              maxWidth: '1536px',
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px 16px',
+              flexWrap: 'wrap',
+            }}
+          />
+        </div>
+      )}
     </nav>
   );
 }
