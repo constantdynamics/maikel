@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+// Portal removed - toolbar is rendered directly in Dashboard header
 import {
   Cog6ToothIcon,
   ArrowPathIcon,
@@ -85,13 +85,7 @@ export function Dashboard() {
   const store = useStore();
   const activeTab = useStore(selectActiveTab);
 
-  const [navbarSlot, setNavbarSlot] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const el = document.getElementById('navbar-defog-slot');
-    setNavbarSlot(el);
-    // React's portal cleanup handles unmounting automatically - no manual cleanup needed
-  }, []);
+  // Toolbar is rendered directly in the Dashboard header (no portal)
 
   const [showAddStock, setShowAddStock] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1546,16 +1540,18 @@ export function Dashboard() {
   return (
     <div className={`min-h-screen flex flex-col ${fontClass}`} style={{ backgroundColor: colors.bg, overflowX: 'clip' }}>
       {/* Defog toolbar buttons rendered into Navbar via portal */}
-      {navbarSlot && createPortal(
-        (() => {
-          const headerButtons = store.settings.headerButtonVisibility || {
-            search: true, apiStatus: true, debugLog: false, refresh: true,
-            notifications: true, archive: true, settings: true, syncStatus: true,
-          };
+      {/* ── Defog toolbar header (sticky below navbar) ── */}
+      <header className="sticky top-0 z-20 backdrop-blur-md border-b border-white/10" style={{ backgroundColor: `${colors.bg}ee` }}>
+        <div className="flex items-center gap-1 px-4 py-2 flex-wrap">
+          {(() => {
+            const headerButtons = store.settings.headerButtonVisibility || {
+              search: true, apiStatus: true, debugLog: false, refresh: true,
+              notifications: true, archive: true, settings: true, syncStatus: true,
+            };
 
-          return (
-            <>
-              {headerButtons.search && (
+            return (
+              <>
+                {headerButtons.search && (
                 <SearchBar
                   tabs={store.tabs}
                   onStockSelect={handleStockSelect}
@@ -1786,11 +1782,11 @@ export function Dashboard() {
                   <Cog6ToothIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                 </button>
               )}
-            </>
-          );
-        })(),
-        navbarSlot
-      )}
+              </>
+            );
+          })()}
+        </div>
+      </header>
 
       {/* Refresh Progress */}
       {refreshProgress && (
