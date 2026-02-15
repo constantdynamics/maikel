@@ -72,9 +72,6 @@ export default function Navbar() {
         backgroundColor: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-color)',
         padding: '12px 16px',
-        flexShrink: 0,
-        position: 'relative',
-        zIndex: 9999,
       }}
     >
       <div

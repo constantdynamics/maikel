@@ -383,7 +383,7 @@ export default function DashboardPage() {
   function handlePageChange(page: number) {
     setCurrentPage(page);
     setSelectedIds(new Set());
-    (document.getElementById('main-scroll') || window).scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function handleQuickSelect(type: QuickSelectType) {

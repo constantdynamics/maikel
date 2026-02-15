@@ -2568,7 +2568,7 @@ export function Dashboard() {
         <div className="fixed bottom-4 right-4 flex flex-col items-center gap-2 z-20">
           {/* Scroll to top button */}
           <button
-            onClick={() => (document.getElementById('main-scroll') || window).scrollTo({ top: 0, behavior: 'smooth' })}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="w-10 h-10 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
             title="Scroll naar boven"
           >
