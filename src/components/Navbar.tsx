@@ -84,8 +84,8 @@ export default function Navbar() {
           justifyContent: 'space-between',
         }}
       >
-        {/* Left: logo + nav links */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        {/* Left: logo + nav links — z-index ensures links stay clickable above portal overflow */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', position: 'relative', zIndex: 10, flexShrink: 0, backgroundColor: 'var(--bg-secondary)' }}>
           <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
