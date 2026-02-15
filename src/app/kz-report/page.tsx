@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { supabase } from '@/lib/supabase';
 
 interface KZStock {
@@ -111,7 +110,7 @@ export default function KZReportPage() {
     : selectedArchiveReport?.generated_at;
 
   return (
-    <AuthGuard>
+    <>
       <div className="max-w-4xl space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">K&Z Report</h1>
@@ -265,7 +264,7 @@ export default function KZReportPage() {
           </details>
         )}
       </div>
-    </AuthGuard>
+    </>
   );
 }
 

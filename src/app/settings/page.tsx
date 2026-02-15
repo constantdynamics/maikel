@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import BackupStatus from '@/components/BackupStatus';
 import { supabase } from '@/lib/supabase';
 import type { Settings, MarketCapCategory, ZonnebloemSettings } from '@/lib/types';
@@ -110,9 +109,9 @@ const SECTORS = [
 const KUIFJE_RECOMMENDED_DEFAULTS: Settings = {
   ath_decline_min: 60,
   ath_decline_max: 100,
-  growth_threshold_pct: 100,
-  min_growth_events: 2,
-  min_consecutive_days: 4,
+  growth_threshold_pct: 30,
+  min_growth_events: 1,
+  min_consecutive_days: 2,
   growth_lookback_years: 5,
   purchase_limit_multiplier: 1.20,
   scan_times: ['10:30', '15:00'],
@@ -134,9 +133,9 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 100,
-    min_growth_events: 2,
-    min_consecutive_days: 4,
+    growth_threshold_pct: 30,
+    min_growth_events: 1,
+    min_consecutive_days: 2,
     growth_lookback_years: 5,
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
@@ -282,9 +281,9 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <AuthGuard>
+      <>
         <div className="text-slate-400 py-8 text-center">Loading settings...</div>
-      </AuthGuard>
+      </>
     );
   }
 
@@ -295,7 +294,7 @@ export default function SettingsPage() {
   ];
 
   return (
-    <AuthGuard>
+    <>
       <div className="max-w-2xl space-y-6">
         {/* Header with save button */}
         <div className="flex items-center justify-between">
@@ -931,6 +930,6 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
-    </AuthGuard>
+    </>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Navbar from './Navbar';
+import VersionBadge from './VersionBadge';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -47,7 +48,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--bg-primary)]">
       <Navbar />
-      <main className="max-w-screen-2xl mx-auto p-4">{children}</main>
+      <main className="relative z-0 pt-[56px]">
+        <div className="max-w-screen-2xl mx-auto p-4">{children}</div>
+      </main>
+      <VersionBadge />
     </div>
   );
 }

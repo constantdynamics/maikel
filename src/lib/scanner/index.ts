@@ -3,7 +3,7 @@ import { fetchMultiMarketLosers, fetchMultiMarketHighDecline, MARKETS, DEFAULT_M
 import type { TradingViewStock } from './tradingview';
 import * as yahoo from './yahoo';
 import * as alphavantage from './alphavantage';
-import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow, analyzeStableWithSpikes } from './scorer';
+import { analyzeGrowthEvents, calculateATH, calculateFiveYearLow, calculateThreeYearLow, analyzeStableWithSpikes } from './scorer';
 import {
   validateStockData,
   validatePriceHistory,
@@ -34,8 +34,8 @@ const ALLOWED_EXCHANGES = new Set([
   'JSE',
 ]);
 
-/** Hard timeout for entire scan - must finish before Vercel kills us (60s limit on Hobby) */
-const TOTAL_SCAN_TIMEOUT_MS = 50_000; // 50s, leaving 10s buffer
+/** Hard timeout for entire scan - maxDuration=300 allows up to 5 min on Vercel */
+const TOTAL_SCAN_TIMEOUT_MS = 240_000; // 4 min, leaving 60s buffer
 
 /** Max time for a single Yahoo Finance call */
 const PER_STOCK_TIMEOUT_MS = 15_000;
@@ -87,6 +87,8 @@ interface ScanResult {
   apiCallsYahoo: number;
   apiCallsAlphaVantage: number;
   markets: string[];
+  effectiveSettings?: Partial<Settings>;
+  rejectionSummary?: Record<string, number>;
 }
 
 async function getSettings(supabase: ReturnType<typeof createServiceClient>): Promise<Settings> {
@@ -95,9 +97,9 @@ async function getSettings(supabase: ReturnType<typeof createServiceClient>): Pr
   const defaults: Settings = {
     ath_decline_min: 60,
     ath_decline_max: 100,
-    growth_threshold_pct: 100,
-    min_growth_events: 2,
-    min_consecutive_days: 4,
+    growth_threshold_pct: 30,
+    min_growth_events: 1,
+    min_consecutive_days: 2,
     growth_lookback_years: 5,
     purchase_limit_multiplier: 1.20,
     scan_times: ['10:30', '15:00'],
@@ -303,10 +305,13 @@ async function deepScanStock(
   );
 
   if (growthAnalysis.events.length < settings.min_growth_events) {
+    const nearMissInfo = growthAnalysis.highestGrowthPct > 0
+      ? ` (best growth: ${growthAnalysis.highestGrowthPct.toFixed(1)}%, needed: ${settings.growth_threshold_pct}%)`
+      : ' (no growth detected at all)';
     return {
       detail: {
         ...baseDetail, result: 'rejected',
-        rejectReason: `Only ${growthAnalysis.events.length} growth events (need ${settings.min_growth_events}+)`,
+        rejectReason: `Only ${growthAnalysis.events.length} growth events (need ${settings.min_growth_events}+)${nearMissInfo}`,
         yahooHistoryDays: history.length, yahooATH: yahooATHResult?.price, yahooDeclineFromATH: athDeclinePct,
         growthEvents: growthAnalysis.events.length, growthScore: growthAnalysis.score, highestGrowthPct: growthAnalysis.highestGrowthPct,
       },
@@ -318,6 +323,7 @@ async function deepScanStock(
 
   // MATCH! Save to database
   const fiveYearLow = calculateFiveYearLow(history);
+  const threeYearLow = calculateThreeYearLow(history);
   const purchaseLimit = fiveYearLow ? fiveYearLow.price * settings.purchase_limit_multiplier : null;
 
   let confidenceScore = 100;
@@ -360,7 +366,8 @@ async function deepScanStock(
 
   const today = new Date().toISOString().split('T')[0];
 
-  await supabase.from('stocks').upsert({
+  // Build stock data for upsert
+  const stockData: Record<string, unknown> = {
     ticker,
     company_name: tvStock.name || ticker,
     sector: tvStock.sector || null,
@@ -368,6 +375,7 @@ async function deepScanStock(
     all_time_high: effectiveATH,
     ath_decline_pct: athDeclinePct,
     five_year_low: fiveYearLow?.price || null,
+    three_year_low: threeYearLow?.price || null,
     purchase_limit: purchaseLimit,
     score: growthAnalysis.score,
     growth_event_count: growthAnalysis.events.length,
@@ -390,7 +398,46 @@ async function deepScanStock(
     // Reset visibility flags so re-discovered stocks reappear
     is_deleted: false,
     is_archived: false,
-  }, { onConflict: 'ticker' });
+  };
+
+  let { error: upsertError } = await supabase.from('stocks').upsert(
+    stockData,
+    { onConflict: 'ticker' },
+  );
+
+  // Fallback: if a column doesn't exist yet, remove ALL optional columns and retry
+  if (upsertError && upsertError.message?.includes('column')) {
+    console.warn(`[Kuifje] Upsert failed for ${ticker}: ${upsertError.message}. Removing all optional columns and retrying...`);
+
+    // Remove ALL optional columns at once to avoid one-by-one retry failures
+    const optionalColumns = ['three_year_low', 'scan_number', 'scan_date',
+      'twelve_month_low', 'twelve_month_max_decline_pct', 'twelve_month_max_spike_pct', 'is_stable_with_spikes'];
+    for (const col of optionalColumns) {
+      delete stockData[col];
+    }
+    const retry = await supabase.from('stocks').upsert(stockData, { onConflict: 'ticker' });
+    upsertError = retry.error;
+    if (!upsertError) {
+      console.log(`[Kuifje] Retry succeeded for ${ticker} (without optional columns)`);
+    }
+  }
+
+  if (upsertError) {
+    console.error(`[Kuifje] Final upsert FAILED for ${ticker}: ${upsertError.message}`);
+    return {
+      detail: {
+        ...baseDetail, result: 'error',
+        errorMessage: `DB upsert failed: ${upsertError.message}`,
+        yahooHistoryDays: history.length, yahooATH: yahooATHResult?.price, yahooDeclineFromATH: athDeclinePct,
+        growthEvents: growthAnalysis.events.length, growthScore: growthAnalysis.score, highestGrowthPct: growthAnalysis.highestGrowthPct,
+      },
+      isMatch: false,
+      apiCallsYahoo,
+      apiCallsAlphaVantage,
+    };
+  }
+
+  console.log(`[Kuifje] Successfully saved ${ticker} to database`);
 
   await supabase.from('growth_events').delete().eq('ticker', ticker);
   if (growthAnalysis.events.length > 0) {
@@ -493,10 +540,11 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
   try {
     const settings = await getSettings(supabase);
+    console.log(`[Kuifje] Settings: ATH decline ${settings.ath_decline_min}-${settings.ath_decline_max}%, growth threshold ${settings.growth_threshold_pct}%, min events ${settings.min_growth_events}, min days ${settings.min_consecutive_days}`);
 
     // Get scan number for today (1st, 2nd, 3rd scan, etc.)
     const scanNumber = await getTodayScanNumber(supabase);
-    console.log(`Starting scan #${scanNumber} for today`);
+    console.log(`[Kuifje] Starting scan #${scanNumber} for today`);
 
     // Get recently scanned tickers to skip (for more variety)
     const recentlyScanned = await getRecentlyScannedTickers(supabase, settings.skip_recently_scanned_hours);
@@ -623,7 +671,22 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
     // =========================================================
     // PHASE 3: Deep scan with time-boxed parallel processing
     // =========================================================
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 5;
+
+    // Diagnostic: test Yahoo connectivity with the first candidate before bulk scanning
+    if (preFiltered.length > 0) {
+      const testTicker = preFiltered[0].ticker;
+      console.log(`[Kuifje] Testing Yahoo connectivity with ${testTicker}...`);
+      try {
+        const testHistory = await yahoo.getHistoricalData(testTicker, 1);
+        console.log(`[Kuifje] Yahoo test: ${testTicker} returned ${testHistory.length} data points`);
+        if (testHistory.length === 0) {
+          console.error(`[Kuifje] WARNING: Yahoo returned 0 data points for test ticker ${testTicker}. Yahoo API may be blocked or crumb authentication may have failed.`);
+        }
+      } catch (err) {
+        console.error(`[Kuifje] Yahoo connectivity test FAILED for ${testTicker}:`, err);
+      }
+    }
 
     for (let i = 0; i < preFiltered.length; i += BATCH_SIZE) {
       if (isTimedOut()) {
@@ -650,9 +713,12 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
           scanDetails.push(result.value.detail);
           apiCallsYahoo += result.value.apiCallsYahoo;
           apiCallsAlphaVantage += result.value.apiCallsAlphaVantage;
+          const d = result.value.detail;
           if (result.value.isMatch) {
             stocksFound++;
-            console.log(`  >>> MATCH: ${result.value.detail.ticker}`);
+            console.log(`  >>> MATCH: ${d.ticker} (growth events: ${d.growthEvents}, highest: ${d.highestGrowthPct?.toFixed(0)}%)`);
+          } else {
+            console.log(`  --- ${d.ticker}: ${d.result === 'rejected' ? d.rejectReason : d.result === 'error' ? d.errorMessage : 'no match'}`);
           }
         } else {
           const ticker = batch[j].ticker;
@@ -682,10 +748,66 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
     await saveProgress(true);
 
+    // Log deep scan phase breakdown
+    const deepScanDetails = scanDetails.filter(d => d.phase === 'deep_scan');
+    const deepErrors = deepScanDetails.filter(d => d.result === 'error');
+    const deepRejected = deepScanDetails.filter(d => d.result === 'rejected');
+    const deepMatches = deepScanDetails.filter(d => d.result === 'match');
+    console.log(`[Kuifje] Deep scan breakdown: ${deepMatches.length} matches, ${deepRejected.length} rejected, ${deepErrors.length} errors out of ${deepScanDetails.length} scanned`);
+    if (deepErrors.length > 0) {
+      // Group error messages to see the most common failure
+      const errorGroups: Record<string, number> = {};
+      for (const d of deepErrors) {
+        const msg = (d.errorMessage || 'unknown').split(':')[0];
+        errorGroups[msg] = (errorGroups[msg] || 0) + 1;
+      }
+      console.log(`[Kuifje] Error breakdown:`, JSON.stringify(errorGroups));
+    }
+
     if (errors.length > 0) {
       await supabase.from('error_logs').insert(
         errors.slice(0, 20).map((e) => ({ source: 'scanner', message: e, severity: 'warning' })),
       );
+    }
+
+    // Build rejection summary for debugging
+    const rejectionSummary: Record<string, number> = {};
+    const growthNearMisses: number[] = []; // Track highest growth % for stocks that failed growth check
+    for (const detail of scanDetails) {
+      if (detail.result === 'rejected' && detail.rejectReason) {
+        // Generalize reasons (strip specific numbers for grouping)
+        const reason = detail.rejectReason
+          .replace(/\d+\.\d+/g, 'X')
+          .replace(/\$[\d.]+/g, '$X')
+          .replace(/Only \d+/g, 'Only N')
+          .replace(/\(best growth: X%, needed: X%\)/, '(see near-miss summary)')
+          .replace(/\(no growth detected at all\)/, '(no growth)');
+        rejectionSummary[reason] = (rejectionSummary[reason] || 0) + 1;
+        // Collect near-miss growth data
+        if (detail.highestGrowthPct && detail.highestGrowthPct > 0) {
+          growthNearMisses.push(detail.highestGrowthPct);
+        }
+      } else if (detail.result === 'error' && detail.errorMessage) {
+        const reason = `ERROR: ${detail.errorMessage.split(':')[0]}`;
+        rejectionSummary[reason] = (rejectionSummary[reason] || 0) + 1;
+      }
+    }
+
+    // Near-miss analysis: show distribution of growth percentages for rejected stocks
+    if (growthNearMisses.length > 0) {
+      growthNearMisses.sort((a, b) => b - a);
+      const threshold = settings.growth_threshold_pct;
+      const above40 = growthNearMisses.filter(g => g >= threshold * 0.8).length;
+      const above60 = growthNearMisses.filter(g => g >= threshold * 0.6).length;
+      const above80 = growthNearMisses.filter(g => g >= threshold * 0.4).length;
+      console.log(`[Kuifje] Near-miss growth analysis (${growthNearMisses.length} stocks with some growth):`);
+      console.log(`  Top 5 highest growth: ${growthNearMisses.slice(0, 5).map(g => g.toFixed(1) + '%').join(', ')}`);
+      console.log(`  Within 80% of threshold (≥${(threshold * 0.8).toFixed(0)}%): ${above40} stocks`);
+      console.log(`  Within 60% of threshold (≥${(threshold * 0.6).toFixed(0)}%): ${above60} stocks`);
+      console.log(`  Within 40% of threshold (≥${(threshold * 0.4).toFixed(0)}%): ${above80} stocks`);
+      if (growthNearMisses.length > 0 && above40 > 0) {
+        console.log(`  💡 Consider lowering growth_threshold_pct from ${threshold}% to ${(threshold * 0.7).toFixed(0)}% to capture ${above40}+ more stocks`);
+      }
     }
 
     return {
@@ -699,6 +821,14 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
       apiCallsYahoo,
       apiCallsAlphaVantage,
       markets,
+      effectiveSettings: {
+        growth_threshold_pct: settings.growth_threshold_pct,
+        min_growth_events: settings.min_growth_events,
+        min_consecutive_days: settings.min_consecutive_days,
+        ath_decline_min: settings.ath_decline_min,
+        ath_decline_max: settings.ath_decline_max,
+      },
+      rejectionSummary,
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);

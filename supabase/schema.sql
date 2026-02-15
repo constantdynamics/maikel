@@ -10,6 +10,7 @@ CREATE TABLE stocks (
   all_time_high DECIMAL(12, 4),
   ath_decline_pct DECIMAL(8, 4),
   five_year_low DECIMAL(12, 4),
+  three_year_low DECIMAL(12, 4),
   purchase_limit DECIMAL(12, 4),
   score INTEGER DEFAULT 0,
   growth_event_count INTEGER DEFAULT 0,

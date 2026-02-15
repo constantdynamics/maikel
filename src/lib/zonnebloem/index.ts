@@ -463,6 +463,14 @@ async function deepScanCandidate(
     // Check for stock splits (may invalidate spike data)
     const splits = detectStockSplit(history);
 
+    // Calculate 3-year low from the fetched history
+    let threeYearLow: number | null = null;
+    for (const day of history) {
+      if (day.low > 0 && (threeYearLow === null || day.low < threeYearLow)) {
+        threeYearLow = day.low;
+      }
+    }
+
     // Analyze spike events
     const spikeAnalysis = analyzeSpikeEvents(
       history,
@@ -526,12 +534,14 @@ async function deepScanCandidate(
     // Upsert stock (try with scan_session_id, fallback without if column doesn't exist)
     const stockData: Record<string, unknown> = {
       ticker,
+      yahoo_ticker: candidate.yahooTicker || ticker,
       company_name: candidate.name || ticker,
       sector: candidate.sector || null,
       exchange: candidate.exchange || null,
       market: candidate.market,
       country: candidate.country || null,
       current_price: candidate.close,
+      three_year_low: threeYearLow,
       base_price_median: spikeAnalysis.basePriceMedian,
       price_12m_ago: spikeAnalysis.priceChange12m !== null
         ? candidate.close / (1 + spikeAnalysis.priceChange12m / 100)
@@ -554,13 +564,15 @@ async function deepScanCandidate(
       { onConflict: 'ticker' },
     );
 
-    // Fallback: if scan_session_id column doesn't exist yet, retry without it
+    // Fallback: if columns don't exist yet, retry without them
+    if (upsertError?.message?.includes('yahoo_ticker')) {
+      delete stockData.yahoo_ticker;
+      const retry = await supabase.from('zonnebloem_stocks').upsert(stockData, { onConflict: 'ticker' });
+      upsertError = retry.error;
+    }
     if (upsertError?.message?.includes('scan_session_id')) {
       delete stockData.scan_session_id;
-      const retry = await supabase.from('zonnebloem_stocks').upsert(
-        stockData,
-        { onConflict: 'ticker' },
-      );
+      const retry = await supabase.from('zonnebloem_stocks').upsert(stockData, { onConflict: 'ticker' });
       upsertError = retry.error;
     }
 

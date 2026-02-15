@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import ClientLayout from '@/components/ClientLayout';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -32,7 +33,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="min-h-screen">
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <ErrorBoundary>
+          <ClientLayout>{children}</ClientLayout>
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -1,14 +1,12 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { getSelectedMarkets } from '@/components/MarketSelector';
 import StockTable from '@/components/StockTable';
 import FilterBar, { type QuickSelectType } from '@/components/FilterBar';
 import ScanProgress from '@/components/ScanProgress';
 import ZonnebloemScanProgress from '@/components/ZonnebloemScanProgress';
 import ZonnebloemTable from '@/components/ZonnebloemTable';
-import TileGrid from '@/components/TileGrid';
 import UnderwaterMode from '@/components/UnderwaterMode';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
@@ -71,7 +69,6 @@ export default function DashboardPage() {
   } = useZonnebloemStocks();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [kuifjeView, setKuifjeView] = useState<'table' | 'tiles'>('table');
   const [underwaterMode, setUnderwaterMode] = useState(false);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanTriggered, setScanTriggered] = useState(false);
@@ -184,18 +181,37 @@ export default function DashboardPage() {
   async function handleRunScan(markets: string[]) {
     setScanRunning(true);
     setScanTriggered(true);
+    console.log(`[Kuifje] Starting scan for markets: ${markets.join(', ')}`);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/scan', {
+      if (!session?.access_token) {
+        console.error('[Kuifje] No auth token available');
+        setScanRunning(false);
+        return;
+      }
+      const res = await fetch('/api/scan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ markets }),
       });
-    } catch {
+      const result = await res.json();
+      if (!res.ok) {
+        console.error(`[Kuifje] Scan failed (${res.status}):`, result);
+      } else {
+        console.log(`[Kuifje] Scan result: ${result.stocksFound}/${result.stocksScanned} matches (${result.durationSeconds}s)`);
+        if (result.effectiveSettings) {
+          console.log(`[Kuifje] Settings used:`, result.effectiveSettings);
+        }
+        if (result.rejectionSummary && Object.keys(result.rejectionSummary).length > 0) {
+          console.log(`[Kuifje] Rejection breakdown:`, result.rejectionSummary);
+        }
+      }
+    } catch (err) {
+      console.error('[Kuifje] Scan error:', err);
       setScanRunning(false);
     }
   }
@@ -224,8 +240,14 @@ export default function DashboardPage() {
     setScanTriggered(false);
     refreshStocks();
     if (kuifjeAutoScan) {
-      kuifjeAutoLastRun.current = Date.now();
-      setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      if (underwaterMode) {
+        // In underwater mode: restart scan immediately (small delay to let state settle)
+        setTimeout(() => handleRunScan(getSelectedMarkets()), 3000);
+        setKuifjeAutoNext(new Date(Date.now() + 3000));
+      } else {
+        kuifjeAutoLastRun.current = Date.now();
+        setKuifjeAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+      }
     }
   }
 
@@ -395,7 +417,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-4">
         <ExportReminder onExport={handleExport} />
 
@@ -476,6 +498,14 @@ export default function DashboardPage() {
                     Next: {kuifjeAutoNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+
+                <button
+                  onClick={() => setUnderwaterMode(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors bg-[#1a1c1e] text-[#6a6d72] border border-[#3a3d41] hover:text-[#9a9da2]"
+                >
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#3a3d41]" />
+                  Underwater
+                </button>
               </div>
             </div>
 
@@ -515,7 +545,7 @@ export default function DashboardPage() {
                   Click &ldquo;Run Scan&rdquo; to start scanning for high-potential recovery stocks.
                 </p>
                 <p className="text-[var(--text-muted)] text-sm mb-6">
-                  Scans for stocks with 85-100% ATH decline and multiple 200%+ growth events.
+                  Scans for stocks with significant ATH decline and recovery growth events.
                 </p>
                 <button
                   onClick={() => handleRunScan(['us', 'ca'])}
@@ -527,48 +557,25 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                <div className="flex justify-end mb-2">
-                  <div className="inline-flex bg-[var(--bg-tertiary)] rounded p-0.5 border border-[var(--border-color)]">
-                    <button
-                      onClick={() => setKuifjeView('table')}
-                      className={`px-3 py-1 text-xs rounded transition-colors ${kuifjeView === 'table' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-                    >
-                      Table
-                    </button>
-                    <button
-                      onClick={() => setKuifjeView('tiles')}
-                      className={`px-3 py-1 text-xs rounded transition-colors ${kuifjeView === 'tiles' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-                    >
-                      Tiles
-                    </button>
-                  </div>
-                </div>
+                <StockTable
+                  stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
+                  sort={sort}
+                  onSort={handleSort}
+                  selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAll={toggleSelectAll}
+                  onToggleFavorite={toggleFavorite}
+                  onDelete={requestDelete}
+                />
 
-                {kuifjeView === 'tiles' ? (
-                  <TileGrid stocks={stocks as Parameters<typeof TileGrid>[0]['stocks']} />
-                ) : (
-                  <>
-                    <StockTable
-                      stocks={paginatedStocks as Parameters<typeof StockTable>[0]['stocks']}
-                      sort={sort}
-                      onSort={handleSort}
-                      selectedIds={selectedIds}
-                      onToggleSelect={toggleSelect}
-                      onToggleSelectAll={toggleSelectAll}
-                      onToggleFavorite={toggleFavorite}
-                      onDelete={requestDelete}
-                    />
-
-                    {totalPages > 1 && (
-                      <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        onPageChange={handlePageChange}
-                        totalItems={stocks.length}
-                        itemsPerPage={ITEMS_PER_PAGE}
-                      />
-                    )}
-                  </>
+                {totalPages > 1 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    totalItems={stocks.length}
+                    itemsPerPage={ITEMS_PER_PAGE}
+                  />
                 )}
               </>
             )}
@@ -622,18 +629,6 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
-
-            {underwaterMode && (
-              <UnderwaterMode
-                zbStocks={zbStocks}
-                kuifjeStocks={stocks}
-                onExit={() => setUnderwaterMode(false)}
-                autoScanActive={zbAutoScan}
-                autoScanNext={zbAutoNext}
-                scanRunning={zbScanRunning}
-                onRefreshStocks={zbRefreshStocks}
-              />
-            )}
 
             <ZonnebloemScanProgress
               scanTriggered={zbScanTriggered}
@@ -770,6 +765,22 @@ export default function DashboardPage() {
           </>
         )}
 
+        {underwaterMode && (
+          <UnderwaterMode
+            zbStocks={zbStocks}
+            kuifjeStocks={stocks}
+            onExit={() => setUnderwaterMode(false)}
+            autoScanActive={zbAutoScan}
+            autoScanNext={zbAutoNext}
+            scanRunning={zbScanRunning}
+            onRefreshStocks={zbRefreshStocks}
+            kuifjeAutoScanActive={kuifjeAutoScan}
+            kuifjeAutoScanNext={kuifjeAutoNext}
+            kuifjeScanRunning={scanRunning}
+            onRefreshKuifjeStocks={refreshStocks}
+          />
+        )}
+
         <ConfirmDialog
           open={confirmDialog.open}
           title={confirmDialog.title}
@@ -782,6 +793,6 @@ export default function DashboardPage() {
 
         <FixedUI />
       </div>
-    </AuthGuard>
+    </>
   );
 }

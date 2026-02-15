@@ -8,13 +8,11 @@ export interface GrowthEventAnalysis {
 }
 
 /**
- * Analyze price history for 200%+ growth events.
+ * Analyze price history for growth events (recovery from troughs).
  *
- * A growth event: price increases 200%+ from a local trough to a subsequent peak.
- * For example: stock drops to $1, then reaches $3 at some point = 200% growth event.
- *
- * The user wants: "het moet 2x 200% groeien vanaf een onbepaald punt" -
- * meaning 2+ times where the stock grew 200% from ANY low point.
+ * A growth event: price increases X%+ from a local trough to a subsequent peak.
+ * Default threshold is 50% (configurable via settings).
+ * For example: stock drops to $1, then reaches $1.50+ = 50% growth event.
  *
  * Scoring: triangular numbers (1 event = 1pt, 2 = 3pts, 3 = 6pts, n = n*(n+1)/2)
  */
@@ -62,8 +60,8 @@ export function analyzeGrowthEvents(
         peakIdx = j;
       }
 
-      // Check if close price is above target
-      if (history[j].close >= targetPrice) {
+      // Check if high price reached target (consistent with peakPrice tracking)
+      if (history[j].high >= targetPrice) {
         reachedTarget = true;
         daysAboveTarget++;
         maxDaysAboveTarget = Math.max(maxDaysAboveTarget, daysAboveTarget);
@@ -71,9 +69,8 @@ export function analyzeGrowthEvents(
         daysAboveTarget = 0;
       }
 
-      // If price drops below 80% of trough, this growth cycle is over
-      // (new trough territory - will be caught by a different trough)
-      if (history[j].close < troughPrice * 0.8) {
+      // If price drops below 50% of trough, this growth cycle is over
+      if (history[j].close < troughPrice * 0.5) {
         break;
       }
     }
@@ -213,6 +210,33 @@ export function calculateFiveYearLow(history: OHLCData[]): {
 
   for (const day of history) {
     if (day.low > 0 && day.low < minPrice) {
+      minPrice = day.low;
+      minDate = day.date;
+    }
+  }
+
+  return minPrice < Infinity ? { price: minPrice, date: minDate } : null;
+}
+
+/**
+ * Calculate the 3-year low from price history.
+ * Filters history to only include the last 3 years of data.
+ */
+export function calculateThreeYearLow(history: OHLCData[]): {
+  price: number;
+  date: string;
+} | null {
+  if (history.length === 0) return null;
+
+  const threeYearsAgo = new Date();
+  threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+  const cutoffDate = threeYearsAgo.toISOString().split('T')[0];
+
+  let minPrice = Infinity;
+  let minDate = '';
+
+  for (const day of history) {
+    if (day.date >= cutoffDate && day.low > 0 && day.low < minPrice) {
       minPrice = day.low;
       minDate = day.date;
     }

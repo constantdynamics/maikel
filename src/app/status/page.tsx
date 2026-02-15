@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { supabase } from '@/lib/supabase';
 import { formatDateTime } from '@/lib/utils';
 import type { ScanLog, HealthCheck, ErrorLog } from '@/lib/types';
@@ -75,7 +74,7 @@ export default function StatusPage() {
   const latestHealth = healthChecks[0];
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">System Status</h1>
 
@@ -193,6 +192,6 @@ export default function StatusPage() {
           </>
         )}
       </div>
-    </AuthGuard>
+    </>
   );
 }

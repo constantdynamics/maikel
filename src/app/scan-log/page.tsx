@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import AuthGuard from '@/components/AuthGuard';
 import { supabase } from '@/lib/supabase';
 import type { StockScanDetail, ZonnebloemScanDetail } from '@/lib/types';
 
@@ -171,7 +170,7 @@ export default function ScanLogPage() {
   const zbDeepScanCount = zbSelectedLog?.details?.filter(d => d.phase === 'deep_scan').length || 0;
 
   return (
-    <AuthGuard>
+    <>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Scan Log</h1>
@@ -447,6 +446,6 @@ export default function ScanLogPage() {
           <pre ref={detailsRef} className="text-xs font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-all max-h-96 overflow-y-auto select-all cursor-text bg-[var(--input-bg)] rounded p-3">{generateCopyText()}</pre>
         </div>
       </div>
-    </AuthGuard>
+    </>
   );
 }

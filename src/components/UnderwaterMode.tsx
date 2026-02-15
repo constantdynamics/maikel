@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { ZonnebloemStock, Stock } from '@/lib/types';
 import { SpikeDotDisplay } from './ZonnebloemTable';
+import packageJson from '../../package.json';
 
 interface ScanStatus {
   running: boolean;
@@ -18,27 +20,68 @@ interface ScanStatus {
   } | null;
 }
 
+interface KuifjeScanStatus {
+  running: boolean;
+  scan: {
+    status: string;
+    stocksScanned: number;
+    stocksFound: number;
+    startedAt: string;
+    completedAt: string | null;
+  } | null;
+}
+
 interface UnderwaterModeProps {
   zbStocks: ZonnebloemStock[];
   kuifjeStocks: Stock[];
   onExit: () => void;
+  // Zonnebloem scan
   autoScanActive: boolean;
   autoScanNext: Date | null;
   scanRunning: boolean;
   onRefreshStocks: () => void;
+  // Kuifje scan
+  kuifjeAutoScanActive: boolean;
+  kuifjeAutoScanNext: Date | null;
+  kuifjeScanRunning: boolean;
+  onRefreshKuifjeStocks: () => void;
 }
 
-// Kuifje growth dots — simplified inline renderer
-function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: number; highestGrowthPct: number | null }) {
+/**
+ * Compute dot colors for a Kuifje stock.
+ * Green >= 500%, Yellow >= 300%, White < 300%.
+ */
+function getKuifjeDotColors(eventCount: number, highestGrowthPct: number | null): string[] {
   const count = Math.min(eventCount, 10);
-  if (count === 0) return <span style={{ color: '#3a3d41' }}>-</span>;
+  if (count === 0) return [];
 
   const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
   const dots: string[] = [];
   for (let i = 0; i < count; i++) {
     const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
-    dots.push(est >= 500 ? '#22c55e' : est >= 300 ? '#facc15' : '#ffffff');
+    dots.push(est >= 500 ? 'green' : est >= 300 ? 'yellow' : 'white');
   }
+  return dots;
+}
+
+/**
+ * Medal ranking sort key for Kuifje stocks.
+ * Sort like medal table: green count desc, then yellow count desc, then white count desc.
+ */
+function kuifjeMedalKey(stock: Stock): [number, number, number] {
+  const dots = getKuifjeDotColors(stock.growth_event_count, stock.highest_growth_pct);
+  const green = dots.filter(d => d === 'green').length;
+  const yellow = dots.filter(d => d === 'yellow').length;
+  const white = dots.filter(d => d === 'white').length;
+  return [green, yellow, white];
+}
+
+// Kuifje growth dots — simplified inline renderer
+function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: number; highestGrowthPct: number | null }) {
+  const dots = getKuifjeDotColors(eventCount, highestGrowthPct);
+  if (dots.length === 0) return <span style={{ color: '#3a3d41' }}>-</span>;
+
+  const colorMap = { green: '#22c55e', yellow: '#facc15', white: '#ffffff' };
 
   return (
     <div className="flex items-center gap-0.5">
@@ -46,17 +89,35 @@ function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: numbe
         <span
           key={idx}
           className="inline-block w-2 h-2 rounded-full border border-gray-600"
-          style={{ backgroundColor: color }}
+          style={{ backgroundColor: colorMap[color as keyof typeof colorMap] }}
         />
       ))}
     </div>
   );
 }
 
-export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks }: UnderwaterModeProps) {
+export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks, kuifjeAutoScanActive, kuifjeAutoScanNext, kuifjeScanRunning, onRefreshKuifjeStocks }: UnderwaterModeProps) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [kuifjeScanStatus, setKuifjeScanStatus] = useState<KuifjeScanStatus | null>(null);
   const [completedScans, setCompletedScans] = useState(0);
+  const [completedKuifjeScans, setCompletedKuifjeScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
+  const [lastKuifjeScanId, setLastKuifjeScanId] = useState<string | null>(null);
+
+  // Font size for the big total number — persists in localStorage
+  const FONT_SIZES = ['1.5rem', '2.5rem', '4rem', '6rem'];
+  const [fontSizeIdx, setFontSizeIdx] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('underwater-font-size');
+      if (saved) return Math.min(Number(saved), FONT_SIZES.length - 1);
+    }
+    return 1; // default 2.5rem
+  });
+  const cycleFontSize = () => {
+    const next = (fontSizeIdx + 1) % FONT_SIZES.length;
+    setFontSizeIdx(next);
+    localStorage.setItem('underwater-font-size', String(next));
+  };
 
   // Set browser tab title to K&Z in underwater mode
   useEffect(() => {
@@ -65,8 +126,8 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     return () => { document.title = prev; };
   }, []);
 
-  // Poll scan progress
-  const fetchStatus = useCallback(async () => {
+  // Poll Zonnebloem scan progress
+  const fetchZbStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/zonnebloem/scan/progress');
       if (res.ok) {
@@ -78,29 +139,68 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     return null;
   }, []);
 
+  // Poll Kuifje scan progress
+  const fetchKuifjeStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/scan/progress');
+      if (res.ok) {
+        const json = await res.json();
+        setKuifjeScanStatus(json);
+        return json as KuifjeScanStatus;
+      }
+    } catch { /* silent */ }
+    return null;
+  }, []);
+
   useEffect(() => {
-    fetchStatus();
+    fetchZbStatus();
+    fetchKuifjeStatus();
     const timer = setInterval(async () => {
-      const result = await fetchStatus();
-      if (result?.scan?.completedAt && result.scan.completedAt !== lastScanId) {
-        setLastScanId(result.scan.completedAt);
+      const zbResult = await fetchZbStatus();
+      if (zbResult?.scan?.completedAt && zbResult.scan.completedAt !== lastScanId) {
+        setLastScanId(zbResult.scan.completedAt);
         setCompletedScans(prev => prev + 1);
         onRefreshStocks();
       }
+
+      const kResult = await fetchKuifjeStatus();
+      if (kResult?.scan?.completedAt && kResult.scan.completedAt !== lastKuifjeScanId) {
+        setLastKuifjeScanId(kResult.scan.completedAt);
+        setCompletedKuifjeScans(prev => prev + 1);
+        onRefreshKuifjeStocks();
+      }
     }, 5000);
     return () => clearInterval(timer);
-  }, [fetchStatus, lastScanId, onRefreshStocks]);
+  }, [fetchZbStatus, fetchKuifjeStatus, lastScanId, lastKuifjeScanId, onRefreshStocks, onRefreshKuifjeStocks]);
 
-  const isRunning = scanStatus?.running || scanRunning;
-  const scan = scanStatus?.scan;
-  const elapsed = scan?.startedAt && isRunning
-    ? Math.round((Date.now() - new Date(scan.startedAt).getTime()) / 1000)
+  const zbIsRunning = scanStatus?.running || scanRunning;
+  const zbScan = scanStatus?.scan;
+  const zbElapsed = zbScan?.startedAt && zbIsRunning
+    ? Math.round((Date.now() - new Date(zbScan.startedAt).getTime()) / 1000)
     : null;
 
-  return (
+  const kIsRunning = kuifjeScanStatus?.running || kuifjeScanRunning;
+  const kScan = kuifjeScanStatus?.scan;
+  const kElapsed = kScan?.startedAt && kIsRunning
+    ? Math.round((Date.now() - new Date(kScan.startedAt).getTime()) / 1000)
+    : null;
+
+  // Sort Kuifje stocks by medal ranking: green > yellow > white (like medal table)
+  const sortedKuifjeStocks = useMemo(() => {
+    return [...kuifjeStocks].sort((a, b) => {
+      const [aG, aY, aW] = kuifjeMedalKey(a);
+      const [bG, bY, bW] = kuifjeMedalKey(b);
+      if (bG !== aG) return bG - aG; // More green first
+      if (bY !== aY) return bY - aY; // More yellow first
+      return bW - aW; // More white first
+    });
+  }, [kuifjeStocks]);
+
+  // Use portal to escape AuthGuard's z-0 stacking context
+  const content = (
     <div
-      className="fixed inset-0 z-50 overflow-auto"
-      style={{ backgroundColor: '#1a1c1e' }}
+      className="fixed inset-0 overflow-auto"
+      style={{ backgroundColor: '#1a1c1e', zIndex: 9999 }}
     >
       {/* Toggle button top-left */}
       <button
@@ -111,40 +211,86 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         Ground Mode
       </button>
 
-      {/* Scan status indicator top-right */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1">
+      {/* Font size slider */}
+      <div className="fixed top-4 left-36 z-50 flex items-center gap-2 px-3 py-1.5 rounded bg-[#2a2d31] border border-[#3a3d41]">
+        <input
+          type="range"
+          min={0}
+          max={FONT_SIZES.length - 1}
+          value={fontSizeIdx}
+          onChange={(e) => {
+            const val = Number(e.target.value);
+            setFontSizeIdx(val);
+            localStorage.setItem('underwater-font-size', String(val));
+          }}
+          className="w-16 h-1 accent-purple-500 cursor-pointer"
+          style={{ WebkitAppearance: 'none', appearance: 'none', background: '#3a3d41', borderRadius: 2 }}
+        />
+      </div>
+
+      {/* Scan status indicators top-right — both scanners */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1.5">
+        {/* Zonnebloem status */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
-              isRunning ? 'bg-purple-400 animate-pulse' : autoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+              zbIsRunning ? 'bg-purple-400 animate-pulse' : autoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
             }`}
           />
-          <span style={{ color: isRunning ? '#c084fc' : '#6a6d72' }}>
-            {isRunning
-              ? `Scanning${elapsed ? ` (${elapsed}s)` : ''}...`
+          <span style={{ color: zbIsRunning ? '#c084fc' : '#6a6d72' }}>
+            {zbIsRunning
+              ? `Zonnebloem${zbElapsed ? ` (${zbElapsed}s)` : ''}...`
               : autoScanActive
-                ? 'Starting next scan...'
-                : 'Auto-scan off'}
+                ? 'Zonnebloem waiting...'
+                : 'Zonnebloem off'}
           </span>
+          {zbIsRunning && zbScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{zbScan.stocksDeepScanned}</span>
+              {' / '}
+              <span style={{ color: '#22c55e' }}>{zbScan.stocksMatched}</span>
+            </span>
+          )}
+          {!zbIsRunning && completedScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedScans}</span>
+          )}
         </div>
 
-        {isRunning && scan && (
-          <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#5a5d62' }}>
-            <span>Candidates: <span style={{ color: '#7a7d82' }}>{scan.candidatesFound}</span></span>
-            <span>Scanned: <span style={{ color: '#7a7d82' }}>{scan.stocksDeepScanned}</span></span>
-            <span>Matches: <span style={{ color: '#22c55e' }}>{scan.stocksMatched}</span></span>
-            <span>New: <span style={{ color: '#c084fc' }}>{scan.newStocksFound}</span></span>
-          </div>
-        )}
+        {/* Kuifje status */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              kIsRunning ? 'bg-green-400 animate-pulse' : kuifjeAutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+            }`}
+          />
+          <span style={{ color: kIsRunning ? '#4ade80' : '#6a6d72' }}>
+            {kIsRunning
+              ? `Kuifje${kElapsed ? ` (${kElapsed}s)` : ''}...`
+              : kuifjeAutoScanActive
+                ? 'Kuifje waiting...'
+                : 'Kuifje off'}
+          </span>
+          {kIsRunning && kScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{kScan.stocksScanned}</span>
+              {' / '}
+              <span style={{ color: '#22c55e' }}>{kScan.stocksFound}</span>
+            </span>
+          )}
+          {!kIsRunning && completedKuifjeScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedKuifjeScans}</span>
+          )}
+        </div>
 
+        {/* Next scan times */}
         <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#4a4d52' }}>
-          {completedScans > 0 && (
-            <span>Completed: <span style={{ color: '#6a6d72' }}>{completedScans}</span></span>
+          {autoScanActive && autoScanNext && !zbIsRunning && (
+            <span>Z next: <span style={{ color: '#6a6d72' }}>{autoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
-          {autoScanActive && autoScanNext && !isRunning && (
-            <span>Next: <span style={{ color: '#6a6d72' }}>{autoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+          {kuifjeAutoScanActive && kuifjeAutoScanNext && !kIsRunning && (
+            <span>K next: <span style={{ color: '#6a6d72' }}>{kuifjeAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
-          {!autoScanActive && (
+          {!autoScanActive && !kuifjeAutoScanActive && (
             <span>Auto-scan is off</span>
           )}
         </div>
@@ -157,7 +303,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           <div className="flex items-baseline gap-3 mb-3 px-2">
             <span
               className="font-mono font-bold tracking-tight"
-              style={{ color: '#b0b3b8', fontSize: '2.5rem', lineHeight: 1 }}
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
             >
               {zbStocks.length}
             </span>
@@ -195,7 +341,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           <div className="flex items-baseline gap-3 mb-3 px-2">
             <span
               className="font-mono font-bold tracking-tight"
-              style={{ color: '#b0b3b8', fontSize: '2.5rem', lineHeight: 1 }}
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
             >
               {kuifjeStocks.length}
             </span>
@@ -204,7 +350,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
             </span>
           </div>
           <div style={{ columnCount: 4, columnGap: '0.75rem' }}>
-            {kuifjeStocks.map((stock) => (
+            {sortedKuifjeStocks.map((stock) => (
               <div
                 key={stock.id}
                 className="flex items-center gap-1.5 py-1 border-b"
@@ -234,6 +380,16 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         className="fixed top-14 bottom-0 left-1/2 w-px"
         style={{ backgroundColor: '#2a2d31' }}
       />
+
+      {/* Version — bottom-left */}
+      <div className="fixed bottom-2 left-4 z-50 text-[10px] font-mono font-bold" style={{ color: 'var(--accent-primary)' }}>
+        v{packageJson.version}
+      </div>
     </div>
   );
+
+  // Portal renders outside AuthGuard's z-0 stacking context
+  return typeof document !== 'undefined'
+    ? createPortal(content, document.body)
+    : content;
 }
