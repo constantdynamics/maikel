@@ -5,6 +5,19 @@ import type { Stock as DefogStock, Tab } from './types';
 const KUIFJE_TAB_COLOR = '#22c55e';     // Green
 const ZONNEBLOEM_TAB_COLOR = '#a855f7'; // Purple
 
+/**
+ * Return the minimum of two positive numbers (null-safe).
+ * If one is null/undefined/0, returns the other.
+ */
+function minPositive(a?: number | null, b?: number | null): number | null {
+  const aValid = a != null && a > 0;
+  const bValid = b != null && b > 0;
+  if (aValid && bValid) return Math.min(a!, b!);
+  if (aValid) return a!;
+  if (bValid) return b!;
+  return null;
+}
+
 interface MaikelKuifjeStock {
   id: string;
   ticker: string;
@@ -35,11 +48,9 @@ interface MaikelZonnebloemStock {
 const BUY_LIMIT_MULTIPLIER = 1.15;
 
 /**
- * Calculate suggested buy limit from the best available historical low.
- * Cascade: 3Y low → 5Y low → 1Y low → base_price_median.
- * If all historical lows give a limit above the current price (stale data),
- * falls back to currentPrice × multiplier (the stock IS at a new low).
- * Always returns a value if currentPrice is available.
+ * Calculate suggested buy limit from the MINIMUM of all available historical lows.
+ * Uses: min(5Y low, 3Y low, 1Y low, base_price_median) × 1.15
+ * Returns null if no valid historical lows are available (wait for range fetch).
  */
 function calculateBuyLimit(
   lows: {
@@ -48,34 +59,24 @@ function calculateBuyLimit(
     twelveMonthLow?: number | null;
     basePriceMedian?: number | null;
   },
-  currentPrice?: number | null,
+  _currentPrice?: number | null,
 ): number | null {
-  // Try each low in order of preference
-  const candidates = [
-    lows.threeYearLow,
+  // Collect all valid lows and use the MINIMUM
+  const validLows = [
     lows.fiveYearLow,
+    lows.threeYearLow,
     lows.twelveMonthLow,
     lows.basePriceMedian,
-  ];
+  ].filter((v): v is number => v != null && v > 0);
 
-  for (const low of candidates) {
-    if (low && low > 0) {
-      const limit = Math.round(low * BUY_LIMIT_MULTIPLIER * 100) / 100;
-      // Only use this low if the resulting limit is at or below current price
-      // (otherwise the historical low data is stale)
-      if (!currentPrice || currentPrice <= 0 || limit <= currentPrice) {
-        return limit;
-      }
-    }
+  if (validLows.length === 0) {
+    // No historical lows available — don't guess, return null
+    // The postSyncRangeFetch service will fetch ranges and set the limit
+    return null;
   }
 
-  // All historical lows are stale (limit > current price) or missing.
-  // Use current price as the effective low (stock is at a new low).
-  if (currentPrice && currentPrice > 0) {
-    return Math.round(currentPrice * BUY_LIMIT_MULTIPLIER * 100) / 100;
-  }
-
-  return null;
+  const minLow = Math.min(...validLows);
+  return Math.round(minLow * BUY_LIMIT_MULTIPLIER * 100) / 100;
 }
 
 /**
@@ -227,7 +228,7 @@ function maikelToDefogStock(
     id: uuidv4(),
     ticker,
     name: m.company_name || m.ticker,
-    buyLimit: buyLimit,
+    buyLimit: null, // Don't set limit yet — wait for range data from API
     currentPrice: m.current_price || 0,
     previousClose: 0,
     dayChange: 0,
@@ -240,6 +241,8 @@ function maikelToDefogStock(
     currency: 'USD',
     exchange,
     alertSettings: { customThresholds: [], enabled: true },
+    addedAt: new Date().toISOString(),
+    rangeFetched: false,
   };
 }
 
@@ -430,10 +433,16 @@ export async function syncScannerToDefog(
         updates.ticker = defogTicker;
       }
 
-      // Recalculate buy limit using the Defog stock's current price (more recent than scanner data)
-      // This prevents stale scanner current_price from producing incorrect limits
-      const defogPrice = existing.currentPrice > 0 ? existing.currentPrice : stock.current_price;
-      const recalcLimit = calculateBuyLimit(kuifjeBuyLimitInput(stock)[0], defogPrice);
+      // Recalculate buy limit using ALL available lows:
+      // scanner data + Defog's existing range data (from API fetches)
+      const scannerLows = kuifjeBuyLimitInput(stock)[0];
+      const recalcLimit = calculateBuyLimit({
+        ...scannerLows,
+        // Also include Defog's range data (from postSyncRangeFetch / weekendTask)
+        fiveYearLow: minPositive(scannerLows.fiveYearLow, existing.year5Low),
+        threeYearLow: minPositive(scannerLows.threeYearLow, existing.year3Low),
+        twelveMonthLow: minPositive(scannerLows.twelveMonthLow, existing.week52Low > 0 ? existing.week52Low : null),
+      });
       if (recalcLimit != null) {
         updates.buyLimit = recalcLimit;
       }
@@ -444,7 +453,7 @@ export async function syncScannerToDefog(
         kuifjeUpdates.set(existing.id, { ...prev, ...updates });
       }
     } else {
-      // New stock
+      // New stock — buyLimit is null, will be set by postSyncRangeFetch
       kuifjeNewStocks.push(maikelToDefogStock(stock, buyLimit));
       // Also add to maps so subsequent duplicates within this batch are caught
       kuifjeMaps.tickerSet.add(defogTicker);
@@ -475,9 +484,16 @@ export async function syncScannerToDefog(
         updates.ticker = defogTicker;
       }
 
-      // Recalculate buy limit using the Defog stock's current price (more recent than scanner data)
-      const defogPrice = existing.currentPrice > 0 ? existing.currentPrice : stock.current_price;
-      const recalcLimit = calculateBuyLimit(zbBuyLimitInput(stock)[0], defogPrice);
+      // Recalculate buy limit using ALL available lows:
+      // scanner data + Defog's existing range data (from API fetches)
+      const scannerLows = zbBuyLimitInput(stock)[0];
+      const recalcLimit = calculateBuyLimit({
+        ...scannerLows,
+        // Also include Defog's range data (from postSyncRangeFetch / weekendTask)
+        fiveYearLow: minPositive(scannerLows.fiveYearLow, existing.year5Low),
+        threeYearLow: minPositive(scannerLows.threeYearLow, existing.year3Low),
+        twelveMonthLow: minPositive(scannerLows.twelveMonthLow, existing.week52Low > 0 ? existing.week52Low : null),
+      });
       if (recalcLimit != null) {
         updates.buyLimit = recalcLimit;
       }
@@ -487,6 +503,7 @@ export async function syncScannerToDefog(
         zbUpdates.set(existing.id, { ...prev, ...updates });
       }
     } else {
+      // New stock — buyLimit is null, will be set by postSyncRangeFetch
       zbNewStocks.push(maikelToDefogStock(stock, buyLimit));
       zbMaps.tickerSet.add(defogTicker);
       zbMaps.nameMap.set(normalizeCompanyName(stock.company_name), zbNewStocks[zbNewStocks.length - 1]);
@@ -528,14 +545,17 @@ export async function syncScannerToDefog(
               ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
             };
           }
-          // Fill in null buyLimits from scanner data, using Defog's current price
+          // Fill in null buyLimits from scanner data + Defog's range data
           if (s.buyLimit == null) {
             const scanner = kuifjeByTicker.get(s.ticker);
-            if (scanner) {
-              const defogPrice = s.currentPrice > 0 ? s.currentPrice : scanner.current_price;
-              const newLimit = calculateBuyLimit(kuifjeBuyLimitInput(scanner)[0], defogPrice);
-              if (newLimit != null) return { ...s, buyLimit: newLimit };
-            }
+            const scannerLows = scanner ? kuifjeBuyLimitInput(scanner)[0] : {};
+            const newLimit = calculateBuyLimit({
+              ...scannerLows,
+              fiveYearLow: minPositive(scannerLows.fiveYearLow, s.year5Low),
+              threeYearLow: minPositive(scannerLows.threeYearLow, s.year3Low),
+              twelveMonthLow: minPositive(scannerLows.twelveMonthLow, s.week52Low > 0 ? s.week52Low : null),
+            });
+            if (newLimit != null) return { ...s, buyLimit: newLimit };
           }
           return s;
         });
@@ -554,11 +574,14 @@ export async function syncScannerToDefog(
           }
           if (s.buyLimit == null) {
             const scanner = zbByTicker.get(s.ticker);
-            if (scanner) {
-              const defogPrice = s.currentPrice > 0 ? s.currentPrice : scanner.current_price;
-              const newLimit = calculateBuyLimit(zbBuyLimitInput(scanner)[0], defogPrice);
-              if (newLimit != null) return { ...s, buyLimit: newLimit };
-            }
+            const scannerLows = scanner ? zbBuyLimitInput(scanner)[0] : {};
+            const newLimit = calculateBuyLimit({
+              ...scannerLows,
+              fiveYearLow: minPositive(scannerLows.fiveYearLow, s.year5Low),
+              threeYearLow: minPositive(scannerLows.threeYearLow, s.year3Low),
+              twelveMonthLow: minPositive(scannerLows.twelveMonthLow, s.week52Low > 0 ? s.week52Low : null),
+            });
+            if (newLimit != null) return { ...s, buyLimit: newLimit };
           }
           return s;
         });

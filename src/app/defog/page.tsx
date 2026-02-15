@@ -5,6 +5,7 @@ import { useStore } from '@/lib/defog/store';
 import { Dashboard } from '@/components/defog/Dashboard';
 import { syncScannerToDefog } from '@/lib/defog/scannerSync';
 import { SmartRefreshEngine } from '@/lib/defog/services/smartRefresh';
+import { fetchRangesForNewStocks, recalculateAllBuyLimits } from '@/lib/defog/services/postSyncRangeFetch';
 import { saveToLocalStorage, loadFromLocalStorage, getSessionPassword } from '@/lib/defog/utils/storage';
 import { loadDefogStateFromCloud, scheduleCloudSave } from '@/lib/defog/services/maikelCloudSync';
 
@@ -220,7 +221,18 @@ export default function DefogPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [ready]);
 
-  // ── 3. Scanner sync ──
+  // ── Helper: update a single stock in a tab ──
+  const updateStockInTab = useCallback((tabId: string, stockId: string, updates: Record<string, unknown>) => {
+    useStore.setState((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, stocks: tab.stocks.map((s) => s.id === stockId ? { ...s, ...updates } : s) }
+          : tab
+      ),
+    }));
+  }, []);
+
+  // ── 3. Scanner sync + post-sync range fetch ──
   const runSync = useCallback(async () => {
     try {
       const result = await syncScannerToDefog(
@@ -234,10 +246,31 @@ export default function DefogPage() {
         setSyncMessage(`Synced: +${parts.join(', ')}`);
         setTimeout(() => setSyncMessage(null), 4000);
       }
+
+      // Recalculate buy limits for existing stocks that have range data
+      // (fixes limits that were set with old cascade logic)
+      recalculateAllBuyLimits(
+        () => useStore.getState().tabs,
+        updateStockInTab,
+      );
+
+      // Fetch 5Y/3Y/1Y ranges for newly added stocks (< 1 day old)
+      // This runs in the background — doesn't block the UI
+      fetchRangesForNewStocks(
+        () => useStore.getState().tabs,
+        updateStockInTab,
+      ).then((rangeResult) => {
+        if (rangeResult.updated > 0) {
+          setSyncMessage(`Ranges fetched: ${rangeResult.updated} stocks updated`);
+          setTimeout(() => setSyncMessage(null), 4000);
+        }
+      }).catch((e) => {
+        console.error('Post-sync range fetch failed:', e);
+      });
     } catch (e) {
       console.error('Scanner sync failed:', e);
     }
-  }, []);
+  }, [updateStockInTab]);
 
   useEffect(() => {
     if (ready) runSync();

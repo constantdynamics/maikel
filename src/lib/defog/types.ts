@@ -35,6 +35,9 @@ export interface Stock {
   // Purchased tracking (manual)
   purchasedPrice?: number;  // Manually set purchase price
   purchasedDate?: string;   // Date when marked as purchased
+  // Sync tracking
+  addedAt?: string;  // ISO timestamp when stock was added to Defog via scanner sync
+  rangeFetched?: boolean;  // True if 5Y/3Y/1Y range has been fetched from API
 }
 
 export interface ColumnVisibility {
