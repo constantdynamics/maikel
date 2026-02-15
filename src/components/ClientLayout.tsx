@@ -63,7 +63,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-[var(--bg-primary)]">
       <Navbar />
-      <main className="pt-[52px] isolate">
+      <main className="relative z-0 pt-[56px]">
         <div className="max-w-screen-2xl mx-auto p-4">{children}</div>
       </main>
       <VersionBadge />
