@@ -90,10 +90,7 @@ export function Dashboard() {
   useEffect(() => {
     const el = document.getElementById('navbar-defog-slot');
     setNavbarSlot(el);
-    return () => {
-      // Clear the slot when unmounting (navigating away from Defog)
-      if (el) el.innerHTML = '';
-    };
+    // React's portal cleanup handles unmounting automatically - no manual cleanup needed
   }, []);
 
   const [showAddStock, setShowAddStock] = useState(false);
