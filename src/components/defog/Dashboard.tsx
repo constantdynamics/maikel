@@ -1510,7 +1510,7 @@ export function Dashboard() {
   if (showArchive) {
     return (
       <div className={`min-h-screen ${fontClass}`} style={{ backgroundColor: colors.bg }}>
-        <header className="sticky top-[56px] z-20" style={{ backgroundColor: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
+        <header className="sticky top-0 z-20" style={{ backgroundColor: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
           <div className="px-6 py-3 flex items-center justify-between">
             <button
               onClick={() => setShowArchive(false)}
@@ -1537,7 +1537,7 @@ export function Dashboard() {
   return (
     <div className={`min-h-screen flex flex-col ${fontClass}`} style={{ backgroundColor: colors.bg, overflowX: 'clip' }}>
       {/* Header - floating bar with backdrop blur */}
-      <header className="sticky top-[56px] z-20 backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
+      <header className="sticky top-0 z-20 backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
         <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
           <button
             onClick={() => {
@@ -2568,7 +2568,7 @@ export function Dashboard() {
         <div className="fixed bottom-4 right-4 flex flex-col items-center gap-2 z-20">
           {/* Scroll to top button */}
           <button
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            onClick={() => (document.getElementById('main-scroll') || window).scrollTo({ top: 0, behavior: 'smooth' })}
             className="w-10 h-10 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
             title="Scroll naar boven"
           >

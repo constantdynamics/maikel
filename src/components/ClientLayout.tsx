@@ -61,9 +61,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   if (!authenticated) return null;
 
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)]">
+    <div className="h-screen flex flex-col bg-[var(--bg-primary)] overflow-hidden">
       <Navbar />
-      <main className="isolate">
+      <main id="main-scroll" className="flex-1 overflow-y-auto">
         <div className="max-w-screen-2xl mx-auto p-4">{children}</div>
       </main>
       <VersionBadge />

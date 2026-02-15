@@ -316,7 +316,7 @@ export default function DefogPage() {
   return (
     <>
       <div
-        className="defog-container relative"
+        className="defog-container"
         style={{
           '--color-bg-primary': '#1a1a1a',
           '--color-bg-secondary': '#2d2d2d',

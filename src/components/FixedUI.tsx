@@ -6,16 +6,18 @@ export default function FixedUI() {
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   useEffect(() => {
+    const scrollEl = document.getElementById('main-scroll') || window;
     function handleScroll() {
-      setShowScrollTop(window.scrollY > 300);
+      const scrollTop = scrollEl instanceof Window ? scrollEl.scrollY : (scrollEl as HTMLElement).scrollTop;
+      setShowScrollTop(scrollTop > 300);
     }
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollEl.removeEventListener('scroll', handleScroll);
   }, []);
 
   function scrollToTop() {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    (document.getElementById('main-scroll') || window).scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   return (
