@@ -134,8 +134,11 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* Right: theme picker + logout */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {/* Right: defog slot + theme picker + logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Portal slot for Defog toolbar buttons */}
+          <div id="navbar-defog-slot" style={{ display: 'flex', alignItems: 'center', gap: '4px' }} />
+
           {/* Theme picker */}
           <div ref={themeRef} style={{ position: 'relative' }}>
             <button

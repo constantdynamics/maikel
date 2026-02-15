@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Cog6ToothIcon,
   ArrowPathIcon,
@@ -83,6 +84,17 @@ import { useViewMode } from '@/lib/defog/useViewMode';
 export function Dashboard() {
   const store = useStore();
   const activeTab = useStore(selectActiveTab);
+
+  const [navbarSlot, setNavbarSlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = document.getElementById('navbar-defog-slot');
+    setNavbarSlot(el);
+    return () => {
+      // Clear the slot when unmounting (navigating away from Defog)
+      if (el) el.innerHTML = '';
+    };
+  }, []);
 
   const [showAddStock, setShowAddStock] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1536,275 +1548,252 @@ export function Dashboard() {
 
   return (
     <div className={`min-h-screen flex flex-col ${fontClass}`} style={{ backgroundColor: colors.bg, overflowX: 'clip' }}>
-      {/* Header - floating bar with backdrop blur */}
-      <header className="backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
-        <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
-          <button
-            onClick={() => {
-              // Navigate to first tab (home)
-              const firstTab = store.tabs[0];
-              if (firstTab) {
-                store.setActiveTab(firstTab.id);
-              }
-            }}
-            className="text-lg sm:text-xl font-bold hover:opacity-80 transition-opacity cursor-pointer"
-            title="Home"
-          >
-            <DefogLogo size="md" />
-          </button>
+      {/* Defog toolbar buttons rendered into Navbar via portal */}
+      {navbarSlot && createPortal(
+        (() => {
+          const headerButtons = store.settings.headerButtonVisibility || {
+            search: true, apiStatus: true, debugLog: false, refresh: true,
+            notifications: true, archive: true, settings: true, syncStatus: true,
+          };
 
-          <div className="flex items-center gap-2">
-            {/* Get header button visibility settings */}
-            {(() => {
-              const headerButtons = store.settings.headerButtonVisibility || {
-                search: true, apiStatus: true, debugLog: false, refresh: true,
-                notifications: true, archive: true, settings: true, syncStatus: true,
-              };
+          return (
+            <>
+              {headerButtons.search && (
+                <SearchBar
+                  tabs={store.tabs}
+                  onStockSelect={handleStockSelect}
+                  onAddNew={() => setShowAddStock(true)}
+                />
+              )}
 
-              return (
+              {/* Sync Status indicator */}
+              {headerButtons.syncStatus && syncStatus !== 'idle' && (
+                <div
+                  className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
+                    syncStatus === 'uploading' || syncStatus === 'downloading'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : syncStatus === 'success'
+                      ? 'bg-green-500/20 text-green-400'
+                      : syncStatus === 'error'
+                      ? 'bg-red-500/20 text-red-400'
+                      : ''
+                  }`}
+                  title={
+                    syncStatus === 'uploading' ? 'Uploading to cloud...' :
+                    syncStatus === 'downloading' ? 'Downloading from cloud...' :
+                    syncStatus === 'success' ? 'Sync complete' :
+                    syncStatus === 'error' ? 'Sync error' : ''
+                  }
+                >
+                  {(syncStatus === 'uploading' || syncStatus === 'downloading') && (
+                    <span className="animate-spin">↻</span>
+                  )}
+                  {syncStatus === 'uploading' ? 'Syncing...' :
+                   syncStatus === 'downloading' ? 'Loading...' :
+                   syncStatus === 'success' ? 'Synced' :
+                   syncStatus === 'error' ? 'Sync Error' : ''}
+                </div>
+              )}
+
+              {/* API Usage indicator */}
+              {headerButtons.apiStatus && apiStatus && (
+                <div
+                  className={`text-xs px-2 py-1 rounded ${
+                    apiStatus.available <= 0
+                      ? 'bg-red-500/20 text-red-400'
+                      : apiStatus.available < 10
+                      ? 'bg-yellow-500/20 text-yellow-400'
+                      : 'bg-green-500/20 text-green-400'
+                  }`}
+                  title={`API: ${apiStatus.used}/${apiStatus.limit} calls used today. ${apiStatus.available} available now.`}
+                >
+                  {apiStatus.available <= 0 ? 'API Limit' : `${apiStatus.available}`}
+                </div>
+              )}
+
+              {headerButtons.debugLog && (
+                <button
+                  onClick={() => setShowDebugPanel(true)}
+                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                  title="Debug Log - See API activity"
+                >
+                  <CommandLineIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                </button>
+              )}
+
+              {headerButtons.refresh && (
                 <>
-                  {headerButtons.search && (
-                    <SearchBar
-                      tabs={store.tabs}
-                      onStockSelect={handleStockSelect}
-                      onAddNew={() => setShowAddStock(true)}
-                    />
-                  )}
-
-                  <div className="flex items-center gap-1">
-                    {/* Sync Status indicator */}
-                    {headerButtons.syncStatus && syncStatus !== 'idle' && (
-                      <div
-                        className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
-                          syncStatus === 'uploading' || syncStatus === 'downloading'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : syncStatus === 'success'
-                            ? 'bg-green-500/20 text-green-400'
-                            : syncStatus === 'error'
-                            ? 'bg-red-500/20 text-red-400'
-                            : ''
-                        }`}
-                        title={
-                          syncStatus === 'uploading' ? 'Uploading to cloud...' :
-                          syncStatus === 'downloading' ? 'Downloading from cloud...' :
-                          syncStatus === 'success' ? 'Sync complete' :
-                          syncStatus === 'error' ? 'Sync error' : ''
-                        }
-                      >
-                        {(syncStatus === 'uploading' || syncStatus === 'downloading') && (
-                          <span className="animate-spin">↻</span>
-                        )}
-                        {syncStatus === 'uploading' ? 'Syncing...' :
-                         syncStatus === 'downloading' ? 'Loading...' :
-                         syncStatus === 'success' ? 'Synced' :
-                         syncStatus === 'error' ? 'Sync Error' : ''}
-                      </div>
-                    )}
-                    {/* API Usage indicator */}
-                    {headerButtons.apiStatus && apiStatus && (
-                      <div
-                        className={`text-xs px-2 py-1 rounded ${
-                          apiStatus.available <= 0
-                            ? 'bg-red-500/20 text-red-400'
-                            : apiStatus.available < 10
-                            ? 'bg-yellow-500/20 text-yellow-400'
-                            : 'bg-green-500/20 text-green-400'
-                        }`}
-                        title={`API: ${apiStatus.used}/${apiStatus.limit} calls used today. ${apiStatus.available} available now.`}
-                      >
-                        {apiStatus.available <= 0 ? 'API Limit' : `${apiStatus.available}`}
-                      </div>
-                    )}
-                    {headerButtons.debugLog && (
-                      <button
-                        onClick={() => setShowDebugPanel(true)}
-                        className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                        title="Debug Log - See API activity"
-                      >
-                        <CommandLineIcon className="w-5 h-5 text-white" />
-                      </button>
-                    )}
-                    {headerButtons.refresh && (
-                      <>
-                        {/* Auto-scan toggle with countdown */}
-                        <div className="relative flex items-center">
-                          <button
-                            onClick={() => store.updateSettings({ autoScanEnabled: !store.settings.autoScanEnabled })}
-                            className={`p-2 rounded-lg transition-colors ${
-                              store.settings.autoScanEnabled
-                                ? 'bg-green-500/20 hover:bg-green-500/30'
-                                : 'hover:bg-white/10'
-                            }`}
-                            title={store.settings.autoScanEnabled
-                              ? 'Auto-scan actief (elke 5 min) - klik om te stoppen'
-                              : 'Auto-scan uit - klik om te starten'
-                            }
-                          >
-                            {store.settings.autoScanEnabled ? (
-                              <PauseIcon className="w-5 h-5 text-green-400" />
-                            ) : (
-                              <PlayIcon className="w-5 h-5 text-white" />
-                            )}
-                          </button>
-                          {/* Countdown indicator */}
-                          {store.settings.autoScanEnabled && autoScanCountdown > 0 && (
-                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] text-green-400 font-mono whitespace-nowrap">
-                              {Math.floor(autoScanCountdown / 60)}:{(autoScanCountdown % 60).toString().padStart(2, '0')}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => setShowQueueModal(true)}
-                          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                          title="Ververs wachtrij beheren"
-                        >
-                          <QueueListIcon className="w-5 h-5 text-white" />
-                        </button>
-                        {/* Scan log button */}
-                        <button
-                          onClick={() => setShowScanLogModal(true)}
-                          className="p-2 hover:bg-white/10 rounded-lg transition-colors relative"
-                          title="Scan log bekijken"
-                        >
-                          <span className="text-lg">🔍</span>
-                          {store.scanLog.length > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-[#00ff88] text-black text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                              {store.scanLog.length > 99 ? '99+' : store.scanLog.length}
-                            </span>
-                          )}
-                        </button>
-                        {/* Undo button */}
-                        <button
-                          onClick={() => setShowUndoModal(true)}
-                          className="p-2 hover:bg-white/10 rounded-lg transition-colors relative"
-                          title="Acties ongedaan maken"
-                        >
-                          <span className="text-lg">↩</span>
-                          {store.actionLog.length > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-yellow-500 text-black text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                              {store.actionLog.length > 99 ? '99+' : store.actionLog.length}
-                            </span>
-                          )}
-                        </button>
-                        {/* Manual 5-year data fetch button */}
-                        <button
-                          onClick={handleManualWeekendTask}
-                          disabled={isManualWeekendTaskRunning || !canRunWeekendTaskManually() || (weekendTaskProgress?.status === 'running')}
-                          className={`p-2 rounded-lg transition-colors ${
-                            weekendTaskProgress?.status === 'running'
-                              ? 'bg-purple-500/20'
-                              : 'hover:bg-white/10'
-                          } ${isManualWeekendTaskRunning || !canRunWeekendTaskManually() ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          title={
-                            weekendTaskProgress?.status === 'running'
-                              ? `5Y data ophalen: ${weekendTaskProgress.current}/${weekendTaskProgress.total}`
-                              : !canRunWeekendTaskManually()
-                              ? '5Y data recent opgehaald (wacht 12u)'
-                              : 'Handmatig 5-jaar data ophalen voor alle aandelen'
-                          }
-                        >
-                          <CalendarDaysIcon className={`w-5 h-5 ${
-                            weekendTaskProgress?.status === 'running'
-                              ? 'text-purple-400'
-                              : 'text-white'
-                          }`} />
-                        </button>
-                        <button
-                          onClick={refreshStocks}
-                          disabled={isRefreshing || (apiStatus !== null && apiStatus.available <= 0)}
-                          className={`p-2 hover:bg-white/10 rounded-lg transition-colors ${
-                            isRefreshing ? 'animate-spin' : ''
-                          } ${apiStatus !== null && apiStatus.available <= 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          title={
-                            apiStatus && apiStatus.available <= 0
-                              ? 'API limit reached - wait for reset'
-                              : lastRefresh
-                              ? `Last refresh: ${lastRefresh.toLocaleTimeString()}`
-                              : 'Refresh stocks'
-                          }
-                        >
-                          <ArrowPathIcon className="w-5 h-5 text-white" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {headerButtons.notifications && (
-                    <Notifications
-                      notifications={store.notifications}
-                      onMarkRead={store.markNotificationRead}
-                      onClearAll={store.clearNotifications}
-                    />
-                  )}
-
-                  {headerButtons.archive && (
-                    <button
-                      onClick={() => setShowArchive(true)}
-                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                      title="Archive"
-                    >
-                      <ArchiveBoxIcon className="w-5 h-5 text-white" />
-                    </button>
-                  )}
-
-                  {/* Tiles / List Toggle */}
-                  <button
-                    onClick={() => handleDashboardViewChange(dashboardView === 'list' ? 'tiles' : 'list')}
-                    className={`p-2 hover:bg-white/10 rounded-lg transition-colors ${
-                      dashboardView === 'tiles' ? 'bg-white/5' : ''
-                    }`}
-                    title={dashboardView === 'list' ? 'Switch to mini tiles view' : 'Switch to list view'}
-                  >
-                    {dashboardView === 'tiles' ? (
-                      <QueueListIcon className="w-5 h-5 text-[#00ff88]" />
-                    ) : (
-                      <Squares2X2Icon className="w-5 h-5 text-white" />
-                    )}
-                  </button>
-
-                  {/* View Mode Toggle - always visible */}
+                  {/* Auto-scan toggle with countdown */}
                   <div className="relative flex items-center">
                     <button
-                      onClick={() => {
-                        // Cycle through: auto -> mobile -> desktop -> auto
-                        const nextMode = viewMode === 'auto' ? 'mobile' : viewMode === 'mobile' ? 'desktop' : 'auto';
-                        handleViewModeChange(nextMode);
-                      }}
-                      className={`p-2 hover:bg-white/10 rounded-lg transition-colors ${
-                        viewMode !== 'auto' ? 'bg-white/5' : ''
+                      onClick={() => store.updateSettings({ autoScanEnabled: !store.settings.autoScanEnabled })}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        store.settings.autoScanEnabled
+                          ? 'bg-green-500/20 hover:bg-green-500/30'
+                          : 'hover:bg-white/10'
                       }`}
-                      title={`View: ${viewMode === 'auto' ? 'Auto' : viewMode === 'mobile' ? 'Mobile' : 'Desktop'} (click to change)`}
+                      title={store.settings.autoScanEnabled
+                        ? 'Auto-scan actief (elke 5 min) - klik om te stoppen'
+                        : 'Auto-scan uit - klik om te starten'
+                      }
                     >
-                      {viewMode === 'auto' ? (
-                        <ArrowsRightLeftIcon className="w-5 h-5 text-white" />
-                      ) : viewMode === 'mobile' ? (
-                        <DevicePhoneMobileIcon className="w-5 h-5 text-[#00ff88]" />
+                      {store.settings.autoScanEnabled ? (
+                        <PauseIcon className="w-4 h-4 text-green-400" />
                       ) : (
-                        <ComputerDesktopIcon className="w-5 h-5 text-[#00ff88]" />
+                        <PlayIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                       )}
                     </button>
-                    {/* Small indicator showing current effective view */}
-                    {viewMode !== 'auto' && (
-                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-[#00ff88] font-medium">
-                        {viewMode === 'mobile' ? 'M' : 'D'}
+                    {store.settings.autoScanEnabled && autoScanCountdown > 0 && (
+                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-green-400 font-mono whitespace-nowrap">
+                        {Math.floor(autoScanCountdown / 60)}:{(autoScanCountdown % 60).toString().padStart(2, '0')}
                       </span>
                     )}
                   </div>
-
-                  {headerButtons.settings && (
-                    <button
-                      onClick={() => setShowSettings(true)}
-                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                    >
-                      <Cog6ToothIcon className="w-5 h-5 text-white" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setShowQueueModal(true)}
+                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                    title="Ververs wachtrij beheren"
+                  >
+                    <QueueListIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                  </button>
+                  <button
+                    onClick={() => setShowScanLogModal(true)}
+                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors relative"
+                    title="Scan log bekijken"
+                  >
+                    <span className="text-sm">🔍</span>
+                    {store.scanLog.length > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-[#00ff88] text-black text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                        {store.scanLog.length > 99 ? '99+' : store.scanLog.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setShowUndoModal(true)}
+                    className="p-1.5 hover:bg-white/10 rounded-lg transition-colors relative"
+                    title="Acties ongedaan maken"
+                  >
+                    <span className="text-sm">↩</span>
+                    {store.actionLog.length > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-yellow-500 text-black text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                        {store.actionLog.length > 99 ? '99+' : store.actionLog.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleManualWeekendTask}
+                    disabled={isManualWeekendTaskRunning || !canRunWeekendTaskManually() || (weekendTaskProgress?.status === 'running')}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      weekendTaskProgress?.status === 'running'
+                        ? 'bg-purple-500/20'
+                        : 'hover:bg-white/10'
+                    } ${isManualWeekendTaskRunning || !canRunWeekendTaskManually() ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={
+                      weekendTaskProgress?.status === 'running'
+                        ? `5Y data ophalen: ${weekendTaskProgress.current}/${weekendTaskProgress.total}`
+                        : !canRunWeekendTaskManually()
+                        ? '5Y data recent opgehaald (wacht 12u)'
+                        : 'Handmatig 5-jaar data ophalen voor alle aandelen'
+                    }
+                  >
+                    <CalendarDaysIcon className={`w-4 h-4 ${
+                      weekendTaskProgress?.status === 'running'
+                        ? 'text-purple-400'
+                        : ''
+                    }`} style={weekendTaskProgress?.status !== 'running' ? { color: 'var(--text-secondary)' } : undefined} />
+                  </button>
+                  <button
+                    onClick={refreshStocks}
+                    disabled={isRefreshing || (apiStatus !== null && apiStatus.available <= 0)}
+                    className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${
+                      isRefreshing ? 'animate-spin' : ''
+                    } ${apiStatus !== null && apiStatus.available <= 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={
+                      apiStatus && apiStatus.available <= 0
+                        ? 'API limit reached - wait for reset'
+                        : lastRefresh
+                        ? `Last refresh: ${lastRefresh.toLocaleTimeString()}`
+                        : 'Refresh stocks'
+                    }
+                  >
+                    <ArrowPathIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                  </button>
                 </>
-              );
-            })()}
-          </div>
-        </div>
-      </header>
+              )}
+
+              {headerButtons.notifications && (
+                <Notifications
+                  notifications={store.notifications}
+                  onMarkRead={store.markNotificationRead}
+                  onClearAll={store.clearNotifications}
+                />
+              )}
+
+              {headerButtons.archive && (
+                <button
+                  onClick={() => setShowArchive(true)}
+                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                  title="Archive"
+                >
+                  <ArchiveBoxIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                </button>
+              )}
+
+              {/* Tiles / List Toggle */}
+              <button
+                onClick={() => handleDashboardViewChange(dashboardView === 'list' ? 'tiles' : 'list')}
+                className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${
+                  dashboardView === 'tiles' ? 'bg-white/5' : ''
+                }`}
+                title={dashboardView === 'list' ? 'Switch to mini tiles view' : 'Switch to list view'}
+              >
+                {dashboardView === 'tiles' ? (
+                  <QueueListIcon className="w-4 h-4 text-[#00ff88]" />
+                ) : (
+                  <Squares2X2Icon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                )}
+              </button>
+
+              {/* View Mode Toggle */}
+              <div className="relative flex items-center">
+                <button
+                  onClick={() => {
+                    const nextMode = viewMode === 'auto' ? 'mobile' : viewMode === 'mobile' ? 'desktop' : 'auto';
+                    handleViewModeChange(nextMode);
+                  }}
+                  className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${
+                    viewMode !== 'auto' ? 'bg-white/5' : ''
+                  }`}
+                  title={`View: ${viewMode === 'auto' ? 'Auto' : viewMode === 'mobile' ? 'Mobile' : 'Desktop'} (click to change)`}
+                >
+                  {viewMode === 'auto' ? (
+                    <ArrowsRightLeftIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                  ) : viewMode === 'mobile' ? (
+                    <DevicePhoneMobileIcon className="w-4 h-4 text-[#00ff88]" />
+                  ) : (
+                    <ComputerDesktopIcon className="w-4 h-4 text-[#00ff88]" />
+                  )}
+                </button>
+                {viewMode !== 'auto' && (
+                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[7px] text-[#00ff88] font-medium">
+                    {viewMode === 'mobile' ? 'M' : 'D'}
+                  </span>
+                )}
+              </div>
+
+              {headerButtons.settings && (
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <Cog6ToothIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                </button>
+              )}
+            </>
+          );
+        })(),
+        navbarSlot
+      )}
 
       {/* Refresh Progress */}
       {refreshProgress && (

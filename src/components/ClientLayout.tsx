@@ -65,7 +65,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       <div className="sticky top-0 z-50">
         <Navbar />
       </div>
-      <main className="relative z-0">
+      <main className="relative">
         <div className="max-w-screen-2xl mx-auto p-4">{children}</div>
       </main>
       <VersionBadge />
