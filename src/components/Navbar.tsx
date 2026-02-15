@@ -1,12 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState, useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import packageJson from '../../package.json';
-
-const APP_VERSION = packageJson.version;
 
 const THEMES = [
   { id: 'sunflower', name: 'Sunflower', icon: '🌻' },
@@ -34,15 +30,27 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const [theme, setTheme] = useState('midnight');
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const themeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('theme') || 'sunflower';
     setTheme(saved);
     document.documentElement.setAttribute('data-theme', saved);
   }, []);
+
+  // Close theme menu on outside click
+  useEffect(() => {
+    if (!themeMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
+        setThemeMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [themeMenuOpen]);
 
   function handleThemeChange(newTheme: string) {
     setTheme(newTheme);
@@ -59,68 +67,159 @@ export default function Navbar() {
   const currentTheme = THEMES.find(t => t.id === theme) || THEMES[0];
 
   return (
-    <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3 relative z-50 shrink-0">
-      <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="flex items-center">
+    <nav
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderBottom: '1px solid var(--border-color)',
+        padding: '12px 16px',
+        flexShrink: 0,
+        position: 'relative',
+        zIndex: 9999,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: '1536px',
+          margin: '0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        {/* Left: logo + nav links */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <a href="/dashboard" style={{ display: 'flex', alignItems: 'center' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
               alt="Professor Zonnebloem"
               width={40}
               height={40}
-              className="rounded-lg"
+              style={{ borderRadius: '8px' }}
             />
-          </Link>
-          <div className="flex items-center gap-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                  pathname === item.href
-                    ? 'bg-[var(--accent-primary)] text-white'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+          </a>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    textDecoration: 'none',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s, color 0.15s',
+                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
+                    color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                    }
+                  }}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
+
+        {/* Right: theme picker + logout */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Theme picker */}
+          <div ref={themeRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setThemeMenuOpen(!themeMenuOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
+                transition: 'background-color 0.15s',
+              }}
               title={currentTheme.name}
             >
-              <span>{currentTheme.icon}</span>
+              {currentTheme.icon}
             </button>
+
             {themeMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setThemeMenuOpen(false)} />
-                <div className="absolute right-0 mt-2 w-40 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-lg z-20 py-1">
-                  {THEMES.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => handleThemeChange(t.id)}
-                      className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 hover:bg-[var(--bg-tertiary)] transition-colors ${
-                        theme === t.id ? 'text-[var(--accent-primary)]' : 'text-[var(--text-secondary)]'
-                      }`}
-                    >
-                      <span>{t.icon}</span>
-                      <span>{t.name}</span>
-                      {theme === t.id && <span className="ml-auto">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              </>
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '100%',
+                  marginTop: '8px',
+                  width: '160px',
+                  backgroundColor: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                  zIndex: 10,
+                  padding: '4px 0',
+                }}
+              >
+                {THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleThemeChange(t.id)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      textAlign: 'left',
+                      fontSize: '14px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      backgroundColor: 'transparent',
+                      color: theme === t.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                      transition: 'background-color 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--bg-tertiary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <span>{t.icon}</span>
+                    <span>{t.name}</span>
+                    {theme === t.id && <span style={{ marginLeft: 'auto' }}>✓</span>}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
+
+          {/* Logout */}
           <button
             onClick={handleLogout}
-            className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            style={{
+              fontSize: '14px',
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: 'transparent',
+              color: 'var(--text-muted)',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
           >
             Sign Out
           </button>
