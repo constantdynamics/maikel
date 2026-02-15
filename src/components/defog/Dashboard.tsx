@@ -1536,23 +1536,9 @@ export function Dashboard() {
 
   return (
     <div className={`min-h-screen flex flex-col ${fontClass}`} style={{ backgroundColor: colors.bg, overflowX: 'clip' }}>
-      {/* Header - floating bar with backdrop blur */}
-      <header className="backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
-        <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
-          <button
-            onClick={() => {
-              // Navigate to first tab (home)
-              const firstTab = store.tabs[0];
-              if (firstTab) {
-                store.setActiveTab(firstTab.id);
-              }
-            }}
-            className="text-lg sm:text-xl font-bold hover:opacity-80 transition-opacity cursor-pointer"
-            title="Home"
-          >
-            <DefogLogo size="md" />
-          </button>
-
+      {/* Toolbar - simple action bar without prominent styling */}
+      <div className="mx-2 sm:mx-4 mt-2">
+        <div className="px-4 sm:px-6 py-2 flex items-center justify-end">
           <div className="flex items-center gap-2">
             {/* Get header button visibility settings */}
             {(() => {
@@ -1804,7 +1790,7 @@ export function Dashboard() {
             })()}
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Refresh Progress */}
       {refreshProgress && (
