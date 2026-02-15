@@ -1510,7 +1510,7 @@ export function Dashboard() {
   if (showArchive) {
     return (
       <div className={`min-h-screen ${fontClass}`} style={{ backgroundColor: colors.bg }}>
-        <header className="sticky top-0 z-20" style={{ backgroundColor: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
+        <header style={{ backgroundColor: colors.bgCard, borderBottom: `1px solid ${colors.border}` }}>
           <div className="px-6 py-3 flex items-center justify-between">
             <button
               onClick={() => setShowArchive(false)}
@@ -1537,7 +1537,7 @@ export function Dashboard() {
   return (
     <div className={`min-h-screen flex flex-col ${fontClass}`} style={{ backgroundColor: colors.bg, overflowX: 'clip' }}>
       {/* Header - floating bar with backdrop blur */}
-      <header className="sticky top-0 z-20 backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
+      <header className="backdrop-blur-md shadow-lg shadow-black/30 mx-2 sm:mx-4 mt-2 rounded-xl" style={{ backgroundColor: `${colors.bgCard}dd`, border: `1px solid ${colors.border}` }}>
         <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center justify-between">
           <button
             onClick={() => {
