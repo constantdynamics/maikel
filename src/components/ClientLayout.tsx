@@ -62,10 +62,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)]">
-      <div className="sticky top-0 z-50">
+      <div className="sticky top-0" style={{ zIndex: 9999 }}>
         <Navbar />
       </div>
-      <main className="relative">
+      <main style={{ position: 'relative', zIndex: 0, isolation: 'isolate' }}>
         <div className="max-w-screen-2xl mx-auto p-4">{children}</div>
       </main>
       <VersionBadge />
