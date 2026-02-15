@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
 const THEMES = [
@@ -85,7 +86,7 @@ export default function Navbar() {
       >
         {/* Left: logo + nav links */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <a href="/dashboard" style={{ display: 'flex', alignItems: 'center' }}>
+          <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
@@ -94,13 +95,13 @@ export default function Navbar() {
               height={40}
               style={{ borderRadius: '8px' }}
             />
-          </a>
+          </Link>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
-                <a
+                <Link
                   key={item.href}
                   href={item.href}
                   style={{
@@ -127,7 +128,7 @@ export default function Navbar() {
                   }}
                 >
                   {item.label}
-                </a>
+                </Link>
               );
             })}
           </div>

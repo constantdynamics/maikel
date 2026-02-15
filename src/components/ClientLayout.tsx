@@ -32,11 +32,11 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!session) {
+      (event, session) => {
+        if (event === 'SIGNED_OUT') {
           router.push('/login');
           setAuthenticated(false);
-        } else {
+        } else if (session) {
           setAuthenticated(true);
         }
       },
