@@ -71,6 +71,7 @@ export default function Navbar() {
 
   return (
     <nav
+      className="relative z-50 shrink-0"
       style={{
         backgroundColor: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-color)',
