@@ -100,19 +100,25 @@ const EXCHANGE_TO_YAHOO_SUFFIX: Record<string, string> = {
 
 // Patterns that indicate ETFs, funds, warrants, or depositary receipts — skip these
 const SKIP_NAME_PATTERNS = /\b(ETF|ETN|Fund|Trust|Index|Warrant|Rights|Dep\.?\s*Rec|BDR|GDR|ADR|Cert|Tracker|SPDR|iShares|Vanguard|Lyxor|Amundi|Xtrackers|WisdomTree)\b/i;
-const SKIP_TICKER_PATTERNS = /^(.*-ETF.*|.*-WNT.*|.*-WT.*|.*-UN$|.*-PR$|.*34$)$/i;
+// Also skip .H (halted/inactive) Canadian stocks — not tradeable
+const SKIP_TICKER_PATTERNS = /^(.*-ETF.*|.*-WNT.*|.*-WT.*|.*-UN$|.*-PR$|.*34$|.*\.H$)$/i;
 
 /**
  * Convert a TradingView exchange:ticker into a Yahoo Finance ticker.
+ * Strips Canadian stock status indicators (.H = halted, .P = preferred)
+ * that TradingView includes but Yahoo Finance doesn't recognize.
  */
 function toYahooTicker(exchangePrefix: string, ticker: string): string {
-  // US stocks don't need a suffix
+  // Strip Canadian stock status suffixes before adding exchange suffix
+  // .H = halted, .P = preferred shares, .U = USD-denominated, .WT = warrants
+  let cleanTicker = ticker.replace(/\.(H|P|U|WT)$/i, '');
+
   const suffix = EXCHANGE_TO_YAHOO_SUFFIX[exchangePrefix];
   if (suffix !== undefined) {
-    return ticker + suffix;
+    return cleanTicker + suffix;
   }
   // Fallback: try the raw ticker (works for many US stocks)
-  return ticker;
+  return cleanTicker;
 }
 
 // TradingView market endpoints - all available global markets

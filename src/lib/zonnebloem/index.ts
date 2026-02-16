@@ -531,6 +531,12 @@ async function deepScanCandidate(
       reviewReason = `Extreme spike: ${spikeAnalysis.highestSpikePct.toFixed(0)}%`;
     }
 
+    // Sanitize numeric values: round integers for bigint columns, clamp to prevent overflow
+    const roundInt = (v: number | null | undefined): number | null =>
+      v == null || !isFinite(v) ? null : Math.round(v);
+    const clampNum = (v: number | null | undefined, max: number = 1e9): number | null =>
+      v == null || !isFinite(v) ? null : Math.min(Math.max(v, -max), max);
+
     // Upsert stock (try with scan_session_id, fallback without if column doesn't exist)
     const stockData: Record<string, unknown> = {
       ticker,
@@ -540,19 +546,19 @@ async function deepScanCandidate(
       exchange: candidate.exchange || null,
       market: candidate.market,
       country: candidate.country || null,
-      current_price: candidate.close,
-      three_year_low: threeYearLow,
-      base_price_median: spikeAnalysis.basePriceMedian,
+      current_price: clampNum(candidate.close),
+      three_year_low: clampNum(threeYearLow),
+      base_price_median: clampNum(spikeAnalysis.basePriceMedian),
       price_12m_ago: spikeAnalysis.priceChange12m !== null
-        ? candidate.close / (1 + spikeAnalysis.priceChange12m / 100)
+        ? clampNum(candidate.close / (1 + spikeAnalysis.priceChange12m / 100))
         : null,
-      price_change_12m_pct: spikeAnalysis.priceChange12m,
+      price_change_12m_pct: clampNum(spikeAnalysis.priceChange12m),
       spike_count: spikeAnalysis.events.length,
-      highest_spike_pct: spikeAnalysis.highestSpikePct,
+      highest_spike_pct: clampNum(spikeAnalysis.highestSpikePct),
       highest_spike_date: spikeAnalysis.highestSpikeDate,
-      spike_score: spikeAnalysis.spikeScore,
-      avg_volume_30d: candidate.avgVolume30d,
-      market_cap: candidate.marketCap,
+      spike_score: clampNum(spikeAnalysis.spikeScore),
+      avg_volume_30d: roundInt(candidate.avgVolume30d),
+      market_cap: roundInt(candidate.marketCap),
       last_updated: new Date().toISOString(),
       scan_session_id: scanId || null,
       needs_review: needsReview,
