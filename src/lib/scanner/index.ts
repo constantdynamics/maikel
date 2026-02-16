@@ -367,7 +367,8 @@ async function deepScanStock(
   const today = new Date().toISOString().split('T')[0];
 
   // Clamp numeric values to prevent "numeric field overflow" DB errors
-  const clampNum = (v: number | null | undefined, max: number = 1e9): number | null =>
+  // Use conservative max (fits in numeric(9,2) columns)
+  const clampNum = (v: number | null | undefined, max: number = 9_999_999): number | null =>
     v == null || !isFinite(v) ? null : Math.min(Math.max(v, -max), max);
   const roundInt = (v: number | null | undefined): number | null =>
     v == null || !isFinite(v) ? null : Math.round(v);

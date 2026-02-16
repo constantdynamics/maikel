@@ -532,9 +532,10 @@ async function deepScanCandidate(
     }
 
     // Sanitize numeric values: round integers for bigint columns, clamp to prevent overflow
+    // Use conservative max (fits in numeric(9,2) columns)
     const roundInt = (v: number | null | undefined): number | null =>
       v == null || !isFinite(v) ? null : Math.round(v);
-    const clampNum = (v: number | null | undefined, max: number = 1e9): number | null =>
+    const clampNum = (v: number | null | undefined, max: number = 9_999_999): number | null =>
       v == null || !isFinite(v) ? null : Math.min(Math.max(v, -max), max);
 
     // Upsert stock (try with scan_session_id, fallback without if column doesn't exist)
