@@ -210,9 +210,14 @@ export default function DashboardPage() {
           console.log(`[Kuifje] Rejection breakdown:`, result.rejectionSummary);
         }
       }
+      // Safety net: always refresh stocks after scan API returns,
+      // even if ScanProgress already triggered a refresh (handles race condition
+      // where ScanProgress detected the previous scan's completion too early)
+      refreshStocks();
     } catch (err) {
       console.error('[Kuifje] Scan error:', err);
       setScanRunning(false);
+      setScanTriggered(false);
     }
   }
 
@@ -222,7 +227,7 @@ export default function DashboardPage() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/zonnebloem/scan', {
+      const res = await fetch('/api/zonnebloem/scan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -230,8 +235,16 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({}),
       });
-    } catch {
+      if (res.ok) {
+        const result = await res.json();
+        console.log(`[Zonnebloem] Scan result: ${result.stocksMatched} matches (${result.newStocksFound} new) in ${result.durationSeconds}s`);
+      }
+      // Safety net: always refresh stocks after scan API returns
+      zbRefreshStocks();
+    } catch (err) {
+      console.error('[Zonnebloem] Scan error:', err);
       setZbScanRunning(false);
+      setZbScanTriggered(false);
     }
   }
 

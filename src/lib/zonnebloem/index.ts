@@ -557,6 +557,9 @@ async function deepScanCandidate(
       scan_session_id: scanId || null,
       needs_review: needsReview,
       review_reason: reviewReason,
+      // Reset visibility flags so re-discovered stocks reappear
+      is_deleted: false,
+      is_archived: false,
     };
 
     let { error: upsertError } = await supabase.from('zonnebloem_stocks').upsert(

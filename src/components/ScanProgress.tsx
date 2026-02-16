@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface ScanProgressData {
   running: boolean;
@@ -26,6 +26,10 @@ interface ScanProgressProps {
 export default function ScanProgress({ scanTriggered, onScanComplete }: ScanProgressProps) {
   const [data, setData] = useState<ScanProgressData | null>(null);
   const [polling, setPolling] = useState(false);
+  // Track the scan ID that was active BEFORE a new scan was triggered
+  // so we don't mistake the previous completed scan for the current one
+  const preTriggerScanId = useRef<string | null>(null);
+  const scanTriggeredRef = useRef(false);
 
   const fetchProgress = useCallback(async () => {
     try {
@@ -41,6 +45,16 @@ export default function ScanProgress({ scanTriggered, onScanComplete }: ScanProg
     return null;
   }, []);
 
+  // Capture the current scan ID when a new scan is triggered
+  useEffect(() => {
+    if (scanTriggered && !scanTriggeredRef.current) {
+      // New scan was just triggered - remember the current scan ID
+      // so we can distinguish it from the new scan
+      preTriggerScanId.current = data?.scan?.id || null;
+    }
+    scanTriggeredRef.current = scanTriggered;
+  }, [scanTriggered, data?.scan?.id]);
+
   // Start polling when scan is triggered
   useEffect(() => {
     if (!scanTriggered && !polling) return;
@@ -52,9 +66,19 @@ export default function ScanProgress({ scanTriggered, onScanComplete }: ScanProg
     const interval = setInterval(async () => {
       const result = await fetchProgress();
       if (result && !result.running) {
-        setPolling(false);
-        clearInterval(interval);
-        onScanComplete();
+        // Guard against detecting the PREVIOUS completed scan:
+        // Only fire onScanComplete if we see a DIFFERENT scan ID than
+        // the one that was active before the trigger, OR if we saw
+        // the current scan running at some point (different ID means new scan completed)
+        const currentId = result.scan?.id;
+        const isStaleResult = currentId === preTriggerScanId.current;
+
+        if (!isStaleResult) {
+          setPolling(false);
+          clearInterval(interval);
+          onScanComplete();
+        }
+        // If it's a stale result, keep polling - the new scan hasn't started yet
       }
     }, 3000);
 
