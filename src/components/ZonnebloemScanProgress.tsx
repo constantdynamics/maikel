@@ -29,6 +29,10 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
   const [polling, setPolling] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const lastScanId = useRef<string | null>(null);
+  // Track the scan ID that was active BEFORE a new scan was triggered
+  // so we don't mistake the previous completed scan for the current one
+  const preTriggerScanId = useRef<string | null>(null);
+  const scanTriggeredRef = useRef(false);
 
   const fetchProgress = useCallback(async () => {
     try {
@@ -71,6 +75,14 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
     return () => { cancelled = true; };
   }, [fetchProgress]);
 
+  // Capture the current scan ID when a new scan is triggered
+  useEffect(() => {
+    if (scanTriggered && !scanTriggeredRef.current) {
+      preTriggerScanId.current = data?.scan?.id || null;
+    }
+    scanTriggeredRef.current = scanTriggered;
+  }, [scanTriggered, data?.scan?.id]);
+
   // Start/continue polling when scan is triggered or running scan is detected
   useEffect(() => {
     if (!scanTriggered && !polling) return;
@@ -83,11 +95,19 @@ export default function ZonnebloemScanProgress({ scanTriggered, onScanComplete }
     const interval = setInterval(async () => {
       const result = await fetchProgress();
       if (result && !result.running) {
-        setPolling(false);
-        clearInterval(interval);
-        onScanComplete();
-        // Keep showing the result for a while
-        setShowResult(true);
+        // Guard against detecting the PREVIOUS completed scan:
+        // Only fire onScanComplete if we see a DIFFERENT scan ID than
+        // the one that was active before the trigger
+        const currentId = result.scan?.id;
+        const isStaleResult = currentId === preTriggerScanId.current;
+
+        if (!isStaleResult) {
+          setPolling(false);
+          clearInterval(interval);
+          onScanComplete();
+          setShowResult(true);
+        }
+        // If stale, keep polling - the new scan hasn't started yet
       }
     }, 3000);
 

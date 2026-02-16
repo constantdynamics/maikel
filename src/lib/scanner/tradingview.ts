@@ -159,7 +159,9 @@ function parseResults(data: TradingViewResponse | null, marketId: string): Tradi
       };
     })
     .filter((s) => s.ticker && s.close > 0)
-    .filter((s) => s.exchange !== 'OTC' && s.exchange !== 'OTCM');
+    .filter((s) => s.exchange !== 'OTC' && s.exchange !== 'OTCM')
+    // Skip halted (.H) Canadian stocks — not tradeable
+    .filter((s) => !s.ticker.match(/\.H$/i));
 }
 
 async function fetchFromScanner(url: string, payload: object): Promise<TradingViewResponse> {
@@ -178,14 +180,18 @@ async function fetchFromScanner(url: string, payload: object): Promise<TradingVi
 
 /**
  * Apply Yahoo Finance ticker suffix based on market.
+ * Strips Canadian stock status indicators (.H = halted, .P = preferred)
+ * that TradingView includes but Yahoo Finance doesn't recognize.
  */
 export function applyYahooSuffix(stock: TradingViewStock): TradingViewStock {
   const market = MARKETS[stock.market];
   if (!market) return stock;
+  // Strip Canadian status suffixes before adding exchange suffix
+  const cleanTicker = stock.ticker.replace(/\.(H|P|U|WT)$/i, '');
   const suffix = market.yahooSuffix(stock.exchange);
   return {
     ...stock,
-    ticker: suffix ? `${stock.ticker}${suffix}` : stock.ticker,
+    ticker: suffix ? `${cleanTicker}${suffix}` : cleanTicker,
   };
 }
 

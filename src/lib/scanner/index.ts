@@ -366,34 +366,41 @@ async function deepScanStock(
 
   const today = new Date().toISOString().split('T')[0];
 
+  // Clamp numeric values to prevent "numeric field overflow" DB errors
+  // Use conservative max (fits in numeric(9,2) columns)
+  const clampNum = (v: number | null | undefined, max: number = 9_999_999): number | null =>
+    v == null || !isFinite(v) ? null : Math.min(Math.max(v, -max), max);
+  const roundInt = (v: number | null | undefined): number | null =>
+    v == null || !isFinite(v) ? null : Math.round(v);
+
   // Build stock data for upsert
   const stockData: Record<string, unknown> = {
     ticker,
     company_name: tvStock.name || ticker,
     sector: tvStock.sector || null,
-    current_price: currentPrice,
-    all_time_high: effectiveATH,
-    ath_decline_pct: athDeclinePct,
-    five_year_low: fiveYearLow?.price || null,
-    three_year_low: threeYearLow?.price || null,
-    purchase_limit: purchaseLimit,
-    score: growthAnalysis.score,
+    current_price: clampNum(currentPrice),
+    all_time_high: clampNum(effectiveATH),
+    ath_decline_pct: clampNum(athDeclinePct),
+    five_year_low: clampNum(fiveYearLow?.price),
+    three_year_low: clampNum(threeYearLow?.price),
+    purchase_limit: clampNum(purchaseLimit),
+    score: clampNum(growthAnalysis.score),
     growth_event_count: growthAnalysis.events.length,
-    highest_growth_pct: growthAnalysis.highestGrowthPct,
+    highest_growth_pct: clampNum(growthAnalysis.highestGrowthPct),
     highest_growth_date: growthAnalysis.highestGrowthDate,
     last_updated: new Date().toISOString(),
-    confidence_score: confidenceScore,
+    confidence_score: clampNum(confidenceScore),
     needs_review: needsReview,
     review_reason: reviewReason,
     exchange: tvStock.exchange,
-    market_cap: tvStock.marketCap,
+    market_cap: roundInt(tvStock.marketCap),
     // Scan tracking
     scan_number: scanNumber,
     scan_date: today,
     // NovaBay-type analysis
-    twelve_month_low: stableSpikeAnalysis.twelveMontLow > 0 ? stableSpikeAnalysis.twelveMontLow : null,
-    twelve_month_max_decline_pct: stableSpikeAnalysis.maxDeclineFromAverage,
-    twelve_month_max_spike_pct: stableSpikeAnalysis.maxSpikeAboveAverage,
+    twelve_month_low: stableSpikeAnalysis.twelveMontLow > 0 ? clampNum(stableSpikeAnalysis.twelveMontLow) : null,
+    twelve_month_max_decline_pct: clampNum(stableSpikeAnalysis.maxDeclineFromAverage),
+    twelve_month_max_spike_pct: clampNum(stableSpikeAnalysis.maxSpikeAboveAverage),
     is_stable_with_spikes: stableSpikeAnalysis.isStableWithSpikes,
     // Reset visibility flags so re-discovered stocks reappear
     is_deleted: false,
