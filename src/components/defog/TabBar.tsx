@@ -30,7 +30,7 @@ const ACCENT_COLORS = [
 ];
 
 // Minimum width for tabs (enough for ~20 characters)
-const TAB_MIN_WIDTH = '160px';
+const TAB_MIN_WIDTH = '240px';
 
 // Default fixed tab colors
 const DEFAULT_FIXED_COLORS: FixedTabColors = {
@@ -95,7 +95,9 @@ export function TabBar({
 
   return (
     <>
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-[#3d3d3d] scrollbar-track-transparent">
+      <div className="space-y-2">
+        {/* Row 1: Fixed tabs (Alles, Top, Gekocht) */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-[#3d3d3d] scrollbar-track-transparent">
         {/* "All" overview tab - Custom color or Rainbow style */}
         <button
           onClick={() => onTabSelect('__all__')}
@@ -165,7 +167,9 @@ export function TabBar({
         >
           <span className="text-sm font-bold">💰 Gekocht ({purchasedStockCount})</span>
         </button>
-
+        </div>
+        {/* Row 2: User-created tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-[#3d3d3d] scrollbar-track-transparent">
         {tabs.map((tab) => {
           const isActive = activeTabId === tab.id;
           return (
@@ -208,6 +212,7 @@ export function TabBar({
           <PlusIcon className="w-4 h-4" />
           <span className="text-sm">New Tab</span>
         </button>
+        </div>
       </div>
 
       {/* Add Tab Modal */}

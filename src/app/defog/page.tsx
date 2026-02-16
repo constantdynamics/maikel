@@ -118,6 +118,18 @@ export default function DefogPage() {
         } catch { /* ignore parse errors */ }
       }
 
+      // Fallback: try previous localStorage backup
+      if (!saved) {
+        try {
+          const prevBackup = localStorage.getItem('defog-state-backup-prev');
+          if (prevBackup) {
+            saved = JSON.parse(prevBackup);
+            source = 'localStorage previous backup';
+            console.log('[Defog] Loaded from localStorage previous backup');
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
       // Fallback: try Maikel Supabase cloud backup
       if (!saved) {
         try {
@@ -171,6 +183,21 @@ export default function DefogPage() {
           lastSyncTime: new Date().toISOString(),
           encryptionKeyHash: state.encryptionKeyHash,
         };
+        // SAFETY: Don't save if stock count dropped significantly
+        // This prevents saving an intermediate/corrupted state
+        const totalStocks = dataToSave.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0) || 0;
+        const lastKnownCount = parseInt(localStorage.getItem('defog-last-stock-count') || '0', 10);
+
+        if (lastKnownCount > 5 && totalStocks < lastKnownCount * 0.7) {
+          console.warn(`[Defog] SAFETY: Refusing to save — stock count dropped from ${lastKnownCount} to ${totalStocks}`);
+          return;
+        }
+
+        // Update last known count
+        if (totalStocks > 0) {
+          localStorage.setItem('defog-last-stock-count', String(totalStocks));
+        }
+
         // Save to IndexedDB (local)
         await saveToLocalStorage(dataToSave, password);
         // Also schedule cloud save to Maikel Supabase (debounced 3s)
@@ -213,6 +240,11 @@ export default function DefogPage() {
       };
       // Use synchronous localStorage as fallback (IndexedDB is async and may not complete)
       try {
+        // Rotate backup: keep one previous backup version
+        const prevBackup = localStorage.getItem('defog-state-backup');
+        if (prevBackup) {
+          localStorage.setItem('defog-state-backup-prev', prevBackup);
+        }
         localStorage.setItem('defog-state-backup', JSON.stringify(dataToSave));
       } catch { /* quota exceeded - ignore */ }
     };

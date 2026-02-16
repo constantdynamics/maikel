@@ -45,7 +45,8 @@ interface MaikelZonnebloemStock {
 }
 
 // Multiplier: fraction above the historical low to set as buy limit
-const BUY_LIMIT_MULTIPLIER = 1.15;
+// Using 1.05 (5%) - conservative because scanner stocks are already at extreme lows
+const BUY_LIMIT_MULTIPLIER = 1.05;
 
 /**
  * Calculate suggested buy limit from the MINIMUM of all available historical lows.
@@ -228,7 +229,7 @@ function maikelToDefogStock(
     id: uuidv4(),
     ticker,
     name: m.company_name || m.ticker,
-    buyLimit: null, // Don't set limit yet — wait for range data from API
+    buyLimit, // Use calculated limit from scanner data; will be refined by postSyncRangeFetch
     currentPrice: m.current_price || 0,
     previousClose: 0,
     dayChange: 0,
@@ -369,6 +370,13 @@ export async function syncScannerToDefog(
   const kuifjeStocksRaw: MaikelKuifjeStock[] = kuifjeRes.ok ? await kuifjeRes.json() : [];
   const zbJson = zbRes.ok ? await zbRes.json() : [];
   const zbStocksRaw: MaikelZonnebloemStock[] = Array.isArray(zbJson) ? zbJson : (zbJson.stocks || []);
+
+  // SAFETY: If BOTH scanner APIs returned zero stocks, skip sync entirely
+  // This prevents data loss when APIs are temporarily unavailable
+  if (kuifjeStocksRaw.length === 0 && zbStocksRaw.length === 0) {
+    console.log('[ScannerSync] Both APIs returned 0 stocks — skipping sync to prevent data loss');
+    return { kuifjeAdded: 0, zbAdded: 0 };
+  }
 
   // Deduplicate incoming scanner results by company name
   const kuifjeStocks = deduplicateScannerStocks(kuifjeStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...kuifjeBuyLimitInput(s)));
@@ -560,7 +568,13 @@ export async function syncScannerToDefog(
           return s;
         });
         // Deduplicate: merge existing duplicates (e.g., SES + SES.SI)
-        return { ...tab, stocks: deduplicateExistingTabStocks([...updatedStocks, ...kuifjeNewStocks]) };
+        const kuifjeFinalStocks = deduplicateExistingTabStocks([...updatedStocks, ...kuifjeNewStocks]);
+        // SAFETY: Don't allow sync to remove more than 20% of stocks
+        if (tab.stocks.length > 5 && kuifjeFinalStocks.length < tab.stocks.length * 0.8) {
+          console.warn(`[ScannerSync] SAFETY: ${tab.name} would lose ${tab.stocks.length - kuifjeFinalStocks.length} stocks (${tab.stocks.length} → ${kuifjeFinalStocks.length}). Keeping original.`);
+          return { ...tab, stocks: [...tab.stocks, ...kuifjeNewStocks] }; // Only add new, don't deduplicate
+        }
+        return { ...tab, stocks: kuifjeFinalStocks };
       }
       if (tab.id === zbTabId) {
         const updatedStocks = tab.stocks.map((s) => {
@@ -586,7 +600,13 @@ export async function syncScannerToDefog(
           return s;
         });
         // Deduplicate: merge existing duplicates (e.g., 0J9J + 0J9J.L)
-        return { ...tab, stocks: deduplicateExistingTabStocks([...updatedStocks, ...zbNewStocks]) };
+        const zbFinalStocks = deduplicateExistingTabStocks([...updatedStocks, ...zbNewStocks]);
+        // SAFETY: Don't allow sync to remove more than 20% of stocks
+        if (tab.stocks.length > 5 && zbFinalStocks.length < tab.stocks.length * 0.8) {
+          console.warn(`[ScannerSync] SAFETY: ${tab.name} would lose ${tab.stocks.length - zbFinalStocks.length} stocks (${tab.stocks.length} → ${zbFinalStocks.length}). Keeping original.`);
+          return { ...tab, stocks: [...tab.stocks, ...zbNewStocks] }; // Only add new, don't deduplicate
+        }
+        return { ...tab, stocks: zbFinalStocks };
       }
       return tab;
     });
