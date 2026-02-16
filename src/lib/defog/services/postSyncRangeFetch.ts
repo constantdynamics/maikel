@@ -14,7 +14,7 @@ import { getStockAPI, configureMultiApi } from './stockApi';
 import { RATE_LIMITS } from './rateLimiter';
 import type { ApiKeyConfig, ApiProvider } from '../types';
 
-const BUY_LIMIT_MULTIPLIER = 1.15;
+const BUY_LIMIT_MULTIPLIER = 1.05;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface RangeFetchProgress {

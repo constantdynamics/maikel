@@ -871,7 +871,7 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
 
     state.tabs.forEach((tab) => {
       tab.stocks.forEach((stock) => {
-        if (stock.buyLimit !== null && stock.currentPrice <= stock.buyLimit) {
+        if (stock.buyLimit !== null && stock.currentPrice > 0 && stock.currentPrice <= stock.buyLimit) {
           signals.push({
             stock,
             tabId: tab.id,

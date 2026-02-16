@@ -31,6 +31,7 @@ export async function saveToLocalStorage(
   const dataToSave = {
     tabs: state.tabs,
     archive: state.archive,
+    purchasedStocks: state.purchasedStocks,
     notifications: state.notifications,
     limitHistory: state.limitHistory,
     settings: state.settings,
