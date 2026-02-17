@@ -9,7 +9,7 @@
 // 4. Calculate buyLimit = min(available lows) * 1.05
 // 5. Update the stock with ranges + limit
 
-import type { Stock, Tab, HistoricalDataPoint } from '../types';
+import type { Stock, Tab, HistoricalDataPoint, RangeLogEntry } from '../types';
 import { getStockAPI, configureMultiApi } from './stockApi';
 import { RATE_LIMITS } from './rateLimiter';
 import type { ApiKeyConfig, ApiProvider } from '../types';
@@ -330,6 +330,7 @@ export async function fetchRangesForAllStocks(
   getTabs: () => Tab[],
   updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void,
   onProgress?: (progress: RangeFetchProgress) => void,
+  onLogEntry?: (entry: Omit<RangeLogEntry, 'id' | 'timestamp'>) => void,
 ): Promise<{ processed: number; updated: number; errors: number; remaining: number }> {
   const tabs = getTabs();
   const fullQueue = buildSmartRangeQueue(tabs);
@@ -354,8 +355,14 @@ export async function fetchRangesForAllStocks(
   let errors = 0;
   const now = new Date().toISOString();
 
+  // Build tab name lookup for log entries
+  const tabNameMap = new Map(tabs.map(t => [t.id, t.name]));
+
   for (let i = 0; i < batch.length; i++) {
     const { tabId, stock } = batch[i];
+    const fetchType: 'first_fetch' | 'refresh' = stock.rangeFetched ? 'refresh' : 'first_fetch';
+    const tabName = tabNameMap.get(tabId) || 'Onbekend';
+    const startTime = Date.now();
 
     onProgress?.({
       current: i + 1,
@@ -425,6 +432,25 @@ export async function fetchRangesForAllStocks(
 
           updateStock(tabId, stock.id, updates);
           updated++;
+
+          // Log success
+          onLogEntry?.({
+            ticker: stock.ticker,
+            stockId: stock.id,
+            tabName,
+            type: fetchType,
+            result: 'success',
+            year5Low: ranges.year5Low,
+            year5High: ranges.year5High,
+            year3Low: ranges.year3Low,
+            year3High: ranges.year3High,
+            week52Low: ranges.week52Low,
+            week52High: ranges.week52High,
+            rangeLabel,
+            buyLimit: buyLimit ?? undefined,
+            currentPrice: updates.currentPrice || stock.currentPrice,
+            duration: Date.now() - startTime,
+          });
         } else {
           // API returned data but no usable ranges — mark as fetched + timestamp
           console.log(`[SmartRange] ${stock.ticker}: No usable range data from API`);
@@ -432,6 +458,15 @@ export async function fetchRangesForAllStocks(
             rangeFetched: true,
             rangeFetchedAt: now,
             rangeFetchError: false,
+          });
+
+          onLogEntry?.({
+            ticker: stock.ticker,
+            stockId: stock.id,
+            tabName,
+            type: fetchType,
+            result: 'no_data',
+            duration: Date.now() - startTime,
           });
         }
       } else {
@@ -442,12 +477,31 @@ export async function fetchRangesForAllStocks(
           rangeFetchedAt: now,
           rangeFetchError: false,
         });
+
+        onLogEntry?.({
+          ticker: stock.ticker,
+          stockId: stock.id,
+          tabName,
+          type: fetchType,
+          result: 'no_data',
+          duration: Date.now() - startTime,
+        });
       }
     } catch (error) {
       // Mark as error so this stock is SKIPPED in future runs
       console.error(`[SmartRange] ${stock.ticker}: FAILED — marking as error`, error);
       updateStock(tabId, stock.id, { rangeFetchError: true });
       errors++;
+
+      onLogEntry?.({
+        ticker: stock.ticker,
+        stockId: stock.id,
+        tabName,
+        type: fetchType,
+        result: 'error',
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : 'Onbekende fout',
+      });
     }
 
     // Rate limit between requests

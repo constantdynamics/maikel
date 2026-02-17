@@ -40,6 +40,7 @@ import type { Stock, SortField, ChartTimeframe, ColorScheme, FontSize, RangePeri
 import { RefreshQueueModal } from './RefreshQueueModal';
 import { ScanLogModal } from './ScanLogModal';
 import { UndoModal } from './UndoModal';
+import { RangeLogModal } from './RangeLogModal';
 import { startAutoBackup } from '@/lib/defog/services/backupService';
 import { fetchRangesForAllStocks, countStocksNeedingRanges, clearRangeFetchErrors, type RangeFetchProgress } from '@/lib/defog/services/postSyncRangeFetch';
 import { MiniTilesView, type TileSortMode } from './MiniTilesView';
@@ -101,6 +102,7 @@ export function Dashboard() {
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [showScanLogModal, setShowScanLogModal] = useState(false);
   const [showUndoModal, setShowUndoModal] = useState(false);
+  const [showRangeLogModal, setShowRangeLogModal] = useState(false);
   const [currentlyScanning, setCurrentlyScanning] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [isRefreshingArchive, setIsRefreshingArchive] = useState(false);
@@ -704,6 +706,7 @@ export function Dashboard() {
         () => store.tabs,
         updateStock,
         setRangeFetchProgress,
+        (entry) => store.addRangeLogEntry(entry),
       );
       console.log(
         `[Dashboard] Smart range batch: ${result.updated} updated, ` +
@@ -1715,8 +1718,62 @@ export function Dashboard() {
                     const errorCount = store.tabs.reduce((n, tab) => n + tab.stocks.filter(s => s.rangeFetchError).length, 0);
                     const isRunning = rangeFetchProgress?.status === 'running';
 
+                    // Coverage stats: how many stocks have REAL range data (not 0-0)
+                    const totalStocks = store.tabs.reduce((n, tab) => n + tab.stocks.length, 0);
+                    const withValidRange = store.tabs.reduce((n, tab) =>
+                      n + tab.stocks.filter(s =>
+                        s.rangeFetched && (
+                          (s.year5Low != null && s.year5Low > 0) ||
+                          (s.year3Low != null && s.year3Low > 0) ||
+                          (s.week52Low != null && s.week52Low > 0)
+                        )
+                      ).length, 0
+                    );
+                    const coveragePct = totalStocks > 0 ? Math.round((withValidRange / totalStocks) * 100) : 0;
+
+                    // Per-tab breakdown for tooltip
+                    const perTab = store.tabs.map(tab => {
+                      const total = tab.stocks.length;
+                      const valid = tab.stocks.filter(s =>
+                        s.rangeFetched && (
+                          (s.year5Low != null && s.year5Low > 0) ||
+                          (s.year3Low != null && s.year3Low > 0) ||
+                          (s.week52Low != null && s.week52Low > 0)
+                        )
+                      ).length;
+                      return { name: tab.name, valid, total };
+                    }).filter(t => t.total > 0);
+
+                    const tooltipLines = perTab.map(t =>
+                      `${t.name}: ${t.valid}/${t.total} (${t.total > 0 ? Math.round((t.valid / t.total) * 100) : 0}%)`
+                    );
+
                     return (
                       <div className="flex items-center gap-0.5">
+                        {/* Range coverage meter */}
+                        <div
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-[#2d2d2d]"
+                          title={`Range dekking:\n${tooltipLines.join('\n')}\n\nTotaal: ${withValidRange}/${totalStocks} (${coveragePct}%)`}
+                        >
+                          {/* Mini progress bar */}
+                          <div className="w-12 h-1.5 rounded-full bg-[#3d3d3d] overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${coveragePct}%`,
+                                backgroundColor: coveragePct === 100 ? '#00ff88' : coveragePct >= 75 ? '#00cc66' : coveragePct >= 50 ? '#ffaa00' : '#ff6644',
+                              }}
+                            />
+                          </div>
+                          <span className={
+                            coveragePct === 100 ? 'text-[#00ff88]' :
+                            coveragePct >= 75 ? 'text-[#00cc66]' :
+                            coveragePct >= 50 ? 'text-yellow-400' : 'text-orange-400'
+                          }>
+                            {withValidRange}/{totalStocks}
+                          </span>
+                        </div>
+
                         <button
                           onClick={handleFetchRanges}
                           disabled={isRunning}
@@ -1759,6 +1816,16 @@ export function Dashboard() {
                             title={`${errorCount} aandelen met fouten — klik om opnieuw te proberen`}
                           >
                             <span>{errorCount} err</span>
+                          </button>
+                        )}
+                        {/* Range log button */}
+                        {store.rangeLog.length > 0 && (
+                          <button
+                            onClick={() => setShowRangeLogModal(true)}
+                            className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[10px] font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                            title="Range update log bekijken"
+                          >
+                            <span>log {store.rangeLog.length}</span>
                           </button>
                         )}
                       </div>
@@ -2634,6 +2701,13 @@ export function Dashboard() {
         actionLog={store.actionLog}
         onUndo={store.undoAction}
         onClear={store.clearActionLog}
+      />
+
+      <RangeLogModal
+        isOpen={showRangeLogModal}
+        onClose={() => setShowRangeLogModal(false)}
+        rangeLog={store.rangeLog}
+        onClear={store.clearRangeLog}
       />
 
       {/* Floating buttons bottom-right: scroll-to-top, add stock, version */}

@@ -294,6 +294,7 @@ export interface AppState {
   notifications: Notification[];
   limitHistory: LimitHistory[];
   scanLog: ScanLogEntry[];  // Log of all scans for debugging
+  rangeLog: RangeLogEntry[];  // Log of range fetch attempts
   actionLog: ActionLogEntry[];  // Log of manual actions for undo
   settings: UserSettings;
   lastSyncTime: string | null;
@@ -344,6 +345,29 @@ export interface ScanLogEntry {
   provider: ApiProvider | null;
   duration: number;  // Milliseconds
   reasons: string[];  // Why this stock was scanned (from priority system)
+  error?: string;  // Error message if failed
+}
+
+// Range log entry - records each range fetch attempt
+export interface RangeLogEntry {
+  id: string;
+  timestamp: string;
+  ticker: string;
+  stockId: string;
+  tabName: string;
+  type: 'first_fetch' | 'refresh';  // First time or refresh of existing data
+  result: 'success' | 'no_data' | 'error';
+  // Range values found (only on success)
+  year5Low?: number;
+  year5High?: number;
+  year3Low?: number;
+  year3High?: number;
+  week52Low?: number;
+  week52High?: number;
+  rangeLabel?: string;  // Which range was used: '5Y', '3Y', '1Y'
+  buyLimit?: number | null;  // Calculated buy limit
+  currentPrice?: number;
+  duration: number;  // Milliseconds
   error?: string;  // Error message if failed
 }
 

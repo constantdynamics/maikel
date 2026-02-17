@@ -9,6 +9,7 @@ import type {
   Notification,
   LimitHistory,
   ScanLogEntry,
+  RangeLogEntry,
   ActionLogEntry,
   ActionType,
   UserSettings,
@@ -189,6 +190,10 @@ interface StoreActions {
   addScanLogEntry: (entry: Omit<ScanLogEntry, 'id' | 'timestamp'>) => void;
   clearScanLog: () => void;
 
+  // Range Log
+  addRangeLogEntry: (entry: Omit<RangeLogEntry, 'id' | 'timestamp'>) => void;
+  clearRangeLog: () => void;
+
   // Action Log (for undo)
   logAction: (type: ActionType, description: string, undoData: ActionLogEntry['undoData'], canUndo?: boolean) => void;
   undoAction: (actionId: string) => boolean;  // Returns true if successful
@@ -217,6 +222,7 @@ const initialState: AppState = {
   notifications: [],
   limitHistory: [],
   scanLog: [],  // Log of all scans for debugging
+  rangeLog: [],  // Log of range fetch attempts
   actionLog: [],  // Log of manual actions for undo
   settings: DEFAULT_SETTINGS,
   lastSyncTime: null,
@@ -673,6 +679,22 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
 
   clearScanLog: () => {
     set({ scanLog: [] });
+  },
+
+  // Range Log
+  addRangeLogEntry: (entry) => {
+    const newEntry: RangeLogEntry = {
+      ...entry,
+      id: uuidv4(),
+      timestamp: new Date().toISOString(),
+    };
+    set((state) => ({
+      rangeLog: [...state.rangeLog.slice(-499), newEntry],
+    }));
+  },
+
+  clearRangeLog: () => {
+    set({ rangeLog: [] });
   },
 
   // Action Log (for undo)
