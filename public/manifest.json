@@ -1,0 +1,39 @@
+{
+  "name": "Professor Zonnebloem",
+  "short_name": "Zonnebloem",
+  "description": "Stock screener - detectie van koopkansen",
+  "start_url": "/defog",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Widget",
+      "short_name": "Widget",
+      "description": "Top 24 tiles dichtst bij aankooplimiet",
+      "url": "/defog/widget",
+      "icons": [
+        {
+          "src": "/favicon.png",
+          "sizes": "64x64"
+        }
+      ]
+    }
+  ],
+  "categories": ["finance"],
+  "lang": "nl"
+}
