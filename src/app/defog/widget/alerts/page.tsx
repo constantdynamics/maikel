@@ -101,10 +101,16 @@ export default function WatchlistAlertWidget() {
   useEffect(() => { fetchData(); }, [tabs, fetchData]);
 
   useEffect(() => {
-    autoRefreshRef.current = setInterval(fetchData, 60 * 1000);
+    autoRefreshRef.current = setInterval(fetchData, 5 * 60 * 1000);
     return () => { if (autoRefreshRef.current) clearInterval(autoRefreshRef.current); };
   }, [fetchData]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+    setTimeout(() => setRefreshing(false), 600);
+  };
   const handleOpenApp = () => { window.location.href = '/defog'; };
 
   // Stats
@@ -238,6 +244,13 @@ export default function WatchlistAlertWidget() {
         <span className="al-status-dot" style={{ backgroundColor: criticalCount > 0 ? '#ff1a4d' : '#00ff88' }} />
         {lastRefresh && <span>{lastRefresh.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>}
       </div>
+
+      {/* Floating refresh button */}
+      <button onClick={handleRefresh} disabled={refreshing} className="fab-refresh" aria-label="Verversen">
+        <svg className={`fab-icon ${refreshing ? 'fab-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      </button>
 
       <style>{alertStyles}</style>
     </div>
@@ -514,6 +527,30 @@ const alertStyles = `
   }
 
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Floating refresh button */
+  .fab-refresh {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #1a1a24;
+    border: 2px solid #00ff88;
+    color: #00ff88;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    transition: transform 0.15s, opacity 0.15s;
+    z-index: 50;
+  }
+  .fab-refresh:active { transform: scale(0.9); }
+  .fab-refresh:disabled { opacity: 0.5; }
+  .fab-icon { width: 22px; height: 22px; }
+  .fab-spin { animation: spin 0.8s linear infinite; }
 
   html, body { background: #0d0d12; }
 `;

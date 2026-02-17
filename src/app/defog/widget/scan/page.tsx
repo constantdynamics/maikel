@@ -178,6 +178,13 @@ export default function ScanActivatorWidget() {
         </button>
       )}
 
+      {/* Floating refresh button */}
+      <button onClick={() => fetchProgress()} className="fab-refresh" aria-label="Verversen">
+        <svg className="fab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      </button>
+
       <style>{scanStyles}</style>
     </div>
   );
@@ -547,6 +554,28 @@ const scanStyles = `
     padding: 4px;
     font-family: inherit;
   }
+
+  /* Floating refresh button */
+  .fab-refresh {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #2d2d2d;
+    border: 2px solid #00ff88;
+    color: #00ff88;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    transition: transform 0.15s, opacity 0.15s;
+    z-index: 50;
+  }
+  .fab-refresh:active { transform: scale(0.9); }
+  .fab-icon { width: 22px; height: 22px; }
 
   html, body {
     background: #1a1a1a;

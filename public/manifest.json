@@ -56,6 +56,12 @@
       "short_name": "Alerts",
       "description": "Aandelen met grote dagdalingen",
       "url": "/defog/widget/alerts"
+    },
+    {
+      "name": "Tablet Dashboard",
+      "short_name": "Tablet",
+      "description": "Alle widgets gecombineerd in een overzicht",
+      "url": "/defog/widget/tablet"
     }
   ],
   "categories": ["finance"],
