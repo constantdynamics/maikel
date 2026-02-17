@@ -22,16 +22,22 @@
   ],
   "shortcuts": [
     {
-      "name": "Widget",
-      "short_name": "Widget",
-      "description": "Top 24 tiles dichtst bij aankooplimiet",
-      "url": "/defog/widget",
-      "icons": [
-        {
-          "src": "/favicon.png",
-          "sizes": "64x64"
-        }
-      ]
+      "name": "Top 24 Tiles",
+      "short_name": "Tiles",
+      "description": "Top 24 aandelen dichtst bij aankooplimiet",
+      "url": "/defog/widget"
+    },
+    {
+      "name": "Onderwater",
+      "short_name": "Onderwater",
+      "description": "Aandelen onder de aankooplimiet",
+      "url": "/defog/widget/underwater"
+    },
+    {
+      "name": "Scanner Control",
+      "short_name": "Scanner",
+      "description": "Kuifje en Zonnebloem scanners activeren",
+      "url": "/defog/widget/scan"
     }
   ],
   "categories": ["finance"],
