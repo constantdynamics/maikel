@@ -189,6 +189,8 @@ export async function fetchRangesForNewStocks(
 
           const updates: Partial<Stock> = {
             rangeFetched: true,
+            rangeFetchedAt: new Date().toISOString(),
+            rangeFetchError: false,
           };
 
           // Update range data
@@ -229,12 +231,12 @@ export async function fetchRangesForNewStocks(
         } else {
           // No usable range data found — mark as fetched to avoid retrying
           console.log(`[PostSyncRange] ${stock.ticker}: No usable range data from API`);
-          updateStock(tabId, stock.id, { rangeFetched: true });
+          updateStock(tabId, stock.id, { rangeFetched: true, rangeFetchedAt: new Date().toISOString() });
         }
       } else {
         // No historical data returned — mark as fetched
         console.log(`[PostSyncRange] ${stock.ticker}: No historical data returned`);
-        updateStock(tabId, stock.id, { rangeFetched: true });
+        updateStock(tabId, stock.id, { rangeFetched: true, rangeFetchedAt: new Date().toISOString() });
       }
     } catch (error) {
       console.error(`[PostSyncRange] Failed for ${stock.ticker}:`, error);
@@ -259,57 +261,114 @@ export async function fetchRangesForNewStocks(
   return { processed: stocksToProcess.length, updated };
 }
 
+const SMART_BATCH_SIZE = 100;
+
 /**
- * Find ALL stocks across ALL tabs that need range data (not just scanner tabs).
- * Used by the manual "Update Ranges" button.
+ * Build a smart, prioritized queue of stocks needing range updates across ALL tabs.
+ *
+ * Priority order:
+ *   1. Never fetched (rangeFetched falsy, no rangeFetchedAt)
+ *   2. Oldest rangeFetchedAt (stale data refreshed first)
+ *
+ * Excluded:
+ *   - Stocks with rangeFetchError === true (failed before, skip unless user clears error)
  */
-function findAllStocksNeedingRanges(tabs: Tab[]): Array<{ tabId: string; stock: Stock }> {
-  const results: Array<{ tabId: string; stock: Stock }> = [];
+function buildSmartRangeQueue(tabs: Tab[]): Array<{ tabId: string; stock: Stock }> {
+  const candidates: Array<{ tabId: string; stock: Stock; sortKey: number }> = [];
 
   for (const tab of tabs) {
     for (const stock of tab.stocks) {
-      if (stock.rangeFetched) continue;
-      results.push({ tabId: tab.id, stock });
+      // Skip stocks that errored — user must clear the error flag to retry
+      if (stock.rangeFetchError) continue;
+
+      // Never fetched → highest priority (sortKey = 0)
+      if (!stock.rangeFetched) {
+        candidates.push({ tabId: tab.id, stock, sortKey: 0 });
+        continue;
+      }
+
+      // Already fetched — sort by rangeFetchedAt (oldest first)
+      const fetchedAt = stock.rangeFetchedAt ? new Date(stock.rangeFetchedAt).getTime() : 0;
+      candidates.push({ tabId: tab.id, stock, sortKey: fetchedAt || 1 });
     }
   }
 
-  return results;
+  // Sort: never-fetched first (0), then oldest rangeFetchedAt
+  candidates.sort((a, b) => a.sortKey - b.sortKey);
+
+  return candidates.map(({ tabId, stock }) => ({ tabId, stock }));
 }
 
 /**
- * Fetch ranges for ALL stocks across ALL tabs that don't have rangeFetched.
- * This is the manual version triggered by the "Update Ranges" button.
+ * Count stocks eligible for range updating (for UI badge).
+ */
+export function countStocksNeedingRanges(tabs: Tab[]): { neverFetched: number; total: number } {
+  let neverFetched = 0;
+  let total = 0;
+
+  for (const tab of tabs) {
+    for (const stock of tab.stocks) {
+      if (stock.rangeFetchError) continue;
+      total++;
+      if (!stock.rangeFetched) neverFetched++;
+    }
+  }
+
+  return { neverFetched, total };
+}
+
+/**
+ * Smart batch range updater. Processes up to 100 stocks per run.
+ *
+ * - Prioritizes stocks that have NEVER had ranges fetched
+ * - Then refreshes oldest rangeFetchedAt (stale data)
+ * - Skips stocks with rangeFetchError (previous failures)
+ * - Marks failed stocks with rangeFetchError so they are skipped next run
+ * - Stops after SMART_BATCH_SIZE (100) stocks
  */
 export async function fetchRangesForAllStocks(
   getTabs: () => Tab[],
   updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void,
   onProgress?: (progress: RangeFetchProgress) => void,
-): Promise<{ processed: number; updated: number }> {
+): Promise<{ processed: number; updated: number; errors: number; remaining: number }> {
   const tabs = getTabs();
-  const stocksToProcess = findAllStocksNeedingRanges(tabs);
+  const fullQueue = buildSmartRangeQueue(tabs);
 
-  if (stocksToProcess.length === 0) {
-    console.log('[ManualRangeFetch] All stocks already have ranges');
-    return { processed: 0, updated: 0 };
+  if (fullQueue.length === 0) {
+    console.log('[SmartRange] No stocks eligible for range update');
+    onProgress?.({ current: 0, total: 0, ticker: '', status: 'completed' });
+    return { processed: 0, updated: 0, errors: 0, remaining: 0 };
   }
 
-  console.log(`[ManualRangeFetch] Fetching ranges for ${stocksToProcess.length} stocks...`);
+  // Take at most SMART_BATCH_SIZE from the queue
+  const batch = fullQueue.slice(0, SMART_BATCH_SIZE);
+  const remaining = fullQueue.length - batch.length;
+
+  console.log(
+    `[SmartRange] Processing batch of ${batch.length}/${fullQueue.length} stocks ` +
+    `(${remaining} remaining after this batch)`
+  );
 
   const api = getStockAPI();
   let updated = 0;
+  let errors = 0;
+  const now = new Date().toISOString();
 
-  for (let i = 0; i < stocksToProcess.length; i++) {
-    const { tabId, stock } = stocksToProcess[i];
+  for (let i = 0; i < batch.length; i++) {
+    const { tabId, stock } = batch[i];
 
     onProgress?.({
       current: i + 1,
-      total: stocksToProcess.length,
+      total: batch.length,
       ticker: stock.ticker,
       status: 'running',
     });
 
     try {
-      console.log(`[ManualRangeFetch] Fetching 5Y data for ${stock.ticker} (${i + 1}/${stocksToProcess.length})`);
+      console.log(
+        `[SmartRange] ${stock.ticker} (${i + 1}/${batch.length}) ` +
+        `${stock.rangeFetched ? 'refresh' : 'first fetch'}`
+      );
 
       const result = await api.fetchStockWithFallback(stock.ticker, stock.exchange, {
         needsHistorical: true,
@@ -329,7 +388,11 @@ export async function fetchRangesForAllStocks(
             ranges.week52Low,
           );
 
-          const updates: Partial<Stock> = { rangeFetched: true };
+          const updates: Partial<Stock> = {
+            rangeFetched: true,
+            rangeFetchedAt: now,
+            rangeFetchError: false,
+          };
 
           if (ranges.year5High != null) updates.year5High = ranges.year5High;
           if (ranges.year5Low != null) updates.year5Low = ranges.year5Low;
@@ -356,39 +419,78 @@ export async function fetchRangesForAllStocks(
           const rangeLabel = hasYear5 ? '5Y' : hasYear3 ? '3Y' : '1Y';
           const lowUsed = hasYear5 ? ranges.year5Low : hasYear3 ? ranges.year3Low : ranges.week52Low;
           console.log(
-            `[ManualRangeFetch] ${stock.ticker}: ${rangeLabel} low=${lowUsed?.toFixed(2)}, ` +
-            `buyLimit=${buyLimit?.toFixed(2)}, currentPrice=${(updates.currentPrice || stock.currentPrice).toFixed(2)}`
+            `[SmartRange] ${stock.ticker}: ${rangeLabel} low=${lowUsed?.toFixed(2)}, ` +
+            `buyLimit=${buyLimit?.toFixed(2)}, price=${(updates.currentPrice || stock.currentPrice).toFixed(2)}`
           );
 
           updateStock(tabId, stock.id, updates);
           updated++;
         } else {
-          console.log(`[ManualRangeFetch] ${stock.ticker}: No usable range data`);
-          updateStock(tabId, stock.id, { rangeFetched: true });
+          // API returned data but no usable ranges — mark as fetched + timestamp
+          console.log(`[SmartRange] ${stock.ticker}: No usable range data from API`);
+          updateStock(tabId, stock.id, {
+            rangeFetched: true,
+            rangeFetchedAt: now,
+            rangeFetchError: false,
+          });
         }
       } else {
-        console.log(`[ManualRangeFetch] ${stock.ticker}: No historical data returned`);
-        updateStock(tabId, stock.id, { rangeFetched: true });
+        // No historical data at all — mark as fetched so it doesn't block the queue
+        console.log(`[SmartRange] ${stock.ticker}: No historical data returned`);
+        updateStock(tabId, stock.id, {
+          rangeFetched: true,
+          rangeFetchedAt: now,
+          rangeFetchError: false,
+        });
       }
     } catch (error) {
-      console.error(`[ManualRangeFetch] Failed for ${stock.ticker}:`, error);
+      // Mark as error so this stock is SKIPPED in future runs
+      console.error(`[SmartRange] ${stock.ticker}: FAILED — marking as error`, error);
+      updateStock(tabId, stock.id, { rangeFetchError: true });
+      errors++;
     }
 
-    if (i < stocksToProcess.length - 1) {
+    // Rate limit between requests
+    if (i < batch.length - 1) {
       const delay = RATE_LIMITS['yahoo']?.minDelayMs || 1000;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
   onProgress?.({
-    current: stocksToProcess.length,
-    total: stocksToProcess.length,
+    current: batch.length,
+    total: batch.length,
     ticker: '',
     status: 'completed',
   });
 
-  console.log(`[ManualRangeFetch] Done. Processed ${stocksToProcess.length}, updated ${updated}`);
-  return { processed: stocksToProcess.length, updated };
+  console.log(
+    `[SmartRange] Batch done. Updated: ${updated}, errors: ${errors}, remaining: ${remaining}`
+  );
+  return { processed: batch.length, updated, errors, remaining };
+}
+
+/**
+ * Clear rangeFetchError for all stocks, so they become eligible for the smart updater again.
+ */
+export function clearRangeFetchErrors(
+  getTabs: () => Tab[],
+  updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void,
+): number {
+  const tabs = getTabs();
+  let cleared = 0;
+
+  for (const tab of tabs) {
+    for (const stock of tab.stocks) {
+      if (stock.rangeFetchError) {
+        updateStock(tab.id, stock.id, { rangeFetchError: false });
+        cleared++;
+      }
+    }
+  }
+
+  console.log(`[SmartRange] Cleared ${cleared} error flags`);
+  return cleared;
 }
 
 /**

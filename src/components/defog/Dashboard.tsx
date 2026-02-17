@@ -41,7 +41,7 @@ import { RefreshQueueModal } from './RefreshQueueModal';
 import { ScanLogModal } from './ScanLogModal';
 import { UndoModal } from './UndoModal';
 import { startAutoBackup } from '@/lib/defog/services/backupService';
-import { fetchRangesForAllStocks, type RangeFetchProgress } from '@/lib/defog/services/postSyncRangeFetch';
+import { fetchRangesForAllStocks, countStocksNeedingRanges, clearRangeFetchErrors, type RangeFetchProgress } from '@/lib/defog/services/postSyncRangeFetch';
 import { MiniTilesView, type TileSortMode } from './MiniTilesView';
 
 // Color scheme configurations
@@ -691,6 +691,7 @@ export function Dashboard() {
   }, [store.settings.apiKey, store.settings.apiProvider, store.settings.apiKeys, store.archive]);
 
   // Manual range fetch for all stocks missing range data
+  // Smart batch range updater — processes 100 per run, prioritized
   const handleFetchRanges = useCallback(async () => {
     if (rangeFetchProgress?.status === 'running') return;
 
@@ -704,13 +705,25 @@ export function Dashboard() {
         updateStock,
         setRangeFetchProgress,
       );
-      console.log(`[Dashboard] Manual range fetch: ${result.updated}/${result.processed} updated`);
+      console.log(
+        `[Dashboard] Smart range batch: ${result.updated} updated, ` +
+        `${result.errors} errors, ${result.remaining} remaining`
+      );
     } catch (error) {
-      console.error('[Dashboard] Manual range fetch failed:', error);
+      console.error('[Dashboard] Smart range fetch failed:', error);
     }
     // Clear progress after a delay
     setTimeout(() => setRangeFetchProgress(null), 3000);
   }, [rangeFetchProgress, store]);
+
+  // Clear error flags so errored stocks become eligible again
+  const handleClearRangeErrors = useCallback(() => {
+    const updateStock = (tabId: string, stockId: string, updates: Partial<Stock>) => {
+      store.updateStock(tabId, stockId, updates);
+    };
+    const cleared = clearRangeFetchErrors(() => store.tabs, updateStock);
+    console.log(`[Dashboard] Cleared ${cleared} range error flags`);
+  }, [store]);
 
   // Build available providers list for the queue modal
   const availableProviders = useMemo(() => {
@@ -1696,42 +1709,59 @@ export function Dashboard() {
                       </span>
                     )}
                   </button>
-                  {/* Update Ranges button — fetch 5Y/3Y/1Y range data for stocks without rangeFetched */}
+                  {/* Smart Range Updater — batch 100 per run, prioritized, skip errors */}
                   {(() => {
-                    const missingRanges = store.tabs.reduce((n, tab) => n + tab.stocks.filter(s => !s.rangeFetched).length, 0);
+                    const rangeStats = countStocksNeedingRanges(store.tabs);
+                    const errorCount = store.tabs.reduce((n, tab) => n + tab.stocks.filter(s => s.rangeFetchError).length, 0);
+                    const isRunning = rangeFetchProgress?.status === 'running';
+
                     return (
-                      <button
-                        onClick={handleFetchRanges}
-                        disabled={rangeFetchProgress?.status === 'running' || missingRanges === 0}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                          rangeFetchProgress?.status === 'running'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : missingRanges > 0
-                            ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
-                            : 'bg-green-500/20 text-green-400 opacity-70'
-                        } ${rangeFetchProgress?.status === 'running' || missingRanges === 0 ? 'cursor-not-allowed' : ''}`}
-                        title={
-                          rangeFetchProgress?.status === 'running'
-                            ? `Ranges ophalen: ${rangeFetchProgress.ticker} (${rangeFetchProgress.current}/${rangeFetchProgress.total})`
-                            : missingRanges > 0
-                            ? `${missingRanges} aandelen zonder range data — klik om 5Y ranges op te halen`
-                            : 'Alle aandelen hebben range data'
-                        }
-                      >
-                        {rangeFetchProgress?.status === 'running' ? (
-                          <>
-                            <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                            <span>{rangeFetchProgress.current}/{rangeFetchProgress.total}</span>
-                          </>
-                        ) : missingRanges > 0 ? (
-                          <>
-                            <span>Update Ranges</span>
-                            <span className="bg-orange-500/40 px-1 rounded text-[10px]">{missingRanges}</span>
-                          </>
-                        ) : (
-                          <span>Ranges OK</span>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          onClick={handleFetchRanges}
+                          disabled={isRunning}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                            isRunning
+                              ? 'bg-blue-500/20 text-blue-400'
+                              : rangeStats.neverFetched > 0
+                              ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
+                              : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                          } ${isRunning ? 'cursor-not-allowed' : ''}`}
+                          title={
+                            isRunning
+                              ? `Ranges ophalen: ${rangeFetchProgress.ticker} (${rangeFetchProgress.current}/${rangeFetchProgress.total})`
+                              : rangeStats.neverFetched > 0
+                              ? `${rangeStats.neverFetched} zonder range — klik voor batch van max 100`
+                              : `Alle ${rangeStats.total} aandelen hebben ranges — klik om oudste te verversen (batch 100)`
+                          }
+                        >
+                          {isRunning ? (
+                            <>
+                              <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                              <span>{rangeFetchProgress.current}/{rangeFetchProgress.total}</span>
+                            </>
+                          ) : rangeStats.neverFetched > 0 ? (
+                            <>
+                              <span>Update Ranges</span>
+                              <span className="bg-orange-500/40 px-1 rounded text-[10px]">{rangeStats.neverFetched}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Refresh Ranges</span>
+                            </>
+                          )}
+                        </button>
+                        {/* Error badge — click to clear error flags */}
+                        {errorCount > 0 && !isRunning && (
+                          <button
+                            onClick={handleClearRangeErrors}
+                            className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[10px] font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                            title={`${errorCount} aandelen met fouten — klik om opnieuw te proberen`}
+                          >
+                            <span>{errorCount} err</span>
+                          </button>
                         )}
-                      </button>
+                      </div>
                     );
                   })()}
                   <button

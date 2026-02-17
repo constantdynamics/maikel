@@ -38,6 +38,8 @@ export interface Stock {
   // Sync tracking
   addedAt?: string;  // ISO timestamp when stock was added to Defog via scanner sync
   rangeFetched?: boolean;  // True if 5Y/3Y/1Y range has been fetched from API
+  rangeFetchedAt?: string;  // ISO timestamp of last successful range fetch
+  rangeFetchError?: boolean;  // True if last range fetch failed (skip in smart updater)
 }
 
 export interface ColumnVisibility {
