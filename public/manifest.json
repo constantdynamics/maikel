@@ -38,6 +38,24 @@
       "short_name": "Scanner",
       "description": "Kuifje en Zonnebloem scanners activeren",
       "url": "/defog/widget/scan"
+    },
+    {
+      "name": "Portfolio Pulse",
+      "short_name": "Portfolio",
+      "description": "Gekochte aandelen met winst/verlies tracking",
+      "url": "/defog/widget/portfolio"
+    },
+    {
+      "name": "Big Movers",
+      "short_name": "Movers",
+      "description": "Top stijgers en dalers van vandaag",
+      "url": "/defog/widget/movers"
+    },
+    {
+      "name": "Watchlist Alerts",
+      "short_name": "Alerts",
+      "description": "Aandelen met grote dagdalingen",
+      "url": "/defog/widget/alerts"
     }
   ],
   "categories": ["finance"],
