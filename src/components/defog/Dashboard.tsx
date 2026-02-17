@@ -41,6 +41,7 @@ import { RefreshQueueModal } from './RefreshQueueModal';
 import { ScanLogModal } from './ScanLogModal';
 import { UndoModal } from './UndoModal';
 import { startAutoBackup } from '@/lib/defog/services/backupService';
+import { fetchRangesForAllStocks, type RangeFetchProgress } from '@/lib/defog/services/postSyncRangeFetch';
 import { MiniTilesView, type TileSortMode } from './MiniTilesView';
 
 // Color scheme configurations
@@ -107,6 +108,7 @@ export function Dashboard() {
   const [autoScanCountdown, setAutoScanCountdown] = useState<number>(0);
   const autoScanTimerRef = useRef<number | null>(null);
   const [isManualWeekendTaskRunning, setIsManualWeekendTaskRunning] = useState(false);
+  const [rangeFetchProgress, setRangeFetchProgress] = useState<RangeFetchProgress | null>(null);
 
   // Dashboard view: list or tiles (separate from mobile/desktop view mode)
   const [dashboardView, setDashboardView] = useState<'list' | 'tiles'>(() => {
@@ -688,6 +690,28 @@ export function Dashboard() {
     console.log('[Dashboard] Finished refreshing archived stock prices');
   }, [store.settings.apiKey, store.settings.apiProvider, store.settings.apiKeys, store.archive]);
 
+  // Manual range fetch for all stocks missing range data
+  const handleFetchRanges = useCallback(async () => {
+    if (rangeFetchProgress?.status === 'running') return;
+
+    const updateStock = (tabId: string, stockId: string, updates: Partial<Stock>) => {
+      store.updateStock(tabId, stockId, updates);
+    };
+
+    try {
+      const result = await fetchRangesForAllStocks(
+        () => store.tabs,
+        updateStock,
+        setRangeFetchProgress,
+      );
+      console.log(`[Dashboard] Manual range fetch: ${result.updated}/${result.processed} updated`);
+    } catch (error) {
+      console.error('[Dashboard] Manual range fetch failed:', error);
+    }
+    // Clear progress after a delay
+    setTimeout(() => setRangeFetchProgress(null), 3000);
+  }, [rangeFetchProgress, store]);
+
   // Build available providers list for the queue modal
   const availableProviders = useMemo(() => {
     const providers: Array<{ provider: ApiProvider; name: string }> = [];
@@ -1218,12 +1242,11 @@ export function Dashboard() {
       );
     };
 
-    // Set initial countdown
+    // Set initial countdown — do NOT run immediately on page load
+    // The user must wait for the first interval before scanning starts
+    // This prevents wasting API calls when range data hasn't been fetched yet
     autoScanTimerRef.current = Date.now() + AUTO_SCAN_INTERVAL;
     setAutoScanCountdown(AUTO_SCAN_INTERVAL / 1000);
-
-    // Run immediately when enabled
-    autoScan();
 
     // Set up interval for auto-scanning
     const interval = setInterval(autoScan, AUTO_SCAN_INTERVAL);
@@ -1673,6 +1696,44 @@ export function Dashboard() {
                       </span>
                     )}
                   </button>
+                  {/* Update Ranges button — fetch 5Y/3Y/1Y range data for stocks without rangeFetched */}
+                  {(() => {
+                    const missingRanges = store.tabs.reduce((n, tab) => n + tab.stocks.filter(s => !s.rangeFetched).length, 0);
+                    return (
+                      <button
+                        onClick={handleFetchRanges}
+                        disabled={rangeFetchProgress?.status === 'running' || missingRanges === 0}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                          rangeFetchProgress?.status === 'running'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : missingRanges > 0
+                            ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
+                            : 'bg-green-500/20 text-green-400 opacity-70'
+                        } ${rangeFetchProgress?.status === 'running' || missingRanges === 0 ? 'cursor-not-allowed' : ''}`}
+                        title={
+                          rangeFetchProgress?.status === 'running'
+                            ? `Ranges ophalen: ${rangeFetchProgress.ticker} (${rangeFetchProgress.current}/${rangeFetchProgress.total})`
+                            : missingRanges > 0
+                            ? `${missingRanges} aandelen zonder range data — klik om 5Y ranges op te halen`
+                            : 'Alle aandelen hebben range data'
+                        }
+                      >
+                        {rangeFetchProgress?.status === 'running' ? (
+                          <>
+                            <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                            <span>{rangeFetchProgress.current}/{rangeFetchProgress.total}</span>
+                          </>
+                        ) : missingRanges > 0 ? (
+                          <>
+                            <span>Update Ranges</span>
+                            <span className="bg-orange-500/40 px-1 rounded text-[10px]">{missingRanges}</span>
+                          </>
+                        ) : (
+                          <span>Ranges OK</span>
+                        )}
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={handleManualWeekendTask}
                     disabled={isManualWeekendTaskRunning || !canRunWeekendTaskManually() || (weekendTaskProgress?.status === 'running')}

@@ -6,7 +6,7 @@
 // 1. Find stocks added < 1 day ago that don't have rangeFetched = true
 // 2. Fetch 5Y historical data from Yahoo Finance for each
 // 3. Calculate year5Low, year3Low, week52Low from the data
-// 4. Calculate buyLimit = min(available lows) * 1.15
+// 4. Calculate buyLimit = min(available lows) * 1.05
 // 5. Update the stock with ranges + limit
 
 import type { Stock, Tab, HistoricalDataPoint } from '../types';
@@ -26,7 +26,7 @@ export interface RangeFetchProgress {
 
 /**
  * Calculate buy limit from the MINIMUM of all available historical lows.
- * Uses the lowest price point across all timeframes × 1.15.
+ * Uses the lowest price point across all timeframes × 1.05.
  * Priority: 5Y low (most comprehensive) → 3Y low → 1Y low.
  * If no range data available, returns null (don't guess).
  */
@@ -260,8 +260,140 @@ export async function fetchRangesForNewStocks(
 }
 
 /**
+ * Find ALL stocks across ALL tabs that need range data (not just scanner tabs).
+ * Used by the manual "Update Ranges" button.
+ */
+function findAllStocksNeedingRanges(tabs: Tab[]): Array<{ tabId: string; stock: Stock }> {
+  const results: Array<{ tabId: string; stock: Stock }> = [];
+
+  for (const tab of tabs) {
+    for (const stock of tab.stocks) {
+      if (stock.rangeFetched) continue;
+      results.push({ tabId: tab.id, stock });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Fetch ranges for ALL stocks across ALL tabs that don't have rangeFetched.
+ * This is the manual version triggered by the "Update Ranges" button.
+ */
+export async function fetchRangesForAllStocks(
+  getTabs: () => Tab[],
+  updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void,
+  onProgress?: (progress: RangeFetchProgress) => void,
+): Promise<{ processed: number; updated: number }> {
+  const tabs = getTabs();
+  const stocksToProcess = findAllStocksNeedingRanges(tabs);
+
+  if (stocksToProcess.length === 0) {
+    console.log('[ManualRangeFetch] All stocks already have ranges');
+    return { processed: 0, updated: 0 };
+  }
+
+  console.log(`[ManualRangeFetch] Fetching ranges for ${stocksToProcess.length} stocks...`);
+
+  const api = getStockAPI();
+  let updated = 0;
+
+  for (let i = 0; i < stocksToProcess.length; i++) {
+    const { tabId, stock } = stocksToProcess[i];
+
+    onProgress?.({
+      current: i + 1,
+      total: stocksToProcess.length,
+      ticker: stock.ticker,
+      status: 'running',
+    });
+
+    try {
+      console.log(`[ManualRangeFetch] Fetching 5Y data for ${stock.ticker} (${i + 1}/${stocksToProcess.length})`);
+
+      const result = await api.fetchStockWithFallback(stock.ticker, stock.exchange, {
+        needsHistorical: true,
+      });
+
+      if (result.data?.historicalData && result.data.historicalData.length > 0) {
+        const ranges = calculateRangesFromData(result.data.historicalData);
+
+        const hasYear5 = ranges.year5Low != null && ranges.year5Low > 0;
+        const hasYear3 = ranges.year3Low != null && ranges.year3Low > 0;
+        const hasWeek52 = ranges.week52Low != null && ranges.week52Low > 0;
+
+        if (hasYear5 || hasYear3 || hasWeek52) {
+          const buyLimit = calculateBuyLimitFromRanges(
+            ranges.year5Low,
+            ranges.year3Low,
+            ranges.week52Low,
+          );
+
+          const updates: Partial<Stock> = { rangeFetched: true };
+
+          if (ranges.year5High != null) updates.year5High = ranges.year5High;
+          if (ranges.year5Low != null) updates.year5Low = ranges.year5Low;
+          if (ranges.year3High != null) updates.year3High = ranges.year3High;
+          if (ranges.year3Low != null) updates.year3Low = ranges.year3Low;
+          if (ranges.week52High != null && ranges.week52High > 0) updates.week52High = ranges.week52High;
+          if (ranges.week52Low != null && ranges.week52Low > 0) updates.week52Low = ranges.week52Low;
+
+          if (result.data.currentPrice && result.data.currentPrice > 0) {
+            updates.currentPrice = result.data.currentPrice;
+          }
+          if (result.data.previousClose) updates.previousClose = result.data.previousClose;
+          if (result.data.dayChange != null) updates.dayChange = result.data.dayChange;
+          if (result.data.dayChangePercent != null) updates.dayChangePercent = result.data.dayChangePercent;
+
+          if (buyLimit != null) {
+            updates.buyLimit = buyLimit;
+          }
+
+          if (result.data.historicalData) {
+            updates.historicalData = result.data.historicalData;
+          }
+
+          const rangeLabel = hasYear5 ? '5Y' : hasYear3 ? '3Y' : '1Y';
+          const lowUsed = hasYear5 ? ranges.year5Low : hasYear3 ? ranges.year3Low : ranges.week52Low;
+          console.log(
+            `[ManualRangeFetch] ${stock.ticker}: ${rangeLabel} low=${lowUsed?.toFixed(2)}, ` +
+            `buyLimit=${buyLimit?.toFixed(2)}, currentPrice=${(updates.currentPrice || stock.currentPrice).toFixed(2)}`
+          );
+
+          updateStock(tabId, stock.id, updates);
+          updated++;
+        } else {
+          console.log(`[ManualRangeFetch] ${stock.ticker}: No usable range data`);
+          updateStock(tabId, stock.id, { rangeFetched: true });
+        }
+      } else {
+        console.log(`[ManualRangeFetch] ${stock.ticker}: No historical data returned`);
+        updateStock(tabId, stock.id, { rangeFetched: true });
+      }
+    } catch (error) {
+      console.error(`[ManualRangeFetch] Failed for ${stock.ticker}:`, error);
+    }
+
+    if (i < stocksToProcess.length - 1) {
+      const delay = RATE_LIMITS['yahoo']?.minDelayMs || 1000;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  onProgress?.({
+    current: stocksToProcess.length,
+    total: stocksToProcess.length,
+    ticker: '',
+    status: 'completed',
+  });
+
+  console.log(`[ManualRangeFetch] Done. Processed ${stocksToProcess.length}, updated ${updated}`);
+  return { processed: stocksToProcess.length, updated };
+}
+
+/**
  * Recalculate buy limits for ALL stocks that have range data.
- * Uses minimum of (year5Low, year3Low, week52Low) × 1.15.
+ * Uses minimum of (year5Low, year3Low, week52Low) × 1.05.
  * Call this to fix existing stocks with wrong limits.
  */
 export function recalculateAllBuyLimits(
