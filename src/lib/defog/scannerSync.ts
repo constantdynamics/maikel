@@ -29,6 +29,10 @@ interface MaikelKuifjeStock {
   twelve_month_low: number | null;
   exchange: string | null;
   sector: string | null;
+  // Scan tracking from Supabase
+  scan_date: string | null;       // "2026-02-18" — date of most recent scan that found this stock
+  scan_number: number | null;     // Scan run number
+  created_at: string;             // ISO timestamp — first time stock was added to DB
 }
 
 interface MaikelZonnebloemStock {
@@ -42,6 +46,9 @@ interface MaikelZonnebloemStock {
   exchange: string | null;
   sector: string | null;
   highest_spike_pct: number | null;
+  // Scan tracking from Supabase
+  last_updated: string | null;    // ISO timestamp — last time scanner processed this stock
+  created_at?: string;            // ISO timestamp — first time stock was added to DB
 }
 
 // Multiplier: fraction above the historical low to set as buy limit
@@ -217,6 +224,26 @@ function deduplicateScannerStocks<T extends { company_name: string }>(
   return Array.from(byName.values()).map((v) => v.stock);
 }
 
+/**
+ * Get the scan date from a scanner stock.
+ * Kuifje: uses scan_date ("2026-02-18") or falls back to created_at
+ * Zonnebloem: uses last_updated or created_at
+ * Returns ISO string for addedAt field.
+ */
+function getScanDate(m: MaikelKuifjeStock | MaikelZonnebloemStock): string {
+  if ('scan_date' in m && m.scan_date) {
+    // Kuifje: scan_date is "YYYY-MM-DD", convert to ISO
+    return new Date(m.scan_date + 'T00:00:00Z').toISOString();
+  }
+  if ('last_updated' in m && m.last_updated) {
+    return m.last_updated;
+  }
+  if (m.created_at) {
+    return m.created_at;
+  }
+  return new Date().toISOString();
+}
+
 function maikelToDefogStock(
   m: MaikelKuifjeStock | MaikelZonnebloemStock,
   buyLimit: number | null,
@@ -242,7 +269,7 @@ function maikelToDefogStock(
     currency: 'USD',
     exchange,
     alertSettings: { customThresholds: [], enabled: true },
-    addedAt: new Date().toISOString(),
+    addedAt: getScanDate(m),
     rangeFetched: false,
   };
 }
@@ -420,8 +447,8 @@ export async function syncScannerToDefog(
   // ── Kuifje: build new stocks and updates ──
   const kuifjeMaps = buildExistingStockMaps(kuifjeTab.stocks);
   const kuifjeNewStocks: DefogStock[] = [];
-  // Track updates to existing stocks: stockId → { ticker?, buyLimit? }
-  const kuifjeUpdates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
+  // Track updates to existing stocks: stockId → { ticker?, buyLimit?, addedAt? }
+  const kuifjeUpdates = new Map<string, { ticker?: string; buyLimit?: number | null; addedAt?: string }>();
 
   for (const stock of kuifjeStocks) {
     const defogTicker = getDefogTicker(stock);
@@ -433,8 +460,14 @@ export async function syncScannerToDefog(
     );
 
     if (existing) {
-      // Duplicate found — potentially update ticker
-      const updates: { ticker?: string; buyLimit?: number | null } = {};
+      // Duplicate found — potentially update ticker and scan date
+      const updates: { ticker?: string; buyLimit?: number | null; addedAt?: string } = {};
+
+      // Always update addedAt from scanner's scan_date (keeps date filter current)
+      const scanDate = getScanDate(stock);
+      if (scanDate) {
+        updates.addedAt = scanDate;
+      }
 
       // Upgrade ticker if the new one is better (has exchange suffix)
       if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
@@ -479,7 +512,7 @@ export async function syncScannerToDefog(
   // ── Zonnebloem: build new stocks and updates ──
   const zbMaps = buildExistingStockMaps(zbTab.stocks);
   const zbNewStocks: DefogStock[] = [];
-  const zbUpdates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
+  const zbUpdates = new Map<string, { ticker?: string; buyLimit?: number | null; addedAt?: string }>();
 
   for (const stock of zbStocks) {
     const defogTicker = getDefogTicker(stock);
@@ -491,7 +524,13 @@ export async function syncScannerToDefog(
     );
 
     if (existing) {
-      const updates: { ticker?: string; buyLimit?: number | null } = {};
+      const updates: { ticker?: string; buyLimit?: number | null; addedAt?: string } = {};
+
+      // Always update addedAt from scanner's scan date (keeps date filter current)
+      const scanDate = getScanDate(stock);
+      if (scanDate) {
+        updates.addedAt = scanDate;
+      }
 
       if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
         updates.ticker = defogTicker;
@@ -561,6 +600,7 @@ export async function syncScannerToDefog(
               ...s,
               ...(update.ticker ? { ticker: update.ticker } : {}),
               ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
+              ...(update.addedAt ? { addedAt: update.addedAt } : {}),
             };
           }
           // Fill in null buyLimits ONLY for stocks with real Yahoo Finance range data
@@ -597,6 +637,7 @@ export async function syncScannerToDefog(
               ...s,
               ...(update.ticker ? { ticker: update.ticker } : {}),
               ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
+              ...(update.addedAt ? { addedAt: update.addedAt } : {}),
             };
           }
           // Fill in null buyLimits ONLY for stocks with real Yahoo Finance range data

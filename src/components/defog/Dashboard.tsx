@@ -118,9 +118,10 @@ export function Dashboard() {
   });
   const [tileSortMode, setTileSortMode] = useState<TileSortMode>('default');
 
-  // Scan date filter — filter stocks by the date they were added (addedAt)
+  // Scan date filter — filter stocks by the scan date (addedAt from scanner's scan_date)
   // Only relevant for scanner tabs (Kuifje, Prof. Zonnebloem)
-  const [scanDateFilter, setScanDateFilter] = useState<string | null>(null); // null = "Alle", or ISO date string "2026-02-18"
+  // Empty set = show all, otherwise only show stocks matching selected dates
+  const [scanDateFilter, setScanDateFilter] = useState<Set<string>>(new Set());
 
   const handleDashboardViewChange = useCallback((view: 'list' | 'tiles') => {
     setDashboardView(view);
@@ -1445,29 +1446,52 @@ export function Dashboard() {
   const scanDates = useMemo(() => {
     if (!isScannerTab || !activeTab) return [];
     const dateSet = new Map<string, number>(); // date → count
+    let noDateCount = 0;
     for (const stock of activeTab.stocks) {
       if (stock.addedAt) {
         const dateStr = stock.addedAt.split('T')[0]; // "2026-02-18"
         dateSet.set(dateStr, (dateSet.get(dateStr) || 0) + 1);
+      } else {
+        noDateCount++;
       }
     }
     // Sort newest first
-    return Array.from(dateSet.entries())
+    const dates = Array.from(dateSet.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([date, count]) => ({ date, count }));
+    // Add "unknown" bucket if some stocks have no date
+    if (noDateCount > 0) {
+      dates.push({ date: '__no_date__', count: noDateCount });
+    }
+    return dates;
   }, [isScannerTab, activeTab]);
 
   // Reset date filter when tab changes
   useEffect(() => {
-    setScanDateFilter(null);
+    setScanDateFilter(new Set());
   }, [store.activeTabId]);
+
+  // Toggle a date in the multi-select filter
+  const toggleScanDate = useCallback((date: string) => {
+    setScanDateFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return next;
+    });
+  }, []);
 
   // Apply scan date filter to sortedStocks
   const displayStocks = useMemo(() => {
-    if (!scanDateFilter || !isScannerTab) return sortedStocks;
+    if (scanDateFilter.size === 0 || !isScannerTab) return sortedStocks;
     return sortedStocks.filter(stock => {
-      if (!stock.addedAt) return false;
-      return stock.addedAt.split('T')[0] === scanDateFilter;
+      if (!stock.addedAt) {
+        return scanDateFilter.has('__no_date__');
+      }
+      return scanDateFilter.has(stock.addedAt.split('T')[0]);
     });
   }, [sortedStocks, scanDateFilter, isScannerTab]);
 
@@ -2439,37 +2463,59 @@ export function Dashboard() {
             </div>
 
             {/* Scan Date Filter — only for scanner tabs (Kuifje / Prof. Zonnebloem) */}
-            {isScannerTab && scanDates.length > 1 && (
+            {isScannerTab && scanDates.length > 0 && (
               <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto">
                 <CalendarDaysIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                {/* "Alle" button — clears all filters */}
                 <button
-                  onClick={() => setScanDateFilter(null)}
+                  onClick={() => setScanDateFilter(new Set())}
                   className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors ${
-                    scanDateFilter === null
+                    scanDateFilter.size === 0
                       ? 'bg-[#00ff88] text-black font-medium'
                       : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d]'
                   }`}
                 >
                   Alle ({activeTab?.stocks.length})
                 </button>
+                {/* Date chips — multi-select, with Vandaag/Gisteren labels */}
                 {scanDates.map(({ date, count }) => {
-                  const d = new Date(date + 'T00:00:00');
-                  const label = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+                  const isActive = scanDateFilter.has(date);
+                  let label: string;
+                  if (date === '__no_date__') {
+                    label = 'Onbekend';
+                  } else {
+                    const today = new Date().toISOString().split('T')[0];
+                    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+                    if (date === today) {
+                      label = 'Vandaag';
+                    } else if (date === yesterday) {
+                      label = 'Gisteren';
+                    } else {
+                      const d = new Date(date + 'T12:00:00');
+                      label = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+                    }
+                  }
                   return (
                     <button
                       key={date}
-                      onClick={() => setScanDateFilter(scanDateFilter === date ? null : date)}
+                      onClick={() => toggleScanDate(date)}
                       className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors ${
-                        scanDateFilter === date
+                        isActive
                           ? 'text-black font-medium'
                           : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d]'
                       }`}
-                      style={scanDateFilter === date ? { backgroundColor: activeTab?.accentColor || '#00ff88' } : undefined}
+                      style={isActive ? { backgroundColor: activeTab?.accentColor || '#00ff88' } : undefined}
                     >
                       {label} ({count})
                     </button>
                   );
                 })}
+                {/* Active filter count */}
+                {scanDateFilter.size > 0 && (
+                  <span className="text-xs text-gray-500 ml-1">
+                    {displayStocks.length}/{activeTab?.stocks.length}
+                  </span>
+                )}
               </div>
             )}
 
