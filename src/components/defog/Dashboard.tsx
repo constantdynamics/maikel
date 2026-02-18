@@ -118,6 +118,10 @@ export function Dashboard() {
   });
   const [tileSortMode, setTileSortMode] = useState<TileSortMode>('default');
 
+  // Scan date filter — filter stocks by the date they were added (addedAt)
+  // Only relevant for scanner tabs (Kuifje, Prof. Zonnebloem)
+  const [scanDateFilter, setScanDateFilter] = useState<string | null>(null); // null = "Alle", or ISO date string "2026-02-18"
+
   const handleDashboardViewChange = useCallback((view: 'list' | 'tiles') => {
     setDashboardView(view);
     try { localStorage.setItem('defog-dashboard-view', view); } catch { /* ignore */ }
@@ -1434,6 +1438,39 @@ export function Dashboard() {
     return stocks;
   }, [activeTab, isAllView, allStocksWithTabs]);
 
+  // Is current tab a scanner tab? (show scan date filter)
+  const isScannerTab = activeTab && (activeTab.name === 'Kuifje' || activeTab.name === 'Prof. Zonnebloem');
+
+  // Extract unique scan dates from the current tab's stocks
+  const scanDates = useMemo(() => {
+    if (!isScannerTab || !activeTab) return [];
+    const dateSet = new Map<string, number>(); // date → count
+    for (const stock of activeTab.stocks) {
+      if (stock.addedAt) {
+        const dateStr = stock.addedAt.split('T')[0]; // "2026-02-18"
+        dateSet.set(dateStr, (dateSet.get(dateStr) || 0) + 1);
+      }
+    }
+    // Sort newest first
+    return Array.from(dateSet.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, count]) => ({ date, count }));
+  }, [isScannerTab, activeTab]);
+
+  // Reset date filter when tab changes
+  useEffect(() => {
+    setScanDateFilter(null);
+  }, [store.activeTabId]);
+
+  // Apply scan date filter to sortedStocks
+  const displayStocks = useMemo(() => {
+    if (!scanDateFilter || !isScannerTab) return sortedStocks;
+    return sortedStocks.filter(stock => {
+      if (!stock.addedAt) return false;
+      return stock.addedAt.split('T')[0] === scanDateFilter;
+    });
+  }, [sortedStocks, scanDateFilter, isScannerTab]);
+
   const handleSort = (field: SortField) => {
     if (!activeTab) return;
 
@@ -2401,8 +2438,43 @@ export function Dashboard() {
               <div></div>
             </div>
 
+            {/* Scan Date Filter — only for scanner tabs (Kuifje / Prof. Zonnebloem) */}
+            {isScannerTab && scanDates.length > 1 && (
+              <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto">
+                <CalendarDaysIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                <button
+                  onClick={() => setScanDateFilter(null)}
+                  className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors ${
+                    scanDateFilter === null
+                      ? 'bg-[#00ff88] text-black font-medium'
+                      : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d]'
+                  }`}
+                >
+                  Alle ({activeTab?.stocks.length})
+                </button>
+                {scanDates.map(({ date, count }) => {
+                  const d = new Date(date + 'T00:00:00');
+                  const label = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
+                  return (
+                    <button
+                      key={date}
+                      onClick={() => setScanDateFilter(scanDateFilter === date ? null : date)}
+                      className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors ${
+                        scanDateFilter === date
+                          ? 'text-black font-medium'
+                          : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d]'
+                      }`}
+                      style={scanDateFilter === date ? { backgroundColor: activeTab?.accentColor || '#00ff88' } : undefined}
+                    >
+                      {label} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Stocks */}
-            {sortedStocks.length === 0 ? (
+            {displayStocks.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-400 mb-4">No stocks in this tab</p>
                 <button
@@ -2437,7 +2509,7 @@ export function Dashboard() {
                   ))}
                 </div>
                 <MiniTilesView
-                  stocks={sortedStocks}
+                  stocks={displayStocks}
                   tileSettings={store.settings.tileSettings}
                   sortMode={tileSortMode}
                   onRefreshStocks={(selectedStocksList) => {
@@ -2456,7 +2528,7 @@ export function Dashboard() {
             ) : isMobileView ? (
               // Mobile view - use MobileStockCard
               <div className="space-y-2">
-                {sortedStocks.map((stock) => {
+                {displayStocks.map((stock) => {
                   // Find tab info for "All" view
                   const stockTabInfo = isAllView
                     ? allStocksWithTabs.find(s => s.stock.id === stock.id)
@@ -2492,7 +2564,7 @@ export function Dashboard() {
               </div>
             ) : (
               // Desktop view - use StockCard
-              sortedStocks.map((stock) => {
+              displayStocks.map((stock) => {
                 // Find tab info for "All" view
                 const stockTabInfo = isAllView
                   ? allStocksWithTabs.find(s => s.stock.id === stock.id)
