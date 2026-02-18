@@ -6,10 +6,10 @@
 // 1. Find stocks added < 1 day ago that don't have rangeFetched = true
 // 2. Fetch 5Y historical data from Yahoo Finance for each
 // 3. Calculate year5Low, year3Low, week52Low from the data
-// 4. Calculate buyLimit = min(available lows) * 1.15
+// 4. Calculate buyLimit = min(available lows) * 1.05
 // 5. Update the stock with ranges + limit
 
-import type { Stock, Tab, HistoricalDataPoint } from '../types';
+import type { Stock, Tab, HistoricalDataPoint, RangeLogEntry } from '../types';
 import { getStockAPI, configureMultiApi } from './stockApi';
 import { RATE_LIMITS } from './rateLimiter';
 import type { ApiKeyConfig, ApiProvider } from '../types';
@@ -26,7 +26,7 @@ export interface RangeFetchProgress {
 
 /**
  * Calculate buy limit from the MINIMUM of all available historical lows.
- * Uses the lowest price point across all timeframes × 1.15.
+ * Uses the lowest price point across all timeframes × 1.05.
  * Priority: 5Y low (most comprehensive) → 3Y low → 1Y low.
  * If no range data available, returns null (don't guess).
  */
@@ -189,6 +189,8 @@ export async function fetchRangesForNewStocks(
 
           const updates: Partial<Stock> = {
             rangeFetched: true,
+            rangeFetchedAt: new Date().toISOString(),
+            rangeFetchError: false,
           };
 
           // Update range data
@@ -229,12 +231,12 @@ export async function fetchRangesForNewStocks(
         } else {
           // No usable range data found — mark as fetched to avoid retrying
           console.log(`[PostSyncRange] ${stock.ticker}: No usable range data from API`);
-          updateStock(tabId, stock.id, { rangeFetched: true });
+          updateStock(tabId, stock.id, { rangeFetched: true, rangeFetchedAt: new Date().toISOString() });
         }
       } else {
         // No historical data returned — mark as fetched
         console.log(`[PostSyncRange] ${stock.ticker}: No historical data returned`);
-        updateStock(tabId, stock.id, { rangeFetched: true });
+        updateStock(tabId, stock.id, { rangeFetched: true, rangeFetchedAt: new Date().toISOString() });
       }
     } catch (error) {
       console.error(`[PostSyncRange] Failed for ${stock.ticker}:`, error);
@@ -259,9 +261,295 @@ export async function fetchRangesForNewStocks(
   return { processed: stocksToProcess.length, updated };
 }
 
+const SMART_BATCH_SIZE = 100;
+
+/**
+ * Build a smart, prioritized queue of stocks needing range updates across ALL tabs.
+ *
+ * Priority order:
+ *   1. Never fetched (rangeFetched falsy, no rangeFetchedAt)
+ *   2. Oldest rangeFetchedAt (stale data refreshed first)
+ *
+ * Excluded:
+ *   - Stocks with rangeFetchError === true (failed before, skip unless user clears error)
+ */
+function buildSmartRangeQueue(tabs: Tab[]): Array<{ tabId: string; stock: Stock }> {
+  const candidates: Array<{ tabId: string; stock: Stock; sortKey: number }> = [];
+
+  for (const tab of tabs) {
+    for (const stock of tab.stocks) {
+      // Skip stocks that errored — user must clear the error flag to retry
+      if (stock.rangeFetchError) continue;
+
+      // Never fetched → highest priority (sortKey = 0)
+      if (!stock.rangeFetched) {
+        candidates.push({ tabId: tab.id, stock, sortKey: 0 });
+        continue;
+      }
+
+      // Already fetched — sort by rangeFetchedAt (oldest first)
+      const fetchedAt = stock.rangeFetchedAt ? new Date(stock.rangeFetchedAt).getTime() : 0;
+      candidates.push({ tabId: tab.id, stock, sortKey: fetchedAt || 1 });
+    }
+  }
+
+  // Sort: never-fetched first (0), then oldest rangeFetchedAt
+  candidates.sort((a, b) => a.sortKey - b.sortKey);
+
+  return candidates.map(({ tabId, stock }) => ({ tabId, stock }));
+}
+
+/**
+ * Count stocks eligible for range updating (for UI badge).
+ */
+export function countStocksNeedingRanges(tabs: Tab[]): { neverFetched: number; total: number } {
+  let neverFetched = 0;
+  let total = 0;
+
+  for (const tab of tabs) {
+    for (const stock of tab.stocks) {
+      if (stock.rangeFetchError) continue;
+      total++;
+      if (!stock.rangeFetched) neverFetched++;
+    }
+  }
+
+  return { neverFetched, total };
+}
+
+/**
+ * Smart batch range updater. Processes up to 100 stocks per run.
+ *
+ * - Prioritizes stocks that have NEVER had ranges fetched
+ * - Then refreshes oldest rangeFetchedAt (stale data)
+ * - Skips stocks with rangeFetchError (previous failures)
+ * - Marks failed stocks with rangeFetchError so they are skipped next run
+ * - Stops after SMART_BATCH_SIZE (100) stocks
+ */
+export async function fetchRangesForAllStocks(
+  getTabs: () => Tab[],
+  updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void,
+  onProgress?: (progress: RangeFetchProgress) => void,
+  onLogEntry?: (entry: Omit<RangeLogEntry, 'id' | 'timestamp'>) => void,
+): Promise<{ processed: number; updated: number; errors: number; remaining: number }> {
+  const tabs = getTabs();
+  const fullQueue = buildSmartRangeQueue(tabs);
+
+  if (fullQueue.length === 0) {
+    console.log('[SmartRange] No stocks eligible for range update');
+    onProgress?.({ current: 0, total: 0, ticker: '', status: 'completed' });
+    return { processed: 0, updated: 0, errors: 0, remaining: 0 };
+  }
+
+  // Take at most SMART_BATCH_SIZE from the queue
+  const batch = fullQueue.slice(0, SMART_BATCH_SIZE);
+  const remaining = fullQueue.length - batch.length;
+
+  console.log(
+    `[SmartRange] Processing batch of ${batch.length}/${fullQueue.length} stocks ` +
+    `(${remaining} remaining after this batch)`
+  );
+
+  const api = getStockAPI();
+  let updated = 0;
+  let errors = 0;
+  const now = new Date().toISOString();
+
+  // Build tab name lookup for log entries
+  const tabNameMap = new Map(tabs.map(t => [t.id, t.name]));
+
+  for (let i = 0; i < batch.length; i++) {
+    const { tabId, stock } = batch[i];
+    const fetchType: 'first_fetch' | 'refresh' = stock.rangeFetched ? 'refresh' : 'first_fetch';
+    const tabName = tabNameMap.get(tabId) || 'Onbekend';
+    const startTime = Date.now();
+
+    onProgress?.({
+      current: i + 1,
+      total: batch.length,
+      ticker: stock.ticker,
+      status: 'running',
+    });
+
+    try {
+      console.log(
+        `[SmartRange] ${stock.ticker} (${i + 1}/${batch.length}) ` +
+        `${stock.rangeFetched ? 'refresh' : 'first fetch'}`
+      );
+
+      const result = await api.fetchStockWithFallback(stock.ticker, stock.exchange, {
+        needsHistorical: true,
+      });
+
+      if (result.data?.historicalData && result.data.historicalData.length > 0) {
+        const ranges = calculateRangesFromData(result.data.historicalData);
+
+        const hasYear5 = ranges.year5Low != null && ranges.year5Low > 0;
+        const hasYear3 = ranges.year3Low != null && ranges.year3Low > 0;
+        const hasWeek52 = ranges.week52Low != null && ranges.week52Low > 0;
+
+        if (hasYear5 || hasYear3 || hasWeek52) {
+          const buyLimit = calculateBuyLimitFromRanges(
+            ranges.year5Low,
+            ranges.year3Low,
+            ranges.week52Low,
+          );
+
+          const updates: Partial<Stock> = {
+            rangeFetched: true,
+            rangeFetchedAt: now,
+            rangeFetchError: false,
+          };
+
+          if (ranges.year5High != null) updates.year5High = ranges.year5High;
+          if (ranges.year5Low != null) updates.year5Low = ranges.year5Low;
+          if (ranges.year3High != null) updates.year3High = ranges.year3High;
+          if (ranges.year3Low != null) updates.year3Low = ranges.year3Low;
+          if (ranges.week52High != null && ranges.week52High > 0) updates.week52High = ranges.week52High;
+          if (ranges.week52Low != null && ranges.week52Low > 0) updates.week52Low = ranges.week52Low;
+
+          if (result.data.currentPrice && result.data.currentPrice > 0) {
+            updates.currentPrice = result.data.currentPrice;
+          }
+          if (result.data.previousClose) updates.previousClose = result.data.previousClose;
+          if (result.data.dayChange != null) updates.dayChange = result.data.dayChange;
+          if (result.data.dayChangePercent != null) updates.dayChangePercent = result.data.dayChangePercent;
+
+          if (buyLimit != null) {
+            updates.buyLimit = buyLimit;
+          }
+
+          if (result.data.historicalData) {
+            updates.historicalData = result.data.historicalData;
+          }
+
+          const rangeLabel = hasYear5 ? '5Y' : hasYear3 ? '3Y' : '1Y';
+          const lowUsed = hasYear5 ? ranges.year5Low : hasYear3 ? ranges.year3Low : ranges.week52Low;
+          console.log(
+            `[SmartRange] ${stock.ticker}: ${rangeLabel} low=${lowUsed?.toFixed(2)}, ` +
+            `buyLimit=${buyLimit?.toFixed(2)}, price=${(updates.currentPrice || stock.currentPrice).toFixed(2)}`
+          );
+
+          updateStock(tabId, stock.id, updates);
+          updated++;
+
+          // Log success
+          onLogEntry?.({
+            ticker: stock.ticker,
+            stockId: stock.id,
+            tabName,
+            type: fetchType,
+            result: 'success',
+            year5Low: ranges.year5Low,
+            year5High: ranges.year5High,
+            year3Low: ranges.year3Low,
+            year3High: ranges.year3High,
+            week52Low: ranges.week52Low,
+            week52High: ranges.week52High,
+            rangeLabel,
+            buyLimit: buyLimit ?? undefined,
+            currentPrice: updates.currentPrice || stock.currentPrice,
+            duration: Date.now() - startTime,
+          });
+        } else {
+          // API returned data but no usable ranges — mark as fetched + timestamp
+          console.log(`[SmartRange] ${stock.ticker}: No usable range data from API`);
+          updateStock(tabId, stock.id, {
+            rangeFetched: true,
+            rangeFetchedAt: now,
+            rangeFetchError: false,
+          });
+
+          onLogEntry?.({
+            ticker: stock.ticker,
+            stockId: stock.id,
+            tabName,
+            type: fetchType,
+            result: 'no_data',
+            duration: Date.now() - startTime,
+          });
+        }
+      } else {
+        // No historical data at all — mark as fetched so it doesn't block the queue
+        console.log(`[SmartRange] ${stock.ticker}: No historical data returned`);
+        updateStock(tabId, stock.id, {
+          rangeFetched: true,
+          rangeFetchedAt: now,
+          rangeFetchError: false,
+        });
+
+        onLogEntry?.({
+          ticker: stock.ticker,
+          stockId: stock.id,
+          tabName,
+          type: fetchType,
+          result: 'no_data',
+          duration: Date.now() - startTime,
+        });
+      }
+    } catch (error) {
+      // Mark as error so this stock is SKIPPED in future runs
+      console.error(`[SmartRange] ${stock.ticker}: FAILED — marking as error`, error);
+      updateStock(tabId, stock.id, { rangeFetchError: true });
+      errors++;
+
+      onLogEntry?.({
+        ticker: stock.ticker,
+        stockId: stock.id,
+        tabName,
+        type: fetchType,
+        result: 'error',
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : 'Onbekende fout',
+      });
+    }
+
+    // Rate limit between requests
+    if (i < batch.length - 1) {
+      const delay = RATE_LIMITS['yahoo']?.minDelayMs || 1000;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  onProgress?.({
+    current: batch.length,
+    total: batch.length,
+    ticker: '',
+    status: 'completed',
+  });
+
+  console.log(
+    `[SmartRange] Batch done. Updated: ${updated}, errors: ${errors}, remaining: ${remaining}`
+  );
+  return { processed: batch.length, updated, errors, remaining };
+}
+
+/**
+ * Clear rangeFetchError for all stocks, so they become eligible for the smart updater again.
+ */
+export function clearRangeFetchErrors(
+  getTabs: () => Tab[],
+  updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void,
+): number {
+  const tabs = getTabs();
+  let cleared = 0;
+
+  for (const tab of tabs) {
+    for (const stock of tab.stocks) {
+      if (stock.rangeFetchError) {
+        updateStock(tab.id, stock.id, { rangeFetchError: false });
+        cleared++;
+      }
+    }
+  }
+
+  console.log(`[SmartRange] Cleared ${cleared} error flags`);
+  return cleared;
+}
+
 /**
  * Recalculate buy limits for ALL stocks that have range data.
- * Uses minimum of (year5Low, year3Low, week52Low) × 1.15.
+ * Uses minimum of (year5Low, year3Low, week52Low) × 1.05.
  * Call this to fix existing stocks with wrong limits.
  */
 export function recalculateAllBuyLimits(

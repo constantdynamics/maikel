@@ -1,0 +1,69 @@
+{
+  "name": "Professor Zonnebloem",
+  "short_name": "Zonnebloem",
+  "description": "Stock screener - detectie van koopkansen",
+  "start_url": "/defog",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Top 24 Tiles",
+      "short_name": "Tiles",
+      "description": "Top 24 aandelen dichtst bij aankooplimiet",
+      "url": "/defog/widget"
+    },
+    {
+      "name": "Onderwater",
+      "short_name": "Onderwater",
+      "description": "Aandelen onder de aankooplimiet",
+      "url": "/defog/widget/underwater"
+    },
+    {
+      "name": "Scanner Control",
+      "short_name": "Scanner",
+      "description": "Kuifje en Zonnebloem scanners activeren",
+      "url": "/defog/widget/scan"
+    },
+    {
+      "name": "Portfolio Pulse",
+      "short_name": "Portfolio",
+      "description": "Gekochte aandelen met winst/verlies tracking",
+      "url": "/defog/widget/portfolio"
+    },
+    {
+      "name": "Big Movers",
+      "short_name": "Movers",
+      "description": "Top stijgers en dalers van vandaag",
+      "url": "/defog/widget/movers"
+    },
+    {
+      "name": "Watchlist Alerts",
+      "short_name": "Alerts",
+      "description": "Aandelen met grote dagdalingen",
+      "url": "/defog/widget/alerts"
+    },
+    {
+      "name": "Tablet Dashboard",
+      "short_name": "Tablet",
+      "description": "Alle widgets gecombineerd in een overzicht",
+      "url": "/defog/widget/tablet"
+    }
+  ],
+  "categories": ["finance"],
+  "lang": "nl"
+}

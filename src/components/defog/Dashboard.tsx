@@ -40,7 +40,9 @@ import type { Stock, SortField, ChartTimeframe, ColorScheme, FontSize, RangePeri
 import { RefreshQueueModal } from './RefreshQueueModal';
 import { ScanLogModal } from './ScanLogModal';
 import { UndoModal } from './UndoModal';
+import { RangeLogModal } from './RangeLogModal';
 import { startAutoBackup } from '@/lib/defog/services/backupService';
+import { fetchRangesForAllStocks, countStocksNeedingRanges, clearRangeFetchErrors, type RangeFetchProgress } from '@/lib/defog/services/postSyncRangeFetch';
 import { MiniTilesView, type TileSortMode } from './MiniTilesView';
 
 // Color scheme configurations
@@ -100,6 +102,7 @@ export function Dashboard() {
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [showScanLogModal, setShowScanLogModal] = useState(false);
   const [showUndoModal, setShowUndoModal] = useState(false);
+  const [showRangeLogModal, setShowRangeLogModal] = useState(false);
   const [currentlyScanning, setCurrentlyScanning] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [isRefreshingArchive, setIsRefreshingArchive] = useState(false);
@@ -107,6 +110,7 @@ export function Dashboard() {
   const [autoScanCountdown, setAutoScanCountdown] = useState<number>(0);
   const autoScanTimerRef = useRef<number | null>(null);
   const [isManualWeekendTaskRunning, setIsManualWeekendTaskRunning] = useState(false);
+  const [rangeFetchProgress, setRangeFetchProgress] = useState<RangeFetchProgress | null>(null);
 
   // Dashboard view: list or tiles (separate from mobile/desktop view mode)
   const [dashboardView, setDashboardView] = useState<'list' | 'tiles'>(() => {
@@ -688,6 +692,42 @@ export function Dashboard() {
     console.log('[Dashboard] Finished refreshing archived stock prices');
   }, [store.settings.apiKey, store.settings.apiProvider, store.settings.apiKeys, store.archive]);
 
+  // Manual range fetch for all stocks missing range data
+  // Smart batch range updater — processes 100 per run, prioritized
+  const handleFetchRanges = useCallback(async () => {
+    if (rangeFetchProgress?.status === 'running') return;
+
+    const updateStock = (tabId: string, stockId: string, updates: Partial<Stock>) => {
+      store.updateStock(tabId, stockId, updates);
+    };
+
+    try {
+      const result = await fetchRangesForAllStocks(
+        () => store.tabs,
+        updateStock,
+        setRangeFetchProgress,
+        (entry) => store.addRangeLogEntry(entry),
+      );
+      console.log(
+        `[Dashboard] Smart range batch: ${result.updated} updated, ` +
+        `${result.errors} errors, ${result.remaining} remaining`
+      );
+    } catch (error) {
+      console.error('[Dashboard] Smart range fetch failed:', error);
+    }
+    // Clear progress after a delay
+    setTimeout(() => setRangeFetchProgress(null), 3000);
+  }, [rangeFetchProgress, store]);
+
+  // Clear error flags so errored stocks become eligible again
+  const handleClearRangeErrors = useCallback(() => {
+    const updateStock = (tabId: string, stockId: string, updates: Partial<Stock>) => {
+      store.updateStock(tabId, stockId, updates);
+    };
+    const cleared = clearRangeFetchErrors(() => store.tabs, updateStock);
+    console.log(`[Dashboard] Cleared ${cleared} range error flags`);
+  }, [store]);
+
   // Build available providers list for the queue modal
   const availableProviders = useMemo(() => {
     const providers: Array<{ provider: ApiProvider; name: string }> = [];
@@ -1218,12 +1258,11 @@ export function Dashboard() {
       );
     };
 
-    // Set initial countdown
+    // Set initial countdown — do NOT run immediately on page load
+    // The user must wait for the first interval before scanning starts
+    // This prevents wasting API calls when range data hasn't been fetched yet
     autoScanTimerRef.current = Date.now() + AUTO_SCAN_INTERVAL;
     setAutoScanCountdown(AUTO_SCAN_INTERVAL / 1000);
-
-    // Run immediately when enabled
-    autoScan();
 
     // Set up interval for auto-scanning
     const interval = setInterval(autoScan, AUTO_SCAN_INTERVAL);
@@ -1673,6 +1712,125 @@ export function Dashboard() {
                       </span>
                     )}
                   </button>
+                  {/* Smart Range Updater — batch 100 per run, prioritized, skip errors */}
+                  {(() => {
+                    const rangeStats = countStocksNeedingRanges(store.tabs);
+                    const errorCount = store.tabs.reduce((n, tab) => n + tab.stocks.filter(s => s.rangeFetchError).length, 0);
+                    const isRunning = rangeFetchProgress?.status === 'running';
+
+                    // Coverage stats: how many stocks have REAL range data (not 0-0)
+                    const totalStocks = store.tabs.reduce((n, tab) => n + tab.stocks.length, 0);
+                    const withValidRange = store.tabs.reduce((n, tab) =>
+                      n + tab.stocks.filter(s =>
+                        s.rangeFetched && (
+                          (s.year5Low != null && s.year5Low > 0) ||
+                          (s.year3Low != null && s.year3Low > 0) ||
+                          (s.week52Low != null && s.week52Low > 0)
+                        )
+                      ).length, 0
+                    );
+                    const coveragePct = totalStocks > 0 ? Math.round((withValidRange / totalStocks) * 100) : 0;
+
+                    // Per-tab breakdown for tooltip
+                    const perTab = store.tabs.map(tab => {
+                      const total = tab.stocks.length;
+                      const valid = tab.stocks.filter(s =>
+                        s.rangeFetched && (
+                          (s.year5Low != null && s.year5Low > 0) ||
+                          (s.year3Low != null && s.year3Low > 0) ||
+                          (s.week52Low != null && s.week52Low > 0)
+                        )
+                      ).length;
+                      return { name: tab.name, valid, total };
+                    }).filter(t => t.total > 0);
+
+                    const tooltipLines = perTab.map(t =>
+                      `${t.name}: ${t.valid}/${t.total} (${t.total > 0 ? Math.round((t.valid / t.total) * 100) : 0}%)`
+                    );
+
+                    return (
+                      <div className="flex items-center gap-0.5">
+                        {/* Range coverage meter */}
+                        <div
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-[#2d2d2d]"
+                          title={`Range dekking:\n${tooltipLines.join('\n')}\n\nTotaal: ${withValidRange}/${totalStocks} (${coveragePct}%)`}
+                        >
+                          {/* Mini progress bar */}
+                          <div className="w-12 h-1.5 rounded-full bg-[#3d3d3d] overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${coveragePct}%`,
+                                backgroundColor: coveragePct === 100 ? '#00ff88' : coveragePct >= 75 ? '#00cc66' : coveragePct >= 50 ? '#ffaa00' : '#ff6644',
+                              }}
+                            />
+                          </div>
+                          <span className={
+                            coveragePct === 100 ? 'text-[#00ff88]' :
+                            coveragePct >= 75 ? 'text-[#00cc66]' :
+                            coveragePct >= 50 ? 'text-yellow-400' : 'text-orange-400'
+                          }>
+                            {withValidRange}/{totalStocks}
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={handleFetchRanges}
+                          disabled={isRunning}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                            isRunning
+                              ? 'bg-blue-500/20 text-blue-400'
+                              : rangeStats.neverFetched > 0
+                              ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
+                              : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                          } ${isRunning ? 'cursor-not-allowed' : ''}`}
+                          title={
+                            isRunning
+                              ? `Ranges ophalen: ${rangeFetchProgress.ticker} (${rangeFetchProgress.current}/${rangeFetchProgress.total})`
+                              : rangeStats.neverFetched > 0
+                              ? `${rangeStats.neverFetched} zonder range — klik voor batch van max 100`
+                              : `Alle ${rangeStats.total} aandelen hebben ranges — klik om oudste te verversen (batch 100)`
+                          }
+                        >
+                          {isRunning ? (
+                            <>
+                              <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                              <span>{rangeFetchProgress.current}/{rangeFetchProgress.total}</span>
+                            </>
+                          ) : rangeStats.neverFetched > 0 ? (
+                            <>
+                              <span>Update Ranges</span>
+                              <span className="bg-orange-500/40 px-1 rounded text-[10px]">{rangeStats.neverFetched}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Refresh Ranges</span>
+                            </>
+                          )}
+                        </button>
+                        {/* Error badge — click to clear error flags */}
+                        {errorCount > 0 && !isRunning && (
+                          <button
+                            onClick={handleClearRangeErrors}
+                            className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[10px] font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                            title={`${errorCount} aandelen met fouten — klik om opnieuw te proberen`}
+                          >
+                            <span>{errorCount} err</span>
+                          </button>
+                        )}
+                        {/* Range log button */}
+                        {store.rangeLog.length > 0 && (
+                          <button
+                            onClick={() => setShowRangeLogModal(true)}
+                            className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[10px] font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors"
+                            title="Range update log bekijken"
+                          >
+                            <span>log {store.rangeLog.length}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={handleManualWeekendTask}
                     disabled={isManualWeekendTaskRunning || !canRunWeekendTaskManually() || (weekendTaskProgress?.status === 'running')}
@@ -2543,6 +2701,13 @@ export function Dashboard() {
         actionLog={store.actionLog}
         onUndo={store.undoAction}
         onClear={store.clearActionLog}
+      />
+
+      <RangeLogModal
+        isOpen={showRangeLogModal}
+        onClose={() => setShowRangeLogModal(false)}
+        rangeLog={store.rangeLog}
+        onClear={store.clearRangeLog}
       />
 
       {/* Floating buttons bottom-right: scroll-to-top, add stock, version */}
