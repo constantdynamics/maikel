@@ -1442,29 +1442,28 @@ export function Dashboard() {
   // Is current tab a scanner tab? (show scan date filter)
   const isScannerTab = activeTab && (activeTab.name === 'Kuifje' || activeTab.name === 'Prof. Zonnebloem');
 
+  // Extract the scan date for a stock: addedAt (from scanner sync) → lastUpdated (fallback)
+  const getStockDate = useCallback((stock: Stock): string | null => {
+    if (stock.addedAt) return stock.addedAt.split('T')[0];
+    if (stock.lastUpdated) return stock.lastUpdated.split('T')[0];
+    return null;
+  }, []);
+
   // Extract unique scan dates from the current tab's stocks
   const scanDates = useMemo(() => {
     if (!isScannerTab || !activeTab) return [];
     const dateSet = new Map<string, number>(); // date → count
-    let noDateCount = 0;
     for (const stock of activeTab.stocks) {
-      if (stock.addedAt) {
-        const dateStr = stock.addedAt.split('T')[0]; // "2026-02-18"
+      const dateStr = getStockDate(stock);
+      if (dateStr) {
         dateSet.set(dateStr, (dateSet.get(dateStr) || 0) + 1);
-      } else {
-        noDateCount++;
       }
     }
     // Sort newest first
-    const dates = Array.from(dateSet.entries())
+    return Array.from(dateSet.entries())
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([date, count]) => ({ date, count }));
-    // Add "unknown" bucket if some stocks have no date
-    if (noDateCount > 0) {
-      dates.push({ date: '__no_date__', count: noDateCount });
-    }
-    return dates;
-  }, [isScannerTab, activeTab]);
+  }, [isScannerTab, activeTab, getStockDate]);
 
   // Reset date filter when tab changes
   useEffect(() => {
@@ -1488,12 +1487,11 @@ export function Dashboard() {
   const displayStocks = useMemo(() => {
     if (scanDateFilter.size === 0 || !isScannerTab) return sortedStocks;
     return sortedStocks.filter(stock => {
-      if (!stock.addedAt) {
-        return scanDateFilter.has('__no_date__');
-      }
-      return scanDateFilter.has(stock.addedAt.split('T')[0]);
+      const dateStr = getStockDate(stock);
+      if (!dateStr) return false;
+      return scanDateFilter.has(dateStr);
     });
-  }, [sortedStocks, scanDateFilter, isScannerTab]);
+  }, [sortedStocks, scanDateFilter, isScannerTab, getStockDate]);
 
   const handleSort = (field: SortField) => {
     if (!activeTab) return;
@@ -2463,8 +2461,8 @@ export function Dashboard() {
             </div>
 
             {/* Scan Date Filter — only for scanner tabs (Kuifje / Prof. Zonnebloem) */}
-            {isScannerTab && scanDates.length > 0 && (
-              <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto">
+            {isScannerTab && scanDates.length > 1 && (
+              <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto scrollbar-hide">
                 <CalendarDaysIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
                 {/* "Alle" button — clears all filters */}
                 <button
@@ -2480,20 +2478,16 @@ export function Dashboard() {
                 {/* Date chips — multi-select, with Vandaag/Gisteren labels */}
                 {scanDates.map(({ date, count }) => {
                   const isActive = scanDateFilter.has(date);
+                  const today = new Date().toISOString().split('T')[0];
+                  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
                   let label: string;
-                  if (date === '__no_date__') {
-                    label = 'Onbekend';
+                  if (date === today) {
+                    label = 'Vandaag';
+                  } else if (date === yesterday) {
+                    label = 'Gisteren';
                   } else {
-                    const today = new Date().toISOString().split('T')[0];
-                    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-                    if (date === today) {
-                      label = 'Vandaag';
-                    } else if (date === yesterday) {
-                      label = 'Gisteren';
-                    } else {
-                      const d = new Date(date + 'T12:00:00');
-                      label = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
-                    }
+                    const d = new Date(date + 'T12:00:00');
+                    label = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' });
                   }
                   return (
                     <button
