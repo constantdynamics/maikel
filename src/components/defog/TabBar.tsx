@@ -101,7 +101,7 @@ export function TabBar({
         {/* "All" overview tab - Custom color or Rainbow style */}
         <button
           onClick={() => onTabSelect('__all__')}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg whitespace-nowrap transition-all ${
+          className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-all ${
             activeTabId === '__all__'
               ? 'text-white shadow-lg'
               : colors.all === 'rainbow'
@@ -119,7 +119,8 @@ export function TabBar({
             color: colors.all !== 'rainbow' && activeTabId !== '__all__' ? colors.all : undefined,
           }}
         >
-          <span className="text-sm font-bold">{colors.all === 'rainbow' ? '🌈' : '📋'} Alles ({allStockCount})</span>
+          <span className="text-sm font-bold">{colors.all === 'rainbow' ? '🌈' : '📋'} Alles</span>
+          <span className="text-xs opacity-80">({allStockCount})</span>
         </button>
 
         {/* "Top Movers" tab - Custom colors split */}
@@ -153,7 +154,7 @@ export function TabBar({
         {/* "Purchased" tab - For stocks bought above limit */}
         <button
           onClick={() => onTabSelect('__purchased__')}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg whitespace-nowrap transition-all ${
+          className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-all ${
             activeTabId === '__purchased__'
               ? 'text-white shadow-lg'
               : 'bg-transparent hover:bg-white/5 border-2 border-dashed'
@@ -165,7 +166,8 @@ export function TabBar({
             color: activeTabId !== '__purchased__' ? `${colors.purchased}b3` : undefined,
           }}
         >
-          <span className="text-sm font-bold">💰 Gekocht ({purchasedStockCount})</span>
+          <span className="text-sm font-bold">💰 Gekocht</span>
+          <span className="text-xs opacity-80">({purchasedStockCount})</span>
         </button>
         </div>
         {/* Row 2: User-created tabs */}
@@ -177,7 +179,7 @@ export function TabBar({
               key={tab.id}
               onClick={() => onTabSelect(tab.id)}
               onDoubleClick={() => openEditModal(tab)}
-              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg whitespace-nowrap transition-all ${
+              className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-all ${
                 isActive
                   ? 'text-white shadow-md'
                   : 'bg-transparent hover:bg-white/5'
@@ -189,18 +191,22 @@ export function TabBar({
                 color: isActive ? 'white' : tab.accentColor,
               }}
             >
-              {isActive && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEditModal(tab);
-                  }}
-                  className="p-0.5 rounded hover:bg-black/20 transition-colors"
-                >
-                  <Cog6ToothIcon className="w-4 h-4" />
-                </button>
-              )}
-              <span className="text-sm font-bold truncate max-w-[120px]">{tab.name} ({tab.stocks.length})</span>
+              <span className="text-sm font-bold">{tab.name}</span>
+              <span className="flex items-center gap-1 text-xs opacity-80">
+                {isActive && (
+                  <span
+                    role="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(tab);
+                    }}
+                    className="p-0.5 rounded hover:bg-black/20 transition-colors cursor-pointer"
+                  >
+                    <Cog6ToothIcon className="w-3.5 h-3.5" />
+                  </span>
+                )}
+                ({tab.stocks.length})
+              </span>
             </button>
           );
         })}

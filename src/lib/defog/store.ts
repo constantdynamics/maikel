@@ -893,7 +893,11 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
 
     state.tabs.forEach((tab) => {
       tab.stocks.forEach((stock) => {
-        if (stock.rangeFetched && stock.buyLimit !== null && stock.currentPrice > 0 && stock.currentPrice <= stock.buyLimit) {
+        // Require rangeFetched AND actual Yahoo Finance range data (not just scanner data)
+        const hasRealRangeData = (stock.year5Low && stock.year5Low > 0) ||
+          (stock.year3Low && stock.year3Low > 0) ||
+          (stock.week52Low && stock.week52Low > 0);
+        if (stock.rangeFetched && hasRealRangeData && stock.buyLimit !== null && stock.currentPrice > 0 && stock.currentPrice <= stock.buyLimit) {
           signals.push({
             stock,
             tabId: tab.id,

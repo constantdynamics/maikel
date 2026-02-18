@@ -534,8 +534,35 @@ function getYahooSymbol(symbol: string, exchange?: string): string {
     return symbol;
   }
 
-  // Already has a suffix
+  // Already has a suffix — but check if it's a valid Yahoo suffix
   if (symbol.includes('.')) {
+    const dotIndex = symbol.indexOf('.');
+    const base = symbol.substring(0, dotIndex);
+    const suffix = symbol.substring(dotIndex + 1).toUpperCase();
+
+    // Known non-Yahoo suffixes that need conversion
+    const nonYahooToYahoo: Record<string, string> = {
+      'LON': '.L',      // London → Yahoo uses .L
+      'FRK': '.F',      // Frankfurt (Börse Frankfurt)
+      'TRV': '',          // Tradeville (Romania) — try without suffix
+      'STU': '.DE',      // Stuttgart → use XETRA
+      'BER': '.BE',      // Berlin
+      'MUN': '.MU',      // Munich
+      'HAM': '.HM',      // Hamburg
+      'DUS': '.DU',      // Düsseldorf
+      'OTC': '',          // OTC Markets (US)
+      'PNK': '',          // Pink Sheets (US)
+      'OTCBB': '',        // OTC Bulletin Board (US)
+    };
+
+    const converted = nonYahooToYahoo[suffix];
+    if (converted !== undefined) {
+      const result = base + converted;
+      console.log(`[Yahoo] Converted non-Yahoo suffix: ${symbol} → ${result}`);
+      return result;
+    }
+
+    // Known Yahoo suffix — pass through
     console.log(`[Yahoo] Symbol already has suffix, returning as-is: ${symbol}`);
     return symbol;
   }
@@ -696,6 +723,7 @@ function getYahooSymbol(symbol: string, exchange?: string): string {
 }
 
 // Yahoo Finance API implementation (free, no API key required)
+// Uses server-side proxy (/api/stocks/yahoo-chart) to avoid CORS and handle auth
 async function yahooFinanceQuote(symbol: string, exchange?: string): Promise<QuoteResponse | null> {
   const yahooSymbol = getYahooSymbol(symbol, exchange);
   const cacheKey = `yf-quote-${yahooSymbol}`;
@@ -711,14 +739,9 @@ async function yahooFinanceQuote(symbol: string, exchange?: string): Promise<Quo
   try {
     console.log(`[Yahoo] Fetching quote for ${yahooSymbol} (original: ${symbol}, exchange: ${exchange})...`);
 
-    // Yahoo Finance API endpoint (free, no key needed)
+    // Use server-side proxy to avoid CORS issues and handle Yahoo auth
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=5d`,
-      {
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
+      `/api/stocks/yahoo-chart?symbol=${encodeURIComponent(yahooSymbol)}&range=5d&interval=1d`
     );
 
     if (!res.ok) {
@@ -783,14 +806,9 @@ async function yahooFinanceHistorical(symbol: string, exchange?: string): Promis
   try {
     console.log(`[Yahoo] Fetching historical data for ${yahooSymbol} (original: ${symbol}, exchange: ${exchange})...`);
 
-    // Get 5 years of daily data
+    // Use server-side proxy to avoid CORS issues and handle Yahoo auth
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=5y`,
-      {
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
+      `/api/stocks/yahoo-chart?symbol=${encodeURIComponent(yahooSymbol)}&range=5y&interval=1d`
     );
 
     if (!res.ok) return [];

@@ -442,17 +442,21 @@ export async function syncScannerToDefog(
       }
 
       // Only recalculate buy limit for stocks that have REAL range data (rangeFetched)
-      // Scanner-provided lows (three_year_low, base_price_median) are unreliable
+      // AND actual Yahoo Finance range values (year5Low/year3Low/week52Low > 0)
+      // Scanner-provided lows (three_year_low, base_price_median) are NEVER used
       if (existing.rangeFetched) {
-        const scannerLows = kuifjeBuyLimitInput(stock)[0];
-        const recalcLimit = calculateBuyLimit({
-          ...scannerLows,
-          fiveYearLow: minPositive(scannerLows.fiveYearLow, existing.year5Low),
-          threeYearLow: minPositive(scannerLows.threeYearLow, existing.year3Low),
-          twelveMonthLow: minPositive(scannerLows.twelveMonthLow, existing.week52Low > 0 ? existing.week52Low : null),
-        });
-        if (recalcLimit != null) {
-          updates.buyLimit = recalcLimit;
+        const hasRealRangeData = (existing.year5Low && existing.year5Low > 0) ||
+          (existing.year3Low && existing.year3Low > 0) ||
+          (existing.week52Low && existing.week52Low > 0);
+        if (hasRealRangeData) {
+          const recalcLimit = calculateBuyLimit({
+            fiveYearLow: existing.year5Low,
+            threeYearLow: existing.year3Low,
+            twelveMonthLow: existing.week52Low > 0 ? existing.week52Low : null,
+          });
+          if (recalcLimit != null) {
+            updates.buyLimit = recalcLimit;
+          }
         }
       }
 
@@ -494,17 +498,21 @@ export async function syncScannerToDefog(
       }
 
       // Only recalculate buy limit for stocks that have REAL range data (rangeFetched)
-      // Scanner-provided lows (three_year_low, base_price_median) are unreliable
+      // AND actual Yahoo Finance range values (year5Low/year3Low/week52Low > 0)
+      // Scanner-provided lows (three_year_low, base_price_median) are NEVER used
       if (existing.rangeFetched) {
-        const scannerLows = zbBuyLimitInput(stock)[0];
-        const recalcLimit = calculateBuyLimit({
-          ...scannerLows,
-          fiveYearLow: minPositive(scannerLows.fiveYearLow, existing.year5Low),
-          threeYearLow: minPositive(scannerLows.threeYearLow, existing.year3Low),
-          twelveMonthLow: minPositive(scannerLows.twelveMonthLow, existing.week52Low > 0 ? existing.week52Low : null),
-        });
-        if (recalcLimit != null) {
-          updates.buyLimit = recalcLimit;
+        const hasRealRangeData = (existing.year5Low && existing.year5Low > 0) ||
+          (existing.year3Low && existing.year3Low > 0) ||
+          (existing.week52Low && existing.week52Low > 0);
+        if (hasRealRangeData) {
+          const recalcLimit = calculateBuyLimit({
+            fiveYearLow: existing.year5Low,
+            threeYearLow: existing.year3Low,
+            twelveMonthLow: existing.week52Low > 0 ? existing.week52Low : null,
+          });
+          if (recalcLimit != null) {
+            updates.buyLimit = recalcLimit;
+          }
         }
       }
 
@@ -555,17 +563,20 @@ export async function syncScannerToDefog(
               ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
             };
           }
-          // Fill in null buyLimits ONLY for stocks with real range data (rangeFetched)
+          // Fill in null buyLimits ONLY for stocks with real Yahoo Finance range data
+          // NEVER use scanner-provided lows (three_year_low, base_price_median)
           if (s.buyLimit == null && s.rangeFetched) {
-            const scanner = kuifjeByTicker.get(s.ticker);
-            const scannerLows = scanner ? kuifjeBuyLimitInput(scanner)[0] : {};
-            const newLimit = calculateBuyLimit({
-              ...scannerLows,
-              fiveYearLow: minPositive(scannerLows.fiveYearLow, s.year5Low),
-              threeYearLow: minPositive(scannerLows.threeYearLow, s.year3Low),
-              twelveMonthLow: minPositive(scannerLows.twelveMonthLow, s.week52Low > 0 ? s.week52Low : null),
-            });
-            if (newLimit != null) return { ...s, buyLimit: newLimit };
+            const hasRealRangeData = (s.year5Low && s.year5Low > 0) ||
+              (s.year3Low && s.year3Low > 0) ||
+              (s.week52Low && s.week52Low > 0);
+            if (hasRealRangeData) {
+              const newLimit = calculateBuyLimit({
+                fiveYearLow: s.year5Low,
+                threeYearLow: s.year3Low,
+                twelveMonthLow: s.week52Low > 0 ? s.week52Low : null,
+              });
+              if (newLimit != null) return { ...s, buyLimit: newLimit };
+            }
           }
           return s;
         });
@@ -588,17 +599,20 @@ export async function syncScannerToDefog(
               ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
             };
           }
-          // Fill in null buyLimits ONLY for stocks with real range data (rangeFetched)
+          // Fill in null buyLimits ONLY for stocks with real Yahoo Finance range data
+          // NEVER use scanner-provided lows (three_year_low, base_price_median)
           if (s.buyLimit == null && s.rangeFetched) {
-            const scanner = zbByTicker.get(s.ticker);
-            const scannerLows = scanner ? zbBuyLimitInput(scanner)[0] : {};
-            const newLimit = calculateBuyLimit({
-              ...scannerLows,
-              fiveYearLow: minPositive(scannerLows.fiveYearLow, s.year5Low),
-              threeYearLow: minPositive(scannerLows.threeYearLow, s.year3Low),
-              twelveMonthLow: minPositive(scannerLows.twelveMonthLow, s.week52Low > 0 ? s.week52Low : null),
-            });
-            if (newLimit != null) return { ...s, buyLimit: newLimit };
+            const hasRealRangeData = (s.year5Low && s.year5Low > 0) ||
+              (s.year3Low && s.year3Low > 0) ||
+              (s.week52Low && s.week52Low > 0);
+            if (hasRealRangeData) {
+              const newLimit = calculateBuyLimit({
+                fiveYearLow: s.year5Low,
+                threeYearLow: s.year3Low,
+                twelveMonthLow: s.week52Low > 0 ? s.week52Low : null,
+              });
+              if (newLimit != null) return { ...s, buyLimit: newLimit };
+            }
           }
           return s;
         });
