@@ -304,15 +304,8 @@ export default function DefogPage() {
     }
   }, [updateStockInTab]);
 
-  useEffect(() => {
-    if (ready) runSync();
-  }, [ready, runSync]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const interval = setInterval(runSync, 60_000);
-    return () => clearInterval(interval);
-  }, [ready, runSync]);
+  // Scanner sync is manual-only. Use runSync() when needed.
+  // (Removed auto-sync on page load and 60s interval — user prefers manual control)
 
   // ── 4. Smart Refresh Engine ──
   useEffect(() => {
@@ -373,7 +366,7 @@ export default function DefogPage() {
             <div className="text-gray-400">Loading Defog...</div>
           </div>
         ) : (
-          <Dashboard />
+          <Dashboard onScannerSync={runSync} />
         )}
 
         {/* Smart Refresh indicator — z-30 to stay below navbar */}

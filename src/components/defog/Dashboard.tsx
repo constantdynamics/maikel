@@ -83,7 +83,11 @@ import { TopMovers } from './TopMovers';
 import { PurchasedStocks } from './PurchasedStocks';
 import { useViewMode } from '@/lib/defog/useViewMode';
 
-export function Dashboard() {
+interface DashboardProps {
+  onScannerSync?: () => Promise<void>;
+}
+
+export function Dashboard({ onScannerSync }: DashboardProps) {
   const store = useStore();
   const activeTab = useStore(selectActiveTab);
 
@@ -111,6 +115,17 @@ export function Dashboard() {
   const autoScanTimerRef = useRef<number | null>(null);
   const [isManualWeekendTaskRunning, setIsManualWeekendTaskRunning] = useState(false);
   const [rangeFetchProgress, setRangeFetchProgress] = useState<RangeFetchProgress | null>(null);
+  const [isScannerSyncing, setIsScannerSyncing] = useState(false);
+
+  const handleScannerSync = useCallback(async () => {
+    if (!onScannerSync || isScannerSyncing) return;
+    setIsScannerSyncing(true);
+    try {
+      await onScannerSync();
+    } finally {
+      setIsScannerSyncing(false);
+    }
+  }, [onScannerSync, isScannerSyncing]);
 
   // Dashboard view: list or tiles (separate from mobile/desktop view mode)
   const [dashboardView, setDashboardView] = useState<'list' | 'tiles'>(() => {
@@ -2460,9 +2475,24 @@ export function Dashboard() {
               <div></div>
             </div>
 
-            {/* Scan Date Filter — only for scanner tabs (Kuifje / Prof. Zonnebloem) */}
-            {isScannerTab && scanDates.length > 1 && (
+            {/* Scanner Sync + Date Filter — only for scanner tabs */}
+            {isScannerTab && (
               <div className="flex items-center gap-1.5 px-3 py-2 overflow-x-auto scrollbar-hide">
+                {/* Manual sync button */}
+                {onScannerSync && (
+                  <button
+                    onClick={handleScannerSync}
+                    disabled={isScannerSyncing}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors bg-[#2d2d2d] text-gray-400 hover:bg-[#3d3d3d] disabled:opacity-50 flex-shrink-0"
+                    title="Sync scanner stocks"
+                  >
+                    <ArrowPathIcon className={`w-3.5 h-3.5 ${isScannerSyncing ? 'animate-spin' : ''}`} />
+                    {isScannerSyncing ? 'Syncing...' : 'Sync'}
+                  </button>
+                )}
+                {/* Date filter chips — only show when multiple dates exist */}
+                {scanDates.length > 1 && (
+                  <>
                 <CalendarDaysIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
                 {/* "Alle" button — clears all filters */}
                 <button
@@ -2509,6 +2539,8 @@ export function Dashboard() {
                   <span className="text-xs text-gray-500 ml-1">
                     {displayStocks.length}/{activeTab?.stocks.length}
                   </span>
+                )}
+                  </>
                 )}
               </div>
             )}
