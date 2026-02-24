@@ -15,7 +15,9 @@ export async function GET(request: NextRequest) {
     query = query.eq('is_deleted', false);
   }
 
-  const { data, error } = await query.order('spike_score', { ascending: false });
+  const { data, error } = await query
+    .order('spike_score', { ascending: false })
+    .range(0, 9999);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
