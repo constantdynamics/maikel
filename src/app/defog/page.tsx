@@ -313,6 +313,7 @@ export default function DefogPage() {
 
     const engine = new SmartRefreshEngine(
       () => useStore.getState().tabs,
+      () => useStore.getState().activeTabId || '',
       (tabId, stockId, data) => {
         useStore.setState((state) => ({
           tabs: state.tabs.map((tab) =>
