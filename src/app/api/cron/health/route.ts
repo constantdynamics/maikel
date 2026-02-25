@@ -66,5 +66,41 @@ export async function GET(request: NextRequest) {
     last_scan_status: healthCheck.last_scan_status,
   });
 
-  return NextResponse.json(healthCheck);
+  // ── Periodic cleanup: delete old data to reduce disk IO ──
+  // Runs every health check (hourly) but operations are cheap (DELETE with date filter)
+  const cleanup: Record<string, number> = {};
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const twoYearCutoff = twoYearsAgo.toISOString().split('T')[0];
+
+  try {
+    // Delete old health_checks (>30 days)
+    const { count: hc } = await supabase.from('health_checks').delete({ count: 'exact' }).lt('created_at', thirtyDaysAgo);
+    if (hc) cleanup.health_checks = hc;
+
+    // Delete old scan_logs (>30 days)
+    const { count: sl } = await supabase.from('scan_logs').delete({ count: 'exact' }).lt('started_at', thirtyDaysAgo);
+    if (sl) cleanup.scan_logs = sl;
+
+    // Delete old zonnebloem_scan_logs (>30 days)
+    const { count: zsl } = await supabase.from('zonnebloem_scan_logs').delete({ count: 'exact' }).lt('started_at', thirtyDaysAgo);
+    if (zsl) cleanup.zonnebloem_scan_logs = zsl;
+
+    // Delete old error_logs (>30 days)
+    const { count: el } = await supabase.from('error_logs').delete({ count: 'exact' }).lt('created_at', thirtyDaysAgo);
+    if (el) cleanup.error_logs = el;
+
+    // Delete old price_history (>2 years — lows are pre-calculated on stocks row)
+    const { count: ph } = await supabase.from('price_history').delete({ count: 'exact' }).lt('trade_date', twoYearCutoff);
+    if (ph) cleanup.price_history = ph;
+
+    if (Object.keys(cleanup).length > 0) {
+      console.log('[Cleanup] Deleted old rows:', cleanup);
+    }
+  } catch (e) {
+    console.warn('[Cleanup] Error during cleanup:', e);
+  }
+
+  return NextResponse.json({ ...healthCheck, cleanup });
 }

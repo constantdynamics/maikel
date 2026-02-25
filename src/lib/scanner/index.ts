@@ -40,8 +40,8 @@ const TOTAL_SCAN_TIMEOUT_MS = 240_000; // 4 min, leaving 60s buffer
 /** Max time for a single Yahoo Finance call */
 const PER_STOCK_TIMEOUT_MS = 15_000;
 
-/** How often to save scan details to DB (every N stocks) */
-const SAVE_INTERVAL = 5;
+/** How often to save scan details to DB (every N stocks) — keep high to reduce disk IO */
+const SAVE_INTERVAL = 25;
 
 /**
  * Detect leveraged/inverse ETF-like products by name patterns.
@@ -458,8 +458,14 @@ async function deepScanStock(
     );
   }
 
-  // Store price history in batches
-  const priceRecords = history.map((d) => ({
+  // Store price history in batches — only keep last 2 years to minimize Supabase disk IO
+  // (3-year and 5-year lows are already calculated above and stored on the stocks row)
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const twoYearCutoff = twoYearsAgo.toISOString().split('T')[0];
+  const recentHistory = history.filter((d) => d.date >= twoYearCutoff);
+
+  const priceRecords = recentHistory.map((d) => ({
     ticker, trade_date: d.date, open_price: d.open, high_price: d.high,
     low_price: d.low, close_price: d.close, volume: d.volume,
   }));
