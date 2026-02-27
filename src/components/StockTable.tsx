@@ -322,6 +322,7 @@ export default function StockTable({
           <table className="stock-table w-full text-sm">
             <thead className="bg-[var(--bg-tertiary)]">
               <tr>
+                <th className="px-2 py-3 text-center w-8 text-[var(--text-muted)] text-xs font-medium">#</th>
                 <th className="px-3 py-3 text-left w-10">
                   <input
                     type="checkbox"
@@ -358,6 +359,9 @@ export default function StockTable({
                   className={`${getRowColorClass(stock.score)} animate-row color-transition cursor-pointer`}
                   style={{ animationDelay: `${Math.min(index * 0.02, 0.3)}s` }}
                 >
+                  <td className="px-2 py-2.5 text-center text-xs font-mono text-[var(--text-muted)]">
+                    {index + 1}
+                  </td>
                   <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"

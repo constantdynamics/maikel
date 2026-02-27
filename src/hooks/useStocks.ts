@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, fetchAllRows } from '@/lib/supabase';
 import type { Stock, SortConfig, FilterConfig } from '@/lib/types';
 import { VOLATILE_SECTORS } from '@/lib/types';
 
@@ -59,18 +59,19 @@ export function useStocks() {
 
   const fetchStocks = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('stocks')
-      .select('*')
-      .eq('is_deleted', false)
-      .eq('is_archived', false)
-      .order(sort.column, { ascending: sort.direction === 'asc' });
+    const { data, error } = await fetchAllRows<Stock>(() =>
+      supabase
+        .from('stocks')
+        .select('*')
+        .eq('is_deleted', false)
+        .eq('is_archived', false)
+        .order(sort.column, { ascending: sort.direction === 'asc' })
+    );
 
     if (error) {
       console.error('Error fetching stocks:', error);
     } else if (data) {
-      setStocks(data as Stock[]);
-      // Extract unique sectors
+      setStocks(data);
       const uniqueSectors = Array.from(
         new Set(data.map((s) => s.sector).filter(Boolean)),
       ).sort() as string[];

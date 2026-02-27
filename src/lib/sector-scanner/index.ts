@@ -314,6 +314,23 @@ export async function runSectorScan(scannerType: SectorScannerType): Promise<Sec
       );
     }
 
+    // === STORAGE OPTIMIZATION: Prune old scan log details (keep last 5) ===
+    try {
+      const { data: oldLogs } = await supabase
+        .from('sector_scan_logs')
+        .select('id')
+        .eq('scanner_type', scannerType)
+        .order('started_at', { ascending: false })
+        .range(5, 100);
+
+      if (oldLogs && oldLogs.length > 0) {
+        await supabase
+          .from('sector_scan_logs')
+          .update({ details: null })
+          .in('id', oldLogs.map(l => l.id));
+      }
+    } catch { /* ignore cleanup errors */ }
+
     console.log(
       `[${config.label}] Scan ${status}: ${stocksMatched} matches (${newStocksFound} new) from ${stocksDeepScanned} deep-scanned in ${durationSeconds}s`,
     );
