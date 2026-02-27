@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { ZonnebloemStock, Stock } from '@/lib/types';
+import type { ZonnebloemStock, Stock, SectorStock } from '@/lib/types';
 import { SpikeDotDisplay } from './ZonnebloemTable';
 import packageJson from '../../package.json';
 
@@ -34,6 +34,8 @@ interface KuifjeScanStatus {
 interface UnderwaterModeProps {
   zbStocks: ZonnebloemStock[];
   kuifjeStocks: Stock[];
+  biopharmaStocks: SectorStock[];
+  miningStocks: SectorStock[];
   onExit: () => void;
   // Zonnebloem scan
   autoScanActive: boolean;
@@ -45,6 +47,16 @@ interface UnderwaterModeProps {
   kuifjeAutoScanNext: Date | null;
   kuifjeScanRunning: boolean;
   onRefreshKuifjeStocks: () => void;
+  // BioPharma scan
+  bpAutoScanActive: boolean;
+  bpAutoScanNext: Date | null;
+  bpScanRunning: boolean;
+  onRefreshBpStocks: () => void;
+  // Mining scan
+  mnAutoScanActive: boolean;
+  mnAutoScanNext: Date | null;
+  mnScanRunning: boolean;
+  onRefreshMnStocks: () => void;
 }
 
 /**
@@ -66,7 +78,6 @@ function getKuifjeDotColors(eventCount: number, highestGrowthPct: number | null)
 
 /**
  * Medal ranking sort key for Kuifje stocks.
- * Sort like medal table: green count desc, then yellow count desc, then white count desc.
  */
 function kuifjeMedalKey(stock: Stock): [number, number, number] {
   const dots = getKuifjeDotColors(stock.growth_event_count, stock.highest_growth_pct);
@@ -96,13 +107,85 @@ function KuifjeDotsDisplay({ eventCount, highestGrowthPct }: { eventCount: numbe
   );
 }
 
-export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoScanActive, autoScanNext, scanRunning, onRefreshStocks, kuifjeAutoScanActive, kuifjeAutoScanNext, kuifjeScanRunning, onRefreshKuifjeStocks }: UnderwaterModeProps) {
+/**
+ * Combined dots for sector stocks showing match_type badge + spike/growth dots.
+ */
+function SectorDotsDisplay({ stock }: { stock: SectorStock }) {
+  const spikeDots = getSpikeDotHexColors(stock.spike_count, stock.highest_spike_pct);
+  const growthDots = getGrowthDotHexColors(stock.growth_event_count, stock.highest_growth_pct);
+  const hasDots = spikeDots.length > 0 || growthDots.length > 0;
+
+  if (!hasDots) return <span style={{ color: '#3a3d41' }}>-</span>;
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {/* Show spike dots first (Zonnebloem) */}
+      {spikeDots.map((color, idx) => (
+        <span
+          key={`s${idx}`}
+          className="inline-block w-2 h-2 rounded-full border border-gray-600"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+      {/* Separator if both types present */}
+      {spikeDots.length > 0 && growthDots.length > 0 && (
+        <span style={{ color: '#3a3d41', fontSize: '8px' }}>|</span>
+      )}
+      {/* Growth dots (Kuifje) */}
+      {growthDots.map((color, idx) => (
+        <span
+          key={`g${idx}`}
+          className="inline-block w-1.5 h-1.5 rounded-sm border border-gray-600"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function getSpikeDotHexColors(spikeCount: number, highestSpikePct: number | null): string[] {
+  const count = Math.min(spikeCount, 10);
+  if (count === 0) return [];
+  const avg = highestSpikePct ? highestSpikePct / Math.max(spikeCount, 1) : 100;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestSpikePct || 100) : avg * (1 - i * 0.1);
+    dots.push(est >= 500 ? '#22c55e' : est >= 200 ? '#facc15' : '#ffffff');
+  }
+  return dots;
+}
+
+function getGrowthDotHexColors(eventCount: number, highestGrowthPct: number | null): string[] {
+  const count = Math.min(eventCount, 10);
+  if (count === 0) return [];
+  const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
+    dots.push(est >= 500 ? '#22c55e' : est >= 300 ? '#facc15' : '#ffffff');
+  }
+  return dots;
+}
+
+export default function UnderwaterMode({
+  zbStocks, kuifjeStocks, biopharmaStocks, miningStocks, onExit,
+  autoScanActive, autoScanNext, scanRunning, onRefreshStocks,
+  kuifjeAutoScanActive, kuifjeAutoScanNext, kuifjeScanRunning, onRefreshKuifjeStocks,
+  bpAutoScanActive, bpAutoScanNext, bpScanRunning, onRefreshBpStocks,
+  mnAutoScanActive, mnAutoScanNext, mnScanRunning, onRefreshMnStocks,
+}: UnderwaterModeProps) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [kuifjeScanStatus, setKuifjeScanStatus] = useState<KuifjeScanStatus | null>(null);
+  const [bpScanStatus, setBpScanStatus] = useState<ScanStatus | null>(null);
+  const [mnScanStatus, setMnScanStatus] = useState<ScanStatus | null>(null);
   const [completedScans, setCompletedScans] = useState(0);
   const [completedKuifjeScans, setCompletedKuifjeScans] = useState(0);
+  const [completedBpScans, setCompletedBpScans] = useState(0);
+  const [completedMnScans, setCompletedMnScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
   const [lastKuifjeScanId, setLastKuifjeScanId] = useState<string | null>(null);
+  const [lastBpScanId, setLastBpScanId] = useState<string | null>(null);
+  const [lastMnScanId, setLastMnScanId] = useState<string | null>(null);
 
   // Font size for the big total number — persists in localStorage
   const FONT_SIZES = ['1.5rem', '2.5rem', '4rem', '6rem'];
@@ -113,16 +196,11 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     }
     return 1; // default 2.5rem
   });
-  const cycleFontSize = () => {
-    const next = (fontSizeIdx + 1) % FONT_SIZES.length;
-    setFontSizeIdx(next);
-    localStorage.setItem('underwater-font-size', String(next));
-  };
 
-  // Set browser tab title to K&Z in underwater mode
+  // Set browser tab title in underwater mode
   useEffect(() => {
     const prev = document.title;
-    document.title = 'K&Z';
+    document.title = 'K&Z&B&M';
     return () => { document.title = prev; };
   }, []);
 
@@ -152,9 +230,37 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     return null;
   }, []);
 
+  // Poll BioPharma scan progress
+  const fetchBpStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sector/scan/progress?type=biopharma');
+      if (res.ok) {
+        const json = await res.json();
+        setBpScanStatus(json);
+        return json as ScanStatus;
+      }
+    } catch { /* silent */ }
+    return null;
+  }, []);
+
+  // Poll Mining scan progress
+  const fetchMnStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sector/scan/progress?type=mining');
+      if (res.ok) {
+        const json = await res.json();
+        setMnScanStatus(json);
+        return json as ScanStatus;
+      }
+    } catch { /* silent */ }
+    return null;
+  }, []);
+
   useEffect(() => {
     fetchZbStatus();
     fetchKuifjeStatus();
+    fetchBpStatus();
+    fetchMnStatus();
     const timer = setInterval(async () => {
       const zbResult = await fetchZbStatus();
       if (zbResult?.scan?.completedAt && zbResult.scan.completedAt !== lastScanId) {
@@ -169,9 +275,23 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         setCompletedKuifjeScans(prev => prev + 1);
         onRefreshKuifjeStocks();
       }
+
+      const bpResult = await fetchBpStatus();
+      if (bpResult?.scan?.completedAt && bpResult.scan.completedAt !== lastBpScanId) {
+        setLastBpScanId(bpResult.scan.completedAt);
+        setCompletedBpScans(prev => prev + 1);
+        onRefreshBpStocks();
+      }
+
+      const mnResult = await fetchMnStatus();
+      if (mnResult?.scan?.completedAt && mnResult.scan.completedAt !== lastMnScanId) {
+        setLastMnScanId(mnResult.scan.completedAt);
+        setCompletedMnScans(prev => prev + 1);
+        onRefreshMnStocks();
+      }
     }, 5000);
     return () => clearInterval(timer);
-  }, [fetchZbStatus, fetchKuifjeStatus, lastScanId, lastKuifjeScanId, onRefreshStocks, onRefreshKuifjeStocks]);
+  }, [fetchZbStatus, fetchKuifjeStatus, fetchBpStatus, fetchMnStatus, lastScanId, lastKuifjeScanId, lastBpScanId, lastMnScanId, onRefreshStocks, onRefreshKuifjeStocks, onRefreshBpStocks, onRefreshMnStocks]);
 
   const zbIsRunning = scanStatus?.running || scanRunning;
   const zbScan = scanStatus?.scan;
@@ -185,16 +305,30 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
     ? Math.round((Date.now() - new Date(kScan.startedAt).getTime()) / 1000)
     : null;
 
+  const bpIsRunning = bpScanStatus?.running || bpScanRunning;
+  const bpScan = bpScanStatus?.scan;
+  const bpElapsed = bpScan?.startedAt && bpIsRunning
+    ? Math.round((Date.now() - new Date(bpScan.startedAt).getTime()) / 1000)
+    : null;
+
+  const mnIsRunning = mnScanStatus?.running || mnScanRunning;
+  const mnScan = mnScanStatus?.scan;
+  const mnElapsed = mnScan?.startedAt && mnIsRunning
+    ? Math.round((Date.now() - new Date(mnScan.startedAt).getTime()) / 1000)
+    : null;
+
   // Sort Kuifje stocks by medal ranking: green > yellow > white (like medal table)
   const sortedKuifjeStocks = useMemo(() => {
     return [...kuifjeStocks].sort((a, b) => {
       const [aG, aY, aW] = kuifjeMedalKey(a);
       const [bG, bY, bW] = kuifjeMedalKey(b);
-      if (bG !== aG) return bG - aG; // More green first
-      if (bY !== aY) return bY - aY; // More yellow first
-      return bW - aW; // More white first
+      if (bG !== aG) return bG - aG;
+      if (bY !== aY) return bY - aY;
+      return bW - aW;
     });
   }, [kuifjeStocks]);
+
+  const anyAutoActive = autoScanActive || kuifjeAutoScanActive || bpAutoScanActive || mnAutoScanActive;
 
   // Use portal to escape AuthGuard's z-0 stacking context
   const content = (
@@ -228,10 +362,10 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         />
       </div>
 
-      {/* Scan status indicators top-right — both scanners */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1.5">
+      {/* Scan status indicators top-right — all 4 scanners */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-1">
         {/* Zonnebloem status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] bg-[#2a2d31] border border-[#3a3d41]">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
               zbIsRunning ? 'bg-purple-400 animate-pulse' : autoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
@@ -239,15 +373,15 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           />
           <span style={{ color: zbIsRunning ? '#c084fc' : '#6a6d72' }}>
             {zbIsRunning
-              ? `Zonnebloem${zbElapsed ? ` (${zbElapsed}s)` : ''}...`
+              ? `Z${zbElapsed ? ` ${zbElapsed}s` : ''}...`
               : autoScanActive
-                ? 'Zonnebloem waiting...'
-                : 'Zonnebloem off'}
+                ? 'Z waiting'
+                : 'Z off'}
           </span>
           {zbIsRunning && zbScan && (
             <span className="text-[10px]" style={{ color: '#5a5d62' }}>
               <span style={{ color: '#7a7d82' }}>{zbScan.stocksDeepScanned}</span>
-              {' / '}
+              {'/'}
               <span style={{ color: '#22c55e' }}>{zbScan.stocksMatched}</span>
             </span>
           )}
@@ -257,7 +391,7 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
         </div>
 
         {/* Kuifje status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded text-xs bg-[#2a2d31] border border-[#3a3d41]">
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] bg-[#2a2d31] border border-[#3a3d41]">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
               kIsRunning ? 'bg-green-400 animate-pulse' : kuifjeAutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
@@ -265,15 +399,15 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           />
           <span style={{ color: kIsRunning ? '#4ade80' : '#6a6d72' }}>
             {kIsRunning
-              ? `Kuifje${kElapsed ? ` (${kElapsed}s)` : ''}...`
+              ? `K${kElapsed ? ` ${kElapsed}s` : ''}...`
               : kuifjeAutoScanActive
-                ? 'Kuifje waiting...'
-                : 'Kuifje off'}
+                ? 'K waiting'
+                : 'K off'}
           </span>
           {kIsRunning && kScan && (
             <span className="text-[10px]" style={{ color: '#5a5d62' }}>
               <span style={{ color: '#7a7d82' }}>{kScan.stocksScanned}</span>
-              {' / '}
+              {'/'}
               <span style={{ color: '#22c55e' }}>{kScan.stocksFound}</span>
             </span>
           )}
@@ -282,25 +416,83 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           )}
         </div>
 
+        {/* BioPharma status */}
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] bg-[#2a2d31] border border-[#3a3d41]">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              bpIsRunning ? 'bg-emerald-400 animate-pulse' : bpAutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+            }`}
+          />
+          <span style={{ color: bpIsRunning ? '#34d399' : '#6a6d72' }}>
+            {bpIsRunning
+              ? `BP${bpElapsed ? ` ${bpElapsed}s` : ''}...`
+              : bpAutoScanActive
+                ? 'BP waiting'
+                : 'BP off'}
+          </span>
+          {bpIsRunning && bpScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{bpScan.stocksDeepScanned}</span>
+              {'/'}
+              <span style={{ color: '#22c55e' }}>{bpScan.stocksMatched}</span>
+            </span>
+          )}
+          {!bpIsRunning && completedBpScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedBpScans}</span>
+          )}
+        </div>
+
+        {/* Mining status */}
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] bg-[#2a2d31] border border-[#3a3d41]">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              mnIsRunning ? 'bg-amber-400 animate-pulse' : mnAutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+            }`}
+          />
+          <span style={{ color: mnIsRunning ? '#fbbf24' : '#6a6d72' }}>
+            {mnIsRunning
+              ? `MN${mnElapsed ? ` ${mnElapsed}s` : ''}...`
+              : mnAutoScanActive
+                ? 'MN waiting'
+                : 'MN off'}
+          </span>
+          {mnIsRunning && mnScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{mnScan.stocksDeepScanned}</span>
+              {'/'}
+              <span style={{ color: '#22c55e' }}>{mnScan.stocksMatched}</span>
+            </span>
+          )}
+          {!mnIsRunning && completedMnScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedMnScans}</span>
+          )}
+        </div>
+
         {/* Next scan times */}
-        <div className="flex items-center gap-3 px-3 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41]" style={{ color: '#4a4d52' }}>
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41] flex-wrap" style={{ color: '#4a4d52' }}>
           {autoScanActive && autoScanNext && !zbIsRunning && (
-            <span>Z next: <span style={{ color: '#6a6d72' }}>{autoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+            <span>Z <span style={{ color: '#6a6d72' }}>{autoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
           {kuifjeAutoScanActive && kuifjeAutoScanNext && !kIsRunning && (
-            <span>K next: <span style={{ color: '#6a6d72' }}>{kuifjeAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+            <span>K <span style={{ color: '#6a6d72' }}>{kuifjeAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
-          {!autoScanActive && !kuifjeAutoScanActive && (
-            <span>Auto-scan is off</span>
+          {bpAutoScanActive && bpAutoScanNext && !bpIsRunning && (
+            <span>BP <span style={{ color: '#6a6d72' }}>{bpAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+          )}
+          {mnAutoScanActive && mnAutoScanNext && !mnIsRunning && (
+            <span>MN <span style={{ color: '#6a6d72' }}>{mnAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+          )}
+          {!anyAutoActive && (
+            <span>Auto-scan off</span>
           )}
         </div>
       </div>
 
-      {/* Two-panel layout */}
-      <div className="pt-14 px-4 pb-8 grid grid-cols-2 gap-4" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
-        {/* LEFT: Zonnebloem */}
+      {/* Four-panel layout: 2x2 grid */}
+      <div className="pt-14 px-4 pb-8 grid grid-cols-2 grid-rows-2 gap-4" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
+        {/* TOP LEFT: Prof. Zonnebloem */}
         <div>
-          <div className="flex items-baseline gap-3 mb-3 px-2">
+          <div className="flex items-baseline gap-3 mb-2 px-2">
             <span
               className="font-mono font-bold tracking-tight"
               style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
@@ -311,11 +503,11 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
               Prof. Zonnebloem
             </span>
           </div>
-          <div style={{ columnCount: 4, columnGap: '0.75rem' }}>
+          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
             {zbStocks.map((stock) => (
               <div
                 key={stock.id}
-                className="flex items-center gap-1.5 py-1 border-b"
+                className="flex items-center gap-1.5 py-0.5 border-b"
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
@@ -336,9 +528,9 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
           </div>
         </div>
 
-        {/* RIGHT: Kuifje */}
+        {/* TOP RIGHT: Kuifje */}
         <div>
-          <div className="flex items-baseline gap-3 mb-3 px-2">
+          <div className="flex items-baseline gap-3 mb-2 px-2">
             <span
               className="font-mono font-bold tracking-tight"
               style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
@@ -349,11 +541,11 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
               Kuifje
             </span>
           </div>
-          <div style={{ columnCount: 4, columnGap: '0.75rem' }}>
+          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
             {sortedKuifjeStocks.map((stock) => (
               <div
                 key={stock.id}
-                className="flex items-center gap-1.5 py-1 border-b"
+                className="flex items-center gap-1.5 py-0.5 border-b"
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
@@ -373,11 +565,85 @@ export default function UnderwaterMode({ zbStocks, kuifjeStocks, onExit, autoSca
             ))}
           </div>
         </div>
+
+        {/* BOTTOM LEFT: BioPharma */}
+        <div>
+          <div className="flex items-baseline gap-3 mb-2 px-2">
+            <span
+              className="font-mono font-bold tracking-tight"
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
+            >
+              {biopharmaStocks.length}
+            </span>
+            <span className="text-xs font-medium" style={{ color: '#10b981' }}>
+              BioPharma
+            </span>
+          </div>
+          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
+            {biopharmaStocks.map((stock) => (
+              <div
+                key={stock.id}
+                className="flex items-center gap-1.5 py-0.5 border-b"
+                style={{ borderColor: '#252729', breakInside: 'avoid' }}
+              >
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
+                  style={{ color: '#7a7d82' }}
+                >
+                  {stock.ticker}
+                </a>
+                <SectorDotsDisplay stock={stock} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* BOTTOM RIGHT: Mining */}
+        <div>
+          <div className="flex items-baseline gap-3 mb-2 px-2">
+            <span
+              className="font-mono font-bold tracking-tight"
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
+            >
+              {miningStocks.length}
+            </span>
+            <span className="text-xs font-medium" style={{ color: '#f59e0b' }}>
+              Mining
+            </span>
+          </div>
+          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
+            {miningStocks.map((stock) => (
+              <div
+                key={stock.id}
+                className="flex items-center gap-1.5 py-0.5 border-b"
+                style={{ borderColor: '#252729', breakInside: 'avoid' }}
+              >
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
+                  style={{ color: '#7a7d82' }}
+                >
+                  {stock.ticker}
+                </a>
+                <SectorDotsDisplay stock={stock} />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Subtle divider line between panels */}
+      {/* Grid divider lines */}
       <div
         className="fixed top-14 bottom-0 left-1/2 w-px"
+        style={{ backgroundColor: '#2a2d31' }}
+      />
+      <div
+        className="fixed left-0 right-0 top-1/2 h-px"
         style={{ backgroundColor: '#2a2d31' }}
       />
 
