@@ -316,6 +316,149 @@ export interface ZonnebloemScanDetail {
 }
 
 // ============================================================
+// Sector Scanner types (BioPharma & Mining)
+// ============================================================
+
+export type SectorScannerType = 'biopharma' | 'mining';
+
+export interface SectorStock {
+  id: string;
+  scanner_type: SectorScannerType;
+  ticker: string;
+  yahoo_ticker: string | null;
+  company_name: string;
+  sector: string | null;
+  exchange: string | null;
+  market: string | null;
+  country: string | null;
+  current_price: number | null;
+  // Kuifje fields
+  all_time_high: number | null;
+  ath_decline_pct: number | null;
+  five_year_low: number | null;
+  three_year_low: number | null;
+  purchase_limit: number | null;
+  score: number;
+  growth_event_count: number;
+  highest_growth_pct: number | null;
+  highest_growth_date: string | null;
+  confidence_score: number;
+  // Zonnebloem fields
+  base_price_median: number | null;
+  price_12m_ago: number | null;
+  price_change_12m_pct: number | null;
+  spike_count: number;
+  highest_spike_pct: number | null;
+  highest_spike_date: string | null;
+  spike_score: number;
+  // Shared
+  avg_volume_30d: number | null;
+  market_cap: number | null;
+  detection_date: string;
+  last_updated: string;
+  is_favorite: boolean;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  is_archived: boolean;
+  archived_at: string | null;
+  scan_session_id: string | null;
+  needs_review: boolean;
+  review_reason: string | null;
+  match_type: 'kuifje' | 'zonnebloem' | 'both';
+  created_at: string;
+}
+
+export interface SectorScanLog {
+  id: string;
+  scanner_type: SectorScannerType;
+  started_at: string;
+  completed_at: string | null;
+  status: 'running' | 'completed' | 'failed' | 'partial';
+  markets_scanned: string[];
+  candidates_found: number;
+  stocks_deep_scanned: number;
+  stocks_matched: number;
+  new_stocks_found: number;
+  errors: string[];
+  duration_seconds: number | null;
+  api_calls_yahoo: number;
+  details: SectorScanDetail[] | null;
+  created_at: string;
+}
+
+export interface SectorScanDetail {
+  ticker: string;
+  name: string;
+  market: string;
+  price: number;
+  sector: string | null;
+  phase: 'candidate' | 'pre_filter' | 'deep_scan';
+  result: 'match' | 'rejected' | 'error';
+  rejectReason?: string;
+  errorMessage?: string;
+  // Kuifje analysis results
+  growthEvents?: number;
+  growthScore?: number;
+  highestGrowthPct?: number;
+  athDeclinePct?: number;
+  // Zonnebloem analysis results
+  spikeCount?: number;
+  spikeScore?: number;
+  highestSpikePct?: number;
+  priceChange12m?: number;
+  // Which criteria matched
+  matchType?: 'kuifje' | 'zonnebloem' | 'both';
+}
+
+// Sector scanner configurations
+export interface SectorScannerConfig {
+  type: SectorScannerType;
+  label: string;
+  markets: string[];
+  sectorFilters: string[];  // TradingView sector names to include
+  sectorKeywords: string[]; // Additional keywords for sector matching
+  color: string;
+}
+
+export const BIOPHARMA_CONFIG: SectorScannerConfig = {
+  type: 'biopharma',
+  label: 'BioPharma',
+  markets: ['america', 'canada'],
+  sectorFilters: [
+    'Health Technology',
+    'Health Services',
+  ],
+  sectorKeywords: [
+    'biotechnology', 'biotech', 'pharmaceutical', 'pharma', 'drug',
+    'biopharmaceutical', 'biopharma', 'therapeutics', 'oncology',
+    'genomics', 'gene therapy', 'clinical stage', 'life sciences',
+    'medical research', 'vaccines', 'immunology',
+  ],
+  color: '#10b981', // emerald
+};
+
+export const MINING_CONFIG: SectorScannerConfig = {
+  type: 'mining',
+  label: 'Mining',
+  markets: [
+    'america', 'canada', 'australia', 'southafrica',
+    'uk', 'europe', 'brazil', 'mexico', 'peru', 'chile',
+  ],
+  sectorFilters: [
+    'Non-Energy Minerals',
+  ],
+  sectorKeywords: [
+    'gold', 'silver', 'copper', 'mining', 'metals', 'mineral',
+    'platinum', 'palladium', 'zinc', 'nickel', 'lithium', 'cobalt',
+    'iron ore', 'uranium', 'tin', 'aluminum', 'aluminium',
+    'rare earth', 'tungsten', 'manganese', 'molybdenum',
+    'precious metals', 'base metals', 'miner', 'exploration',
+    'resource', 'ore', 'smelting',
+  ],
+  color: '#f59e0b', // amber
+};
+
+// ============================================================
 // Shared types
 // ============================================================
 
