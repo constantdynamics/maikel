@@ -755,6 +755,41 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
     await saveProgress(true);
 
+    // === STORAGE OPTIMIZATION: Prune price_history to keep only last 90 days ===
+    // Full 5-year history is only needed during scan analysis;
+    // after that we only keep recent data for reference.
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 90);
+      const cutoffStr = cutoffDate.toISOString().split('T')[0];
+      await supabase
+        .from('price_history')
+        .delete()
+        .lt('trade_date', cutoffStr);
+      console.log(`[Kuifje] Cleaned up price_history older than ${cutoffStr}`);
+    } catch (err) {
+      console.warn('[Kuifje] Price history cleanup failed:', err);
+    }
+
+    // === STORAGE OPTIMIZATION: Remove details JSON from old scan_logs (keep last 5) ===
+    try {
+      const { data: oldLogs } = await supabase
+        .from('scan_logs')
+        .select('id')
+        .order('started_at', { ascending: false })
+        .range(5, 100);
+
+      if (oldLogs && oldLogs.length > 0) {
+        await supabase
+          .from('scan_logs')
+          .update({ details: null })
+          .in('id', oldLogs.map(l => l.id));
+        console.log(`[Kuifje] Pruned details from ${oldLogs.length} old scan logs`);
+      }
+    } catch (err) {
+      console.warn('[Kuifje] Scan log pruning failed:', err);
+    }
+
     // Log deep scan phase breakdown
     const deepScanDetails = scanDetails.filter(d => d.phase === 'deep_scan');
     const deepErrors = deepScanDetails.filter(d => d.result === 'error');

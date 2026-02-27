@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, fetchAllRows } from '@/lib/supabase';
 import type { SectorStock, SortConfig, SectorScannerType } from '@/lib/types';
 
 interface SectorFilterConfig {
@@ -21,7 +21,7 @@ const defaultFilters: SectorFilterConfig = {
 };
 
 const defaultSort: SortConfig = {
-  column: 'spike_score' as never,
+  column: 'spike_count' as never,
   direction: 'desc',
 };
 
@@ -32,14 +32,43 @@ export interface ScanSessionInfo {
 }
 
 /**
- * Spike dots sort value for sector stocks (combines spike + growth for ranking).
+ * Medal ranking for sector stocks — medaillespiegel style.
+ * Combines spike dots (Zonnebloem) + growth dots (Kuifje) into one medal tally.
+ * Sort: total dots desc → green count desc → yellow desc → white desc.
  */
-function sectorSortValue(stock: SectorStock): number {
-  // Primary: total events (spikes + growth)
-  const totalEvents = stock.spike_count + stock.growth_event_count;
-  // Secondary: spike score + growth score
-  const totalScore = stock.spike_score + stock.score;
-  return totalEvents * 10000 + totalScore;
+function getSpikeDotColors(spikeCount: number, highestSpikePct: number | null): string[] {
+  const count = Math.min(spikeCount, 10);
+  if (count === 0) return [];
+  const avg = highestSpikePct ? highestSpikePct / Math.max(spikeCount, 1) : 100;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestSpikePct || 100) : avg * (1 - i * 0.08);
+    dots.push(est >= 200 ? 'green' : est >= 100 ? 'yellow' : 'white');
+  }
+  return dots;
+}
+
+function getGrowthDotColors(eventCount: number, highestGrowthPct: number | null): string[] {
+  const count = Math.min(eventCount, 10);
+  if (count === 0) return [];
+  const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
+    dots.push(est >= 500 ? 'green' : est >= 300 ? 'yellow' : 'white');
+  }
+  return dots;
+}
+
+function sectorMedalKey(stock: SectorStock): [number, number, number, number] {
+  const spikeDots = getSpikeDotColors(stock.spike_count, stock.highest_spike_pct);
+  const growthDots = getGrowthDotColors(stock.growth_event_count, stock.highest_growth_pct);
+  const allDots = [...spikeDots, ...growthDots];
+  const total = allDots.length;
+  const green = allDots.filter(d => d === 'green').length;
+  const yellow = allDots.filter(d => d === 'yellow').length;
+  const white = allDots.filter(d => d === 'white').length;
+  return [total, green, yellow, white];
 }
 
 export function useSectorStocks(scannerType: SectorScannerType) {
@@ -80,18 +109,20 @@ export function useSectorStocks(scannerType: SectorScannerType) {
 
   const fetchStocks = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('sector_stocks')
-      .select('*')
-      .eq('scanner_type', scannerType)
-      .eq('is_deleted', false)
-      .eq('is_archived', false)
-      .order('spike_score', { ascending: false });
+    const { data, error } = await fetchAllRows<SectorStock>(() =>
+      supabase
+        .from('sector_stocks')
+        .select('*')
+        .eq('scanner_type', scannerType)
+        .eq('is_deleted', false)
+        .eq('is_archived', false)
+        .order('spike_score', { ascending: false })
+    );
 
     if (error) {
       console.error(`Error fetching ${scannerType} stocks:`, error);
     } else if (data) {
-      setStocks(data as SectorStock[]);
+      setStocks(data);
       const uniqueSectors = Array.from(
         new Set(data.map((s) => s.sector).filter(Boolean)),
       ).sort() as string[];
@@ -131,10 +162,12 @@ export function useSectorStocks(scannerType: SectorScannerType) {
     }
 
     result.sort((a, b) => {
-      if (sort.column === ('combined_score' as never)) {
-        const aVal = sectorSortValue(a);
-        const bVal = sectorSortValue(b);
-        return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      // Medal ranking for spike_count (default) — medaillespiegel
+      if (sort.column === ('spike_count' as never)) {
+        const [aT, aG, aY, aW] = sectorMedalKey(a);
+        const [bT, bG, bY, bW] = sectorMedalKey(b);
+        const comparison = (bT - aT) || (bG - aG) || (bY - aY) || (bW - aW);
+        return sort.direction === 'asc' ? -comparison : comparison;
       }
       const aVal = a[sort.column as keyof SectorStock];
       const bVal = b[sort.column as keyof SectorStock];

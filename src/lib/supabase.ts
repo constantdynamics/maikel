@@ -31,3 +31,39 @@ export function createServiceClient(): SupabaseClient {
   }
   return createClient(url, serviceRoleKey);
 }
+
+/**
+ * Fetch all rows from a Supabase table, bypassing the default 1000-row limit.
+ * Takes a builder function so each page gets a fresh query.
+ *
+ * Usage:
+ *   const data = await fetchAllRows<Stock>(() =>
+ *     supabase.from('stocks').select('*').eq('is_deleted', false)
+ *   );
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchAllRows<T>(buildQuery: () => any): Promise<{ data: T[]; error: unknown }> {
+  const PAGE_SIZE = 1000;
+  const allData: T[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery().range(offset, offset + PAGE_SIZE - 1);
+
+    if (error) {
+      return { data: allData, error };
+    }
+
+    if (data) {
+      allData.push(...(data as T[]));
+    }
+
+    if (!data || data.length < PAGE_SIZE) {
+      break;
+    }
+
+    offset += PAGE_SIZE;
+  }
+
+  return { data: allData, error: null };
+}

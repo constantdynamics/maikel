@@ -354,6 +354,22 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       );
     }
 
+    // === STORAGE OPTIMIZATION: Prune old scan log details (keep last 5) ===
+    try {
+      const { data: oldLogs } = await supabase
+        .from('zonnebloem_scan_logs')
+        .select('id')
+        .order('started_at', { ascending: false })
+        .range(5, 100);
+
+      if (oldLogs && oldLogs.length > 0) {
+        await supabase
+          .from('zonnebloem_scan_logs')
+          .update({ details: null })
+          .in('id', oldLogs.map(l => l.id));
+      }
+    } catch { /* ignore cleanup errors */ }
+
     console.log(
       `ZB Scan ${status}: ${stocksMatched} matches (${newStocksFound} new) from ${stocksDeepScanned} deep-scanned in ${durationSeconds}s${timeBudgetExceeded ? ' (time budget reached)' : ''}`,
     );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, fetchAllRows } from '@/lib/supabase';
 import type { ZonnebloemStock, SortConfig } from '@/lib/types';
 import { spikeDotsSortValue } from '@/components/ZonnebloemTable';
 
@@ -117,17 +117,19 @@ export function useZonnebloemStocks() {
 
   const fetchStocks = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('zonnebloem_stocks')
-      .select('*')
-      .eq('is_deleted', false)
-      .eq('is_archived', false)
-      .order('spike_score', { ascending: false });
+    const { data, error } = await fetchAllRows<ZonnebloemStock>(() =>
+      supabase
+        .from('zonnebloem_stocks')
+        .select('*')
+        .eq('is_deleted', false)
+        .eq('is_archived', false)
+        .order('spike_score', { ascending: false })
+    );
 
     if (error) {
       console.error('Error fetching Zonnebloem stocks:', error);
     } else if (data) {
-      setStocks(data as ZonnebloemStock[]);
+      setStocks(data);
       const uniqueSectors = Array.from(
         new Set(data.map((s) => s.sector).filter(Boolean)),
       ).sort() as string[];

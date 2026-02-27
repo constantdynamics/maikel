@@ -283,6 +283,7 @@ export default function ZonnebloemTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--border-color)]">
+              <th className="w-8 p-2 text-center text-[var(--text-muted)] text-xs font-medium">#</th>
               <th className="w-8 p-2">
                 <input
                   type="checkbox"
@@ -312,7 +313,7 @@ export default function ZonnebloemTable({
             </tr>
           </thead>
           <tbody>
-            {stocks.map((stock) => (
+            {stocks.map((stock, index) => (
               <tr
                 key={stock.id}
                 className={`border-b border-[var(--border-color)] hover:bg-[var(--hover-bg)] transition-colors cursor-pointer ${
@@ -320,6 +321,9 @@ export default function ZonnebloemTable({
                 }`}
                 onClick={() => onToggleSelect(stock.id)}
               >
+                <td className="p-2 text-center text-xs font-mono text-[var(--text-muted)]">
+                  {index + 1}
+                </td>
                 <td className="p-2" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
