@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   const showDeleted = searchParams.get('deleted') === 'true';
+  const limitParam = searchParams.get('limit');
 
   let query = supabase.from('zonnebloem_stocks').select('*');
 
@@ -15,7 +16,14 @@ export async function GET(request: NextRequest) {
     query = query.eq('is_deleted', false);
   }
 
-  const { data, error } = await query.order('spike_score', { ascending: false });
+  query = query.order('spike_score', { ascending: false });
+
+  if (limitParam) {
+    const limit = Math.min(Math.max(1, parseInt(limitParam, 10) || 250), 1000);
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

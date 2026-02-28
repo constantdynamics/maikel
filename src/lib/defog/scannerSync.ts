@@ -4,6 +4,26 @@ import type { Stock as DefogStock, Tab } from './types';
 // Color constants for auto-created scanner tabs
 const KUIFJE_TAB_COLOR = '#22c55e';     // Green
 const ZONNEBLOEM_TAB_COLOR = '#a855f7'; // Purple
+const BIOPHARMA_TAB_COLOR = '#06b6d4';  // Cyan
+const MINING_TAB_COLOR = '#f59e0b';     // Amber
+
+// Top N stocks per tab for weekly refresh
+const TOP_N_LIMIT = 250;
+
+// Scanner tab names (used for matching)
+export const SCANNER_TAB_NAMES = ['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining'] as const;
+export type ScannerTabName = typeof SCANNER_TAB_NAMES[number];
+
+const SCANNER_TAB_COLORS: Record<ScannerTabName, string> = {
+  'Kuifje': KUIFJE_TAB_COLOR,
+  'Prof. Zonnebloem': ZONNEBLOEM_TAB_COLOR,
+  'BioPharma': BIOPHARMA_TAB_COLOR,
+  'Mining': MINING_TAB_COLOR,
+};
+
+// Weekly refresh timestamp key
+const WEEKLY_REFRESH_KEY = 'defog-top250-last-refresh';
+const WEEKLY_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
  * Return the minimum of two positive numbers (null-safe).
@@ -42,6 +62,24 @@ interface MaikelZonnebloemStock {
   exchange: string | null;
   sector: string | null;
   highest_spike_pct: number | null;
+}
+
+// Sector stocks (BioPharma/Mining) share fields from both scanners
+interface MaikelSectorStock {
+  id: string;
+  ticker: string;
+  yahoo_ticker: string | null;
+  company_name: string;
+  current_price: number | null;
+  three_year_low: number | null;
+  five_year_low: number | null;
+  base_price_median: number | null;
+  exchange: string | null;
+  market: string | null;
+  sector: string | null;
+  highest_spike_pct: number | null;
+  score: number;
+  spike_score: number;
 }
 
 // Multiplier: fraction above the historical low to set as buy limit
@@ -102,11 +140,22 @@ function zbBuyLimitInput(stock: MaikelZonnebloemStock): [Parameters<typeof calcu
 }
 
 /**
+ * Build buy-limit input for a sector stock.
+ */
+function sectorBuyLimitInput(stock: MaikelSectorStock): [Parameters<typeof calculateBuyLimit>[0], number | null] {
+  return [{
+    threeYearLow: stock.three_year_low,
+    fiveYearLow: stock.five_year_low,
+    basePriceMedian: stock.base_price_median,
+  }, stock.current_price];
+}
+
+/**
  * Determine the best ticker for Defog (that data providers can resolve).
  * For Zonnebloem stocks, use yahoo_ticker if available (e.g., "0A91.F" or "LMND").
  * For Kuifje stocks, ticker is typically already a proper US ticker.
  */
-function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock): string {
+function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock): string {
   // Zonnebloem stocks have yahoo_ticker which includes the proper exchange suffix
   if ('yahoo_ticker' in m && m.yahoo_ticker) {
     return m.yahoo_ticker;
@@ -117,7 +166,7 @@ function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock): string {
 /**
  * Determine the exchange for Defog based on the yahoo_ticker suffix.
  */
-function getDefogExchange(m: MaikelKuifjeStock | MaikelZonnebloemStock): string {
+function getDefogExchange(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock): string {
   const ticker = getDefogTicker(m);
   // Extract exchange from Yahoo suffix
   if (ticker.includes('.')) {
@@ -218,7 +267,7 @@ function deduplicateScannerStocks<T extends { company_name: string }>(
 }
 
 function maikelToDefogStock(
-  m: MaikelKuifjeStock | MaikelZonnebloemStock,
+  m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock,
   buyLimit: number | null,
   overrideTicker?: string,
 ): DefogStock {
@@ -346,288 +395,436 @@ function buildExistingStockMaps(stocks: DefogStock[]) {
 }
 
 /**
+ * Recalculate buy limit for an existing stock using its real range data.
+ * Returns the updated stock or original if no update needed.
+ */
+function recalcExistingBuyLimit(s: DefogStock): DefogStock {
+  if (s.buyLimit == null && s.rangeFetched) {
+    const hasRealRangeData = (s.year5Low && s.year5Low > 0) ||
+      (s.year3Low && s.year3Low > 0) ||
+      (s.week52Low && s.week52Low > 0);
+    if (hasRealRangeData) {
+      const newLimit = calculateBuyLimit({
+        fiveYearLow: s.year5Low,
+        threeYearLow: s.year3Low,
+        twelveMonthLow: s.week52Low > 0 ? s.week52Low : null,
+      });
+      if (newLimit != null) return { ...s, buyLimit: newLimit };
+    }
+  }
+  return s;
+}
+
+/**
+ * Apply updates and add new stocks to an existing tab.
+ * Used by both the regular sync and weekly refresh.
+ */
+function applyTabSync(
+  tab: Tab,
+  updates: Map<string, { ticker?: string; buyLimit?: number | null }>,
+  newStocks: DefogStock[],
+): Tab {
+  const updatedStocks = tab.stocks.map((s) => {
+    const update = updates.get(s.id);
+    if (update) {
+      return {
+        ...s,
+        ...(update.ticker ? { ticker: update.ticker } : {}),
+        ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
+      };
+    }
+    return recalcExistingBuyLimit(s);
+  });
+
+  const finalStocks = deduplicateExistingTabStocks([...updatedStocks, ...newStocks]);
+
+  // SAFETY: Don't allow sync to remove more than 20% of stocks
+  if (tab.stocks.length > 5 && finalStocks.length < tab.stocks.length * 0.8) {
+    console.warn(`[ScannerSync] SAFETY: ${tab.name} would lose ${tab.stocks.length - finalStocks.length} stocks (${tab.stocks.length} → ${finalStocks.length}). Keeping original.`);
+    return { ...tab, stocks: [...tab.stocks, ...newStocks] };
+  }
+
+  return { ...tab, stocks: finalStocks };
+}
+
+/**
+ * Process a list of scanner stocks against an existing tab.
+ * Returns new stocks to add and updates to apply.
+ */
+function processStocksForTab<T extends { company_name: string }>(
+  scannerStocks: T[],
+  existingTab: Tab,
+  getTickerFn: (s: T) => string,
+  getBuyLimitInputFn: (s: T) => [Parameters<typeof calculateBuyLimit>[0], number | null],
+): { newStocks: DefogStock[]; updates: Map<string, { ticker?: string; buyLimit?: number | null }>; added: number } {
+  const maps = buildExistingStockMaps(existingTab.stocks);
+  const newStocks: DefogStock[] = [];
+  const updates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
+  let added = 0;
+
+  for (const stock of scannerStocks) {
+    const defogTicker = getTickerFn(stock);
+
+    const existing = findExistingStock(
+      existingTab.stocks, defogTicker, stock.company_name,
+      maps.nameMap, maps.baseTickerMap, maps.tickerSet,
+    );
+
+    if (existing) {
+      const upd: { ticker?: string; buyLimit?: number | null } = {};
+
+      if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
+        upd.ticker = defogTicker;
+      }
+
+      if (existing.rangeFetched) {
+        const hasRealRangeData = (existing.year5Low && existing.year5Low > 0) ||
+          (existing.year3Low && existing.year3Low > 0) ||
+          (existing.week52Low && existing.week52Low > 0);
+        if (hasRealRangeData) {
+          const recalcLimit = calculateBuyLimit({
+            fiveYearLow: existing.year5Low,
+            threeYearLow: existing.year3Low,
+            twelveMonthLow: existing.week52Low > 0 ? existing.week52Low : null,
+          });
+          if (recalcLimit != null) {
+            upd.buyLimit = recalcLimit;
+          }
+        }
+      }
+
+      if (Object.keys(upd).length > 0) {
+        const prev = updates.get(existing.id) || {};
+        updates.set(existing.id, { ...prev, ...upd });
+      }
+    } else {
+      const defogStock = maikelToDefogStock(stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock, null);
+      newStocks.push(defogStock);
+      maps.tickerSet.add(defogTicker);
+      maps.nameMap.set(normalizeCompanyName(stock.company_name), defogStock);
+      maps.baseTickerMap.set(getBaseTicker(defogTicker), defogStock);
+      added++;
+    }
+  }
+
+  return { newStocks, updates, added };
+}
+
+/**
+ * Find or create a scanner tab.
+ */
+function findOrCreateTab(tabs: Tab[], name: ScannerTabName): { tab: Tab; isNew: boolean } {
+  const existing = tabs.find((t) => t.name === name);
+  if (existing) return { tab: existing, isNew: false };
+
+  return {
+    tab: {
+      id: uuidv4(),
+      name,
+      accentColor: SCANNER_TAB_COLORS[name],
+      stocks: [],
+      sortField: 'ticker',
+      sortDirection: 'asc',
+      createdAt: new Date().toISOString(),
+    },
+    isNew: true,
+  };
+}
+
+/**
+ * Fetch scanner stocks from API with optional limit.
+ */
+async function fetchScannerStocks(url: string): Promise<unknown[]> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json.stocks || []);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Sync Maikel scanner results into Defog tabs.
- * Creates "Kuifje" and "Prof. Zonnebloem" tabs if they don't exist.
+ * Creates "Kuifje", "Prof. Zonnebloem", "BioPharma", and "Mining" tabs if they don't exist.
  * Adds new stocks (by ticker AND company name) and updates existing ones.
+ * Limits each tab to the top 250 stocks by score.
  *
  * Deduplication:
  *  - Within scanner results: group by company name, pick best ticker (with dot suffix)
  *  - Against existing Defog stocks: match by ticker, base ticker, or company name
  *  - When duplicates found: use lowest buy limit, upgrade to better ticker
- *
- * Buy limit = ONLY three_year_low * 1.15. No fallbacks.
  */
 export async function syncScannerToDefog(
   getTabs: () => Tab[],
   setTabs: (updater: (tabs: Tab[]) => Tab[]) => void,
-): Promise<{ kuifjeAdded: number; zbAdded: number }> {
-  // Fetch both scanner results
-  const [kuifjeRes, zbRes] = await Promise.all([
-    fetch('/api/stocks'),
-    fetch('/api/zonnebloem/stocks'),
+): Promise<{ kuifjeAdded: number; zbAdded: number; biopharmaAdded: number; miningAdded: number }> {
+  // Fetch all four scanner results (top 250 each)
+  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw] = await Promise.all([
+    fetchScannerStocks(`/api/stocks?limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/zonnebloem/stocks?limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=biopharma&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=mining&limit=${TOP_N_LIMIT}`),
   ]);
 
-  const kuifjeStocksRaw: MaikelKuifjeStock[] = kuifjeRes.ok ? await kuifjeRes.json() : [];
-  const zbJson = zbRes.ok ? await zbRes.json() : [];
-  const zbStocksRaw: MaikelZonnebloemStock[] = Array.isArray(zbJson) ? zbJson : (zbJson.stocks || []);
+  const kuifjeStocksRaw = kuifjeRaw as MaikelKuifjeStock[];
+  const zbStocksRaw = zbRaw as MaikelZonnebloemStock[];
+  const biopharmaStocksRaw = biopharmaRaw as MaikelSectorStock[];
+  const miningStocksRaw = miningRaw as MaikelSectorStock[];
 
-  // SAFETY: If BOTH scanner APIs returned zero stocks, skip sync entirely
-  // This prevents data loss when APIs are temporarily unavailable
-  if (kuifjeStocksRaw.length === 0 && zbStocksRaw.length === 0) {
-    console.log('[ScannerSync] Both APIs returned 0 stocks — skipping sync to prevent data loss');
-    return { kuifjeAdded: 0, zbAdded: 0 };
+  // SAFETY: If ALL scanner APIs returned zero stocks, skip sync entirely
+  const totalStocks = kuifjeStocksRaw.length + zbStocksRaw.length + biopharmaStocksRaw.length + miningStocksRaw.length;
+  if (totalStocks === 0) {
+    console.log('[ScannerSync] All APIs returned 0 stocks — skipping sync to prevent data loss');
+    return { kuifjeAdded: 0, zbAdded: 0, biopharmaAdded: 0, miningAdded: 0 };
   }
 
   // Deduplicate incoming scanner results by company name
   const kuifjeStocks = deduplicateScannerStocks(kuifjeStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...kuifjeBuyLimitInput(s)));
   const zbStocks = deduplicateScannerStocks(zbStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...zbBuyLimitInput(s)));
+  const biopharmaStocks = deduplicateScannerStocks(biopharmaStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
+  const miningStocks = deduplicateScannerStocks(miningStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
 
   const tabs = getTabs();
 
-  // Find or prepare tabs
-  let kuifjeTab = tabs.find((t) => t.name === 'Kuifje');
-  let zbTab = tabs.find((t) => t.name === 'Prof. Zonnebloem');
+  // Find or create all 4 tabs
+  const kuifjeResult = findOrCreateTab(tabs, 'Kuifje');
+  const zbResult = findOrCreateTab(tabs, 'Prof. Zonnebloem');
+  const biopharmaResult = findOrCreateTab(tabs, 'BioPharma');
+  const miningResult = findOrCreateTab(tabs, 'Mining');
 
-  let kuifjeAdded = 0;
-  let zbAdded = 0;
+  // Process each scanner's stocks
+  const kuifjeProcessed = kuifjeStocksRaw.length > 0
+    ? processStocksForTab(kuifjeStocks, kuifjeResult.tab, getDefogTicker, kuifjeBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
 
-  // Create Kuifje tab if needed
-  if (!kuifjeTab) {
-    kuifjeTab = {
-      id: uuidv4(),
-      name: 'Kuifje',
-      accentColor: KUIFJE_TAB_COLOR,
-      stocks: [],
-      sortField: 'ticker',
-      sortDirection: 'asc',
-      createdAt: new Date().toISOString(),
-    };
-  }
+  const zbProcessed = zbStocksRaw.length > 0
+    ? processStocksForTab(zbStocks, zbResult.tab, getDefogTicker, zbBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
 
-  // Create Zonnebloem tab if needed
-  if (!zbTab) {
-    zbTab = {
-      id: uuidv4(),
-      name: 'Prof. Zonnebloem',
-      accentColor: ZONNEBLOEM_TAB_COLOR,
-      stocks: [],
-      sortField: 'ticker',
-      sortDirection: 'asc',
-      createdAt: new Date().toISOString(),
-    };
-  }
+  const biopharmaProcessed = biopharmaStocksRaw.length > 0
+    ? processStocksForTab(biopharmaStocks, biopharmaResult.tab, getDefogTicker, sectorBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
 
-  // ── Kuifje: build new stocks and updates ──
-  const kuifjeMaps = buildExistingStockMaps(kuifjeTab.stocks);
-  const kuifjeNewStocks: DefogStock[] = [];
-  // Track updates to existing stocks: stockId → { ticker?, buyLimit? }
-  const kuifjeUpdates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
+  const miningProcessed = miningStocksRaw.length > 0
+    ? processStocksForTab(miningStocks, miningResult.tab, getDefogTicker, sectorBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
 
-  for (const stock of kuifjeStocks) {
-    const defogTicker = getDefogTicker(stock);
-    const buyLimit = calculateBuyLimit(...kuifjeBuyLimitInput(stock));
-
-    const existing = findExistingStock(
-      kuifjeTab.stocks, defogTicker, stock.company_name,
-      kuifjeMaps.nameMap, kuifjeMaps.baseTickerMap, kuifjeMaps.tickerSet,
-    );
-
-    if (existing) {
-      // Duplicate found — potentially update ticker
-      const updates: { ticker?: string; buyLimit?: number | null } = {};
-
-      // Upgrade ticker if the new one is better (has exchange suffix)
-      if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
-        updates.ticker = defogTicker;
-      }
-
-      // Only recalculate buy limit for stocks that have REAL range data (rangeFetched)
-      // AND actual Yahoo Finance range values (year5Low/year3Low/week52Low > 0)
-      // Scanner-provided lows (three_year_low, base_price_median) are NEVER used
-      if (existing.rangeFetched) {
-        const hasRealRangeData = (existing.year5Low && existing.year5Low > 0) ||
-          (existing.year3Low && existing.year3Low > 0) ||
-          (existing.week52Low && existing.week52Low > 0);
-        if (hasRealRangeData) {
-          const recalcLimit = calculateBuyLimit({
-            fiveYearLow: existing.year5Low,
-            threeYearLow: existing.year3Low,
-            twelveMonthLow: existing.week52Low > 0 ? existing.week52Low : null,
-          });
-          if (recalcLimit != null) {
-            updates.buyLimit = recalcLimit;
-          }
-        }
-      }
-
-      if (Object.keys(updates).length > 0) {
-        // Merge with any previous updates for this stock
-        const prev = kuifjeUpdates.get(existing.id) || {};
-        kuifjeUpdates.set(existing.id, { ...prev, ...updates });
-      }
-    } else {
-      // New stock — buyLimit is null, will be set by postSyncRangeFetch after real range data is fetched
-      kuifjeNewStocks.push(maikelToDefogStock(stock, null));
-      // Also add to maps so subsequent duplicates within this batch are caught
-      kuifjeMaps.tickerSet.add(defogTicker);
-      kuifjeMaps.nameMap.set(normalizeCompanyName(stock.company_name), kuifjeNewStocks[kuifjeNewStocks.length - 1]);
-      kuifjeMaps.baseTickerMap.set(getBaseTicker(defogTicker), kuifjeNewStocks[kuifjeNewStocks.length - 1]);
-      kuifjeAdded++;
-    }
-  }
-
-  // ── Zonnebloem: build new stocks and updates ──
-  const zbMaps = buildExistingStockMaps(zbTab.stocks);
-  const zbNewStocks: DefogStock[] = [];
-  const zbUpdates = new Map<string, { ticker?: string; buyLimit?: number | null }>();
-
-  for (const stock of zbStocks) {
-    const defogTicker = getDefogTicker(stock);
-    const buyLimit = calculateBuyLimit(...zbBuyLimitInput(stock));
-
-    const existing = findExistingStock(
-      zbTab.stocks, defogTicker, stock.company_name,
-      zbMaps.nameMap, zbMaps.baseTickerMap, zbMaps.tickerSet,
-    );
-
-    if (existing) {
-      const updates: { ticker?: string; buyLimit?: number | null } = {};
-
-      if (tickerQualityScore(defogTicker) > tickerQualityScore(existing.ticker)) {
-        updates.ticker = defogTicker;
-      }
-
-      // Only recalculate buy limit for stocks that have REAL range data (rangeFetched)
-      // AND actual Yahoo Finance range values (year5Low/year3Low/week52Low > 0)
-      // Scanner-provided lows (three_year_low, base_price_median) are NEVER used
-      if (existing.rangeFetched) {
-        const hasRealRangeData = (existing.year5Low && existing.year5Low > 0) ||
-          (existing.year3Low && existing.year3Low > 0) ||
-          (existing.week52Low && existing.week52Low > 0);
-        if (hasRealRangeData) {
-          const recalcLimit = calculateBuyLimit({
-            fiveYearLow: existing.year5Low,
-            threeYearLow: existing.year3Low,
-            twelveMonthLow: existing.week52Low > 0 ? existing.week52Low : null,
-          });
-          if (recalcLimit != null) {
-            updates.buyLimit = recalcLimit;
-          }
-        }
-      }
-
-      if (Object.keys(updates).length > 0) {
-        const prev = zbUpdates.get(existing.id) || {};
-        zbUpdates.set(existing.id, { ...prev, ...updates });
-      }
-    } else {
-      // New stock — buyLimit is null, will be set by postSyncRangeFetch after real range data is fetched
-      zbNewStocks.push(maikelToDefogStock(stock, null));
-      zbMaps.tickerSet.add(defogTicker);
-      zbMaps.nameMap.set(normalizeCompanyName(stock.company_name), zbNewStocks[zbNewStocks.length - 1]);
-      zbMaps.baseTickerMap.set(getBaseTicker(defogTicker), zbNewStocks[zbNewStocks.length - 1]);
-      zbAdded++;
-    }
-  }
-
-  // Build lookup maps for updating existing stocks' buy limits (for stocks that had null buyLimit)
-  const kuifjeByTicker = new Map(kuifjeStocks.map((s) => [getDefogTicker(s), s]));
-  const zbByTicker = new Map(zbStocks.map((s) => [getDefogTicker(s), s]));
-
-  // Apply updates
-  const kuifjeTabId = kuifjeTab.id;
-  const zbTabId = zbTab.id;
-  const needNewKuifjeTab = !tabs.find((t) => t.name === 'Kuifje');
-  const needNewZbTab = !tabs.find((t) => t.name === 'Prof. Zonnebloem');
+  // Apply all updates in a single setTabs call
+  const tabConfigs = [
+    { tab: kuifjeResult, processed: kuifjeProcessed },
+    { tab: zbResult, processed: zbProcessed },
+    { tab: biopharmaResult, processed: biopharmaProcessed },
+    { tab: miningResult, processed: miningProcessed },
+  ];
 
   setTabs((currentTabs) => {
     let result = [...currentTabs];
 
     // Add new tabs if needed
-    if (needNewKuifjeTab && !result.find((t) => t.id === kuifjeTabId)) {
-      result.push(kuifjeTab!);
+    for (const { tab: { tab, isNew } } of tabConfigs) {
+      if (isNew && !result.find((t) => t.id === tab.id)) {
+        result.push(tab);
+      }
     }
-    if (needNewZbTab && !result.find((t) => t.id === zbTabId)) {
-      result.push(zbTab!);
+
+    return result.map((t) => {
+      for (const { tab: { tab }, processed } of tabConfigs) {
+        if (t.id === tab.id) {
+          return applyTabSync(t, processed.updates, processed.newStocks);
+        }
+      }
+      return t;
+    });
+  });
+
+  return {
+    kuifjeAdded: kuifjeProcessed.added,
+    zbAdded: zbProcessed.added,
+    biopharmaAdded: biopharmaProcessed.added,
+    miningAdded: miningProcessed.added,
+  };
+}
+
+/**
+ * Check if a weekly top-250 refresh is due.
+ */
+export function shouldRunWeeklyRefresh(): boolean {
+  try {
+    const lastRefresh = localStorage.getItem(WEEKLY_REFRESH_KEY);
+    if (!lastRefresh) return true;
+    const elapsed = Date.now() - new Date(lastRefresh).getTime();
+    return elapsed >= WEEKLY_REFRESH_INTERVAL_MS;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Mark that the weekly refresh has been completed.
+ */
+export function markWeeklyRefreshDone(): void {
+  try {
+    localStorage.setItem(WEEKLY_REFRESH_KEY, new Date().toISOString());
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+/**
+ * Weekly full refresh of scanner tabs in Defog.
+ * Replaces each scanner tab with the current top 250 stocks.
+ * Preserves existing stock data (range, buy limit, etc.) for stocks that are still in the top 250.
+ * Removes stocks that dropped out of the top 250.
+ */
+export async function refreshDefogTop250(
+  getTabs: () => Tab[],
+  setTabs: (updater: (tabs: Tab[]) => Tab[]) => void,
+): Promise<{ kuifje: number; zonnebloem: number; biopharma: number; mining: number }> {
+  console.log('[ScannerSync] Starting weekly top-250 refresh...');
+
+  // Fetch top 250 from each scanner
+  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw] = await Promise.all([
+    fetchScannerStocks(`/api/stocks?limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/zonnebloem/stocks?limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=biopharma&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=mining&limit=${TOP_N_LIMIT}`),
+  ]);
+
+  const kuifjeStocks = deduplicateScannerStocks(
+    kuifjeRaw as MaikelKuifjeStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...kuifjeBuyLimitInput(s)),
+  );
+  const zbStocks = deduplicateScannerStocks(
+    zbRaw as MaikelZonnebloemStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...zbBuyLimitInput(s)),
+  );
+  const biopharmaStocks = deduplicateScannerStocks(
+    biopharmaRaw as MaikelSectorStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...sectorBuyLimitInput(s)),
+  );
+  const miningStocks = deduplicateScannerStocks(
+    miningRaw as MaikelSectorStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...sectorBuyLimitInput(s)),
+  );
+
+  // SAFETY: if all APIs return 0, skip
+  if (kuifjeStocks.length + zbStocks.length + biopharmaStocks.length + miningStocks.length === 0) {
+    console.log('[ScannerSync] Weekly refresh: All APIs returned 0 stocks — skipping');
+    return { kuifje: 0, zonnebloem: 0, biopharma: 0, mining: 0 };
+  }
+
+  const tabs = getTabs();
+
+  /**
+   * Replace a tab's stocks with the new top 250, preserving existing data
+   * for stocks that are still in the list.
+   */
+  function replaceTabStocks<T extends { company_name: string }>(
+    tabName: ScannerTabName,
+    scannerStocks: T[],
+    getTickerFn: (s: T) => string,
+  ): { tabId: string; newStocks: DefogStock[]; isNewTab: boolean } {
+    const { tab, isNew } = findOrCreateTab(tabs, tabName);
+
+    // Build a map of existing defog stocks by ticker and name for fast lookup
+    const existingByTicker = new Map<string, DefogStock>();
+    const existingByBaseTicker = new Map<string, DefogStock>();
+    const existingByName = new Map<string, DefogStock>();
+    for (const s of tab.stocks) {
+      existingByTicker.set(s.ticker, s);
+      existingByBaseTicker.set(getBaseTicker(s.ticker), s);
+      existingByName.set(normalizeCompanyName(s.name), s);
+    }
+
+    // Build the new stock list: for each scanner stock, reuse existing defog data if possible
+    const newStockList: DefogStock[] = [];
+    const seenTickers = new Set<string>();
+
+    for (const stock of scannerStocks) {
+      const ticker = getTickerFn(stock);
+      const baseTicker = getBaseTicker(ticker);
+      const normName = normalizeCompanyName(stock.company_name);
+
+      // Skip duplicates within this batch
+      if (seenTickers.has(ticker) || seenTickers.has(baseTicker)) continue;
+      seenTickers.add(ticker);
+      seenTickers.add(baseTicker);
+
+      // Try to find existing defog stock to preserve its data
+      const existing = existingByTicker.get(ticker)
+        || existingByBaseTicker.get(baseTicker)
+        || existingByName.get(normName);
+
+      if (existing) {
+        // Update price from scanner but keep all defog data (range, buyLimit, etc.)
+        const scannerStock = stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock;
+        newStockList.push({
+          ...existing,
+          currentPrice: scannerStock.current_price || existing.currentPrice,
+          lastUpdated: new Date().toISOString(),
+          // Upgrade ticker if better
+          ticker: tickerQualityScore(ticker) > tickerQualityScore(existing.ticker) ? ticker : existing.ticker,
+        });
+      } else {
+        // Brand new stock
+        newStockList.push(maikelToDefogStock(
+          stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock,
+          null,
+        ));
+      }
+    }
+
+    return { tabId: tab.id, newStocks: newStockList, isNewTab: isNew };
+  }
+
+  // Process each tab
+  const kuifjeResult = replaceTabStocks('Kuifje', kuifjeStocks, getDefogTicker);
+  const zbResult = replaceTabStocks('Prof. Zonnebloem', zbStocks, getDefogTicker);
+  const biopharmaResult = replaceTabStocks('BioPharma', biopharmaStocks, getDefogTicker);
+  const miningResult = replaceTabStocks('Mining', miningStocks, getDefogTicker);
+
+  const allResults = [kuifjeResult, zbResult, biopharmaResult, miningResult];
+
+  setTabs((currentTabs) => {
+    let result = [...currentTabs];
+
+    // Add new tabs if needed
+    for (const r of allResults) {
+      if (r.isNewTab) {
+        const tabName = r === kuifjeResult ? 'Kuifje'
+          : r === zbResult ? 'Prof. Zonnebloem'
+          : r === biopharmaResult ? 'BioPharma' : 'Mining';
+        const { tab } = findOrCreateTab([], tabName);
+        tab.id = r.tabId;
+        if (!result.find((t) => t.id === r.tabId)) {
+          result.push(tab);
+        }
+      }
     }
 
     return result.map((tab) => {
-      if (tab.id === kuifjeTabId) {
-        const updatedStocks = tab.stocks.map((s) => {
-          // Apply duplicate-merge updates (ticker upgrade, lower limit)
-          const update = kuifjeUpdates.get(s.id);
-          if (update) {
-            return {
-              ...s,
-              ...(update.ticker ? { ticker: update.ticker } : {}),
-              ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
-            };
-          }
-          // Fill in null buyLimits ONLY for stocks with real Yahoo Finance range data
-          // NEVER use scanner-provided lows (three_year_low, base_price_median)
-          if (s.buyLimit == null && s.rangeFetched) {
-            const hasRealRangeData = (s.year5Low && s.year5Low > 0) ||
-              (s.year3Low && s.year3Low > 0) ||
-              (s.week52Low && s.week52Low > 0);
-            if (hasRealRangeData) {
-              const newLimit = calculateBuyLimit({
-                fiveYearLow: s.year5Low,
-                threeYearLow: s.year3Low,
-                twelveMonthLow: s.week52Low > 0 ? s.week52Low : null,
-              });
-              if (newLimit != null) return { ...s, buyLimit: newLimit };
-            }
-          }
-          return s;
-        });
-        // Deduplicate: merge existing duplicates (e.g., SES + SES.SI)
-        const kuifjeFinalStocks = deduplicateExistingTabStocks([...updatedStocks, ...kuifjeNewStocks]);
-        // SAFETY: Don't allow sync to remove more than 20% of stocks
-        if (tab.stocks.length > 5 && kuifjeFinalStocks.length < tab.stocks.length * 0.8) {
-          console.warn(`[ScannerSync] SAFETY: ${tab.name} would lose ${tab.stocks.length - kuifjeFinalStocks.length} stocks (${tab.stocks.length} → ${kuifjeFinalStocks.length}). Keeping original.`);
-          return { ...tab, stocks: [...tab.stocks, ...kuifjeNewStocks] }; // Only add new, don't deduplicate
+      for (const r of allResults) {
+        if (tab.id === r.tabId && r.newStocks.length > 0) {
+          return { ...tab, stocks: r.newStocks };
         }
-        return { ...tab, stocks: kuifjeFinalStocks };
-      }
-      if (tab.id === zbTabId) {
-        const updatedStocks = tab.stocks.map((s) => {
-          const update = zbUpdates.get(s.id);
-          if (update) {
-            return {
-              ...s,
-              ...(update.ticker ? { ticker: update.ticker } : {}),
-              ...(update.buyLimit !== undefined ? { buyLimit: update.buyLimit } : {}),
-            };
-          }
-          // Fill in null buyLimits ONLY for stocks with real Yahoo Finance range data
-          // NEVER use scanner-provided lows (three_year_low, base_price_median)
-          if (s.buyLimit == null && s.rangeFetched) {
-            const hasRealRangeData = (s.year5Low && s.year5Low > 0) ||
-              (s.year3Low && s.year3Low > 0) ||
-              (s.week52Low && s.week52Low > 0);
-            if (hasRealRangeData) {
-              const newLimit = calculateBuyLimit({
-                fiveYearLow: s.year5Low,
-                threeYearLow: s.year3Low,
-                twelveMonthLow: s.week52Low > 0 ? s.week52Low : null,
-              });
-              if (newLimit != null) return { ...s, buyLimit: newLimit };
-            }
-          }
-          return s;
-        });
-        // Deduplicate: merge existing duplicates (e.g., 0J9J + 0J9J.L)
-        const zbFinalStocks = deduplicateExistingTabStocks([...updatedStocks, ...zbNewStocks]);
-        // SAFETY: Don't allow sync to remove more than 20% of stocks
-        if (tab.stocks.length > 5 && zbFinalStocks.length < tab.stocks.length * 0.8) {
-          console.warn(`[ScannerSync] SAFETY: ${tab.name} would lose ${tab.stocks.length - zbFinalStocks.length} stocks (${tab.stocks.length} → ${zbFinalStocks.length}). Keeping original.`);
-          return { ...tab, stocks: [...tab.stocks, ...zbNewStocks] }; // Only add new, don't deduplicate
-        }
-        return { ...tab, stocks: zbFinalStocks };
       }
       return tab;
     });
   });
 
-  return { kuifjeAdded, zbAdded };
+  // Mark refresh as done
+  markWeeklyRefreshDone();
+
+  const counts = {
+    kuifje: kuifjeResult.newStocks.length,
+    zonnebloem: zbResult.newStocks.length,
+    biopharma: biopharmaResult.newStocks.length,
+    mining: miningResult.newStocks.length,
+  };
+
+  console.log(`[ScannerSync] Weekly refresh complete: K=${counts.kuifje}, Z=${counts.zonnebloem}, BP=${counts.biopharma}, M=${counts.mining}`);
+
+  return counts;
 }

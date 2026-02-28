@@ -1084,6 +1084,44 @@ export default function SettingsPage() {
                 ))}
               </div>
             </section>
+
+            {/* Defog Integration */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold">Defog Integratie</h2>
+              <p className="text-sm text-slate-300">
+                De top 250 hoogst gescoorde aandelen van elke scanner worden automatisch gesynchroniseerd naar
+                gelijknamige tabbladen in Defog.
+              </p>
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">4 Defog-tabs</p>
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#22c55e' }} />
+                    Kuifje — top 250 op growth score
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#a855f7' }} />
+                    Prof. Zonnebloem — top 250 op spike score
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#06b6d4' }} />
+                    BioPharma — top 250 sector-specifiek
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                    Mining — top 250 sector-specifiek
+                  </span>
+                </div>
+              </div>
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Wekelijkse verversing</p>
+                <p className="text-sm text-slate-400">
+                  Elke 7 dagen wordt de selectie van 250 aandelen per tab volledig ververst:
+                  nieuwe top-aandelen komen erbij, afvallers verdwijnen. Bestaande data
+                  (koersprijzen, buy limits, range data) blijft behouden voor aandelen die in de top 250 blijven.
+                </p>
+              </div>
+            </section>
           </div>
         )}
 
@@ -1133,9 +1171,10 @@ export default function SettingsPage() {
                 Scans run automatically on weekdays via Vercel Cron (even when your browser is closed):
               </p>
               <ul className="text-sm text-slate-300 space-y-1 pl-4 list-disc">
-                <li>10:30 AM EST - 1 hour after market open</li>
-                <li>3:00 PM EST - 1 hour before market close</li>
+                <li>10:30 AM EST - 1 hour after market open (Kuifje)</li>
+                <li>3:00 PM EST - 1 hour before market close (Kuifje)</li>
                 <li>4:00 PM UTC - Zonnebloem daily scan</li>
+                <li>12:00 PM UTC zondag - BioPharma &amp; Mining sector scan (wekelijks)</li>
               </ul>
               <p className="text-xs text-slate-500 mt-2">
                 Schedule is configured in vercel.json. Manual scans can be triggered from the dashboard.

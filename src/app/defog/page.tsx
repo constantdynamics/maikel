@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useStore } from '@/lib/defog/store';
 import { Dashboard } from '@/components/defog/Dashboard';
-import { syncScannerToDefog } from '@/lib/defog/scannerSync';
+import { syncScannerToDefog, shouldRunWeeklyRefresh, refreshDefogTop250 } from '@/lib/defog/scannerSync';
 import { SmartRefreshEngine } from '@/lib/defog/services/smartRefresh';
 import { fetchRangesForNewStocks, recalculateAllBuyLimits } from '@/lib/defog/services/postSyncRangeFetch';
 import { saveToLocalStorage, loadFromLocalStorage, getSessionPassword } from '@/lib/defog/utils/storage';
@@ -267,6 +267,25 @@ export default function DefogPage() {
   // ── 3. Scanner sync + post-sync range fetch ──
   const runSync = useCallback(async () => {
     try {
+      // Check if a weekly full refresh is due (replaces tab contents with current top 250)
+      if (shouldRunWeeklyRefresh()) {
+        console.log('[Defog] Weekly top-250 refresh is due — running full refresh');
+        const refreshResult = await refreshDefogTop250(
+          () => useStore.getState().tabs,
+          (updater) => useStore.setState((state) => ({ tabs: updater(state.tabs) })),
+        );
+        const refreshParts: string[] = [];
+        if (refreshResult.kuifje > 0) refreshParts.push(`${refreshResult.kuifje} Kuifje`);
+        if (refreshResult.zonnebloem > 0) refreshParts.push(`${refreshResult.zonnebloem} Zonnebloem`);
+        if (refreshResult.biopharma > 0) refreshParts.push(`${refreshResult.biopharma} BioPharma`);
+        if (refreshResult.mining > 0) refreshParts.push(`${refreshResult.mining} Mining`);
+        if (refreshParts.length > 0) {
+          setSyncMessage(`Weekly refresh: ${refreshParts.join(', ')}`);
+          setTimeout(() => setSyncMessage(null), 5000);
+        }
+        // After weekly refresh, still do range fetch below
+      }
+
       const result = await syncScannerToDefog(
         () => useStore.getState().tabs,
         (updater) => useStore.setState((state) => ({ tabs: updater(state.tabs) })),
@@ -274,6 +293,8 @@ export default function DefogPage() {
       const parts: string[] = [];
       if (result.kuifjeAdded > 0) parts.push(`${result.kuifjeAdded} Kuifje`);
       if (result.zbAdded > 0) parts.push(`${result.zbAdded} Zonnebloem`);
+      if (result.biopharmaAdded > 0) parts.push(`${result.biopharmaAdded} BioPharma`);
+      if (result.miningAdded > 0) parts.push(`${result.miningAdded} Mining`);
       if (parts.length > 0) {
         setSyncMessage(`Synced: +${parts.join(', ')}`);
         setTimeout(() => setSyncMessage(null), 4000);
