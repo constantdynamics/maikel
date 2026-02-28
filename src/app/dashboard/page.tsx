@@ -17,7 +17,7 @@ import ExportReminder from '@/components/ExportReminder';
 import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
-import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
+import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
@@ -234,6 +234,71 @@ export default function DashboardPage() {
     const csv = stocksToCSV(stocks as unknown as Record<string, unknown>[]);
     if (csv) downloadCSV(csv, generateCsvFilename());
   }, [stocks]);
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close export menu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showExportMenu]);
+
+  function getTabStocks(tab: 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining'): Record<string, unknown>[] {
+    if (tab === 'kuifje') return stocks as unknown as Record<string, unknown>[];
+    if (tab === 'zonnebloem') return zbStocks as unknown as Record<string, unknown>[];
+    if (tab === 'biopharma') return bpStocks as unknown as Record<string, unknown>[];
+    return mnStocks as unknown as Record<string, unknown>[];
+  }
+
+  function getTabLabel(tab: 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining'): string {
+    if (tab === 'kuifje') return 'Kuifje';
+    if (tab === 'zonnebloem') return 'Zonnebloem';
+    if (tab === 'biopharma') return 'BioPharma';
+    return 'Mining';
+  }
+
+  function handleExportTab(tab: 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining', fmt: 'csv' | 'json') {
+    const data = getTabStocks(tab);
+    if (data.length === 0) return;
+    if (fmt === 'csv') {
+      const csv = scannerStocksToCSV(data, tab);
+      downloadFile(csv, generateExportFilename(getTabLabel(tab), 'csv'), 'text/csv;charset=utf-8;');
+    } else {
+      const json = scannerStocksToJSON(data, tab);
+      downloadFile(json, generateExportFilename(getTabLabel(tab), 'json'), 'application/json');
+    }
+    setShowExportMenu(false);
+  }
+
+  function handleExportAll(fmt: 'csv' | 'json') {
+    if (fmt === 'json') {
+      const json = allScannerTabsToJSON({
+        kuifje: stocks as unknown as Record<string, unknown>[],
+        zonnebloem: zbStocks as unknown as Record<string, unknown>[],
+        biopharma: bpStocks as unknown as Record<string, unknown>[],
+        mining: mnStocks as unknown as Record<string, unknown>[],
+      });
+      downloadFile(json, generateExportFilename('AllScanners', 'json'), 'application/json');
+    } else {
+      // CSV: export each tab as a separate file
+      for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining'] as const) {
+        const data = getTabStocks(tab);
+        if (data.length > 0) {
+          const csv = scannerStocksToCSV(data, tab);
+          downloadFile(csv, generateExportFilename(getTabLabel(tab), 'csv'), 'text/csv;charset=utf-8;');
+        }
+      }
+    }
+    setShowExportMenu(false);
+  }
 
   // ===== SCAN HANDLERS =====
 
@@ -794,6 +859,52 @@ export default function DashboardPage() {
               <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
               {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/4)` : 'Auto-scan All'}
             </button>
+
+            {/* Export dropdown */}
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 top-full mt-1 w-56 rounded-lg shadow-xl z-50 border border-[var(--border-color)]"
+                  style={{ backgroundColor: 'var(--bg-primary)' }}
+                >
+                  <div className="p-1.5">
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                      Huidige tab ({getTabLabel(activeTab)})
+                    </div>
+                    <button onClick={() => handleExportTab(activeTab, 'csv')}
+                      className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
+                      CSV downloaden
+                    </button>
+                    <button onClick={() => handleExportTab(activeTab, 'json')}
+                      className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
+                      JSON downloaden
+                    </button>
+
+                    <div className="my-1 border-t border-[var(--border-color)]" />
+
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                      Alle 4 tabs
+                    </div>
+                    <button onClick={() => handleExportAll('json')}
+                      className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
+                      Alles als JSON
+                    </button>
+                    <button onClick={() => handleExportAll('csv')}
+                      className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
+                      Alles als CSV (4 bestanden)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
