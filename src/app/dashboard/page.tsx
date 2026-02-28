@@ -14,7 +14,6 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
 import ExportReminder from '@/components/ExportReminder';
-import ColumnLegend from '@/components/ColumnLegend';
 import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
@@ -778,7 +777,6 @@ export default function DashboardPage() {
           </button>
 
           <div className="ml-auto flex items-center gap-2">
-            <ColumnLegend activeTab={activeTab} />
             <button
               onClick={() => {
                 const newState = !allAutoActive;

@@ -119,6 +119,20 @@ export default function SectorStockTable({
   const [favAnimating, setFavAnimating] = useState<string | null>(null);
   const allSelected = stocks.length > 0 && selectedIds.size === stocks.length;
 
+  const SECTOR_TOOLTIPS: Record<string, string> = {
+    ticker: 'Ticker symbool van het aandeel',
+    company_name: 'Bedrijfsnaam',
+    match: 'K = gevonden door Kuifje, Z = gevonden door Zonnebloem, K+Z = gevonden door beide scanners',
+    current_price: 'Huidige koers van het aandeel',
+    ath_decline_pct: 'Hoeveel procent onder de All-Time High',
+    score: 'Regenboog-score van 0-10',
+    spike_count: 'Bolletjes voor spike events (Zonnebloem-criteria). Groen=200%+, Geel=100-200%, Wit=<100%. Gesorteerd als medaillespiegel.',
+    growth_event_count: 'Bolletjes voor growth events (Kuifje-criteria). Groen=500%+, Geel=300-500%, Wit=<300%. Gesorteerd als medaillespiegel.',
+    highest_spike_pct: 'Hoogste spike percentage boven de basislijn',
+    highest_growth_pct: 'Hoogste growth event percentage',
+    detection_date: 'Datum van eerste detectie',
+  };
+
   const headerClass = 'px-3 py-3 text-[var(--text-secondary)] font-medium text-xs uppercase tracking-wider cursor-pointer hover:bg-[var(--bg-secondary)] color-transition';
 
   function handleFavoriteClick(id: string) {
@@ -143,35 +157,35 @@ export default function SectorStockTable({
                 />
               </th>
               <th className="px-2 py-3 text-center w-10"></th>
-              <th className={`${headerClass} text-left`} onClick={() => onSort('ticker')}>
+              <th className={`${headerClass} text-left`} title={SECTOR_TOOLTIPS.ticker} onClick={() => onSort('ticker')}>
                 Ticker<SortIcon column="ticker" sort={sort} />
               </th>
-              <th className={`${headerClass} text-left hidden md:table-cell`} onClick={() => onSort('company_name')}>
+              <th className={`${headerClass} text-left hidden md:table-cell`} title={SECTOR_TOOLTIPS.company_name} onClick={() => onSort('company_name')}>
                 Company<SortIcon column="company_name" sort={sort} />
               </th>
-              <th className={`${headerClass} text-center`}>Match</th>
-              <th className={`${headerClass} text-right`} onClick={() => onSort('current_price')}>
+              <th className={`${headerClass} text-center`} title={SECTOR_TOOLTIPS.match}>Match</th>
+              <th className={`${headerClass} text-right`} title={SECTOR_TOOLTIPS.current_price} onClick={() => onSort('current_price')}>
                 Price<SortIcon column="current_price" sort={sort} />
               </th>
-              <th className={`${headerClass} text-right`} onClick={() => onSort('ath_decline_pct')}>
+              <th className={`${headerClass} text-right`} title={SECTOR_TOOLTIPS.ath_decline_pct} onClick={() => onSort('ath_decline_pct')}>
                 ATH%<SortIcon column="ath_decline_pct" sort={sort} />
               </th>
-              <th className={`${headerClass} text-right`} onClick={() => onSort('score')}>
+              <th className={`${headerClass} text-right`} title={SECTOR_TOOLTIPS.score} onClick={() => onSort('score')}>
                 Score<SortIcon column="score" sort={sort} />
               </th>
-              <th className={`${headerClass} text-left`} onClick={() => onSort('spike_count')}>
+              <th className={`${headerClass} text-left`} title={SECTOR_TOOLTIPS.spike_count} onClick={() => onSort('spike_count')}>
                 Spikes<SortIcon column="spike_count" sort={sort} />
               </th>
-              <th className={`${headerClass} text-left`} onClick={() => onSort('growth_event_count')}>
+              <th className={`${headerClass} text-left`} title={SECTOR_TOOLTIPS.growth_event_count} onClick={() => onSort('growth_event_count')}>
                 Growth<SortIcon column="growth_event_count" sort={sort} />
               </th>
-              <th className={`${headerClass} text-right`} onClick={() => onSort('highest_spike_pct')}>
+              <th className={`${headerClass} text-right`} title={SECTOR_TOOLTIPS.highest_spike_pct} onClick={() => onSort('highest_spike_pct')}>
                 Top Spike<SortIcon column="highest_spike_pct" sort={sort} />
               </th>
-              <th className={`${headerClass} text-right`} onClick={() => onSort('highest_growth_pct')}>
+              <th className={`${headerClass} text-right`} title={SECTOR_TOOLTIPS.highest_growth_pct} onClick={() => onSort('highest_growth_pct')}>
                 Top Growth<SortIcon column="highest_growth_pct" sort={sort} />
               </th>
-              <th className={`${headerClass} text-center`} onClick={() => onSort('detection_date')}>
+              <th className={`${headerClass} text-center`} title={SECTOR_TOOLTIPS.detection_date} onClick={() => onSort('detection_date')}>
                 Detected<SortIcon column="detection_date" sort={sort} />
               </th>
               <th className="px-3 py-3 w-10"></th>

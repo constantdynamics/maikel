@@ -39,6 +39,25 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: 'is_stable_with_spikes', label: 'Stable+Spike', visible: false },
 ];
 
+const COLUMN_TOOLTIPS: Record<string, string> = {
+  ticker: 'Ticker symbool van het aandeel',
+  company_name: 'Bedrijfsnaam',
+  exchange: 'Beurs waarop het aandeel verhandeld wordt',
+  sector: 'Sector van het bedrijf',
+  current_price: 'Huidige koers van het aandeel',
+  all_time_high: 'All-Time High prijs ooit bereikt',
+  ath_decline_pct: 'Hoeveel procent de huidige prijs onder de All-Time High zit',
+  score: 'Regenboog-score van 0-10 op basis van meerdere factoren (ATH-daling, events, volume, etc.)',
+  growth_event_count: 'Aantal keer dat de prijs explosief is gestegen (growth events). Gesorteerd als medaillespiegel.',
+  sunflower_events: 'Gekleurde bolletjes die de grootte van elke growth event weergeven. Groen=500%+, Geel=300-500%, Wit=<300%',
+  highest_growth_pct: 'Hoogste growth event percentage van alle events',
+  five_year_low: 'Laagste prijs in de afgelopen 5 jaar',
+  purchase_limit: 'Kooplimiet',
+  detection_date: 'Datum waarop dit aandeel voor het eerst door de scanner is gevonden',
+  scan_info: 'Welke scan-sessie dit aandeel heeft gevonden (datum + volgnummer)',
+  is_stable_with_spikes: 'Aandelen met een stabiele basis (max 30% daling in 12m) maar wel een flinke spike',
+};
+
 const COLUMN_ALIGNMENTS: Record<string, string> = {
   current_price: 'right',
   all_time_high: 'right',
@@ -336,6 +355,7 @@ export default function StockTable({
                   <th
                     key={col.key}
                     onClick={() => onSort(col.key as keyof Stock)}
+                    title={COLUMN_TOOLTIPS[col.key] || ''}
                     className={`px-3 py-3 text-[var(--text-secondary)] font-medium text-xs uppercase tracking-wider cursor-pointer hover:bg-[var(--bg-secondary)] color-transition ${
                       col.key === 'company_name' ? 'hidden md:table-cell' : ''
                     } ${
