@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
 
   const showDeleted = searchParams.get('deleted') === 'true';
   const showArchived = searchParams.get('archived') === 'true';
+  const limitParam = searchParams.get('limit');
 
   let query = supabase.from('stocks').select('*');
 
@@ -19,7 +20,14 @@ export async function GET(request: NextRequest) {
     query = query.eq('is_archived', false);
   }
 
-  const { data, error } = await query.order('score', { ascending: false });
+  query = query.order('score', { ascending: false });
+
+  if (limitParam) {
+    const limit = Math.min(Math.max(1, parseInt(limitParam, 10) || 250), 1000);
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
