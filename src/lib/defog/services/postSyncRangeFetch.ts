@@ -14,7 +14,8 @@ import { getStockAPI, configureMultiApi } from './stockApi';
 import { RATE_LIMITS } from './rateLimiter';
 import type { ApiKeyConfig, ApiProvider } from '../types';
 
-const BUY_LIMIT_MULTIPLIER = 1.05;
+// Buy limit = historical low (cascade: 5Y → 3Y → 1Y, no multiplier)
+const BUY_LIMIT_MULTIPLIER = 1.0;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface RangeFetchProgress {
@@ -25,9 +26,8 @@ export interface RangeFetchProgress {
 }
 
 /**
- * Calculate buy limit from the MINIMUM of all available historical lows.
- * Uses the lowest price point across all timeframes × 1.05.
- * Priority: 5Y low (most comprehensive) → 3Y low → 1Y low.
+ * Calculate buy limit using cascade priority: 5Y low → 3Y low → 1Y low.
+ * Uses the first available low (no multiplier, no averaging).
  * If no range data available, returns null (don't guess).
  */
 export function calculateBuyLimitFromRanges(
@@ -35,14 +35,17 @@ export function calculateBuyLimitFromRanges(
   year3Low: number | undefined,
   week52Low: number | undefined,
 ): number | null {
-  const lows = [year5Low, year3Low, week52Low].filter(
-    (v): v is number => v != null && v > 0
-  );
-
-  if (lows.length === 0) return null;
-
-  const minLow = Math.min(...lows);
-  return Math.round(minLow * BUY_LIMIT_MULTIPLIER * 100) / 100;
+  // Cascade: prefer 5Y, then 3Y, then 1Y
+  if (year5Low != null && year5Low > 0) {
+    return Math.round(year5Low * 100) / 100;
+  }
+  if (year3Low != null && year3Low > 0) {
+    return Math.round(year3Low * 100) / 100;
+  }
+  if (week52Low != null && week52Low > 0) {
+    return Math.round(week52Low * 100) / 100;
+  }
+  return null;
 }
 
 /**
