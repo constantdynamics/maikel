@@ -32,9 +32,9 @@ export interface ScanSessionInfo {
 }
 
 /**
- * Medal ranking for sector stocks — medaillespiegel style.
- * Combines spike dots (Zonnebloem) + growth dots (Kuifje) into one medal tally.
- * Sort: total dots desc → green count desc → yellow desc → white desc.
+ * Medal ranking for sector stocks — true medaillespiegel style.
+ * Sort like Olympic medal tally: green (gold) first, then yellow (silver), then white (bronze).
+ * Spike and growth dots are sorted independently (not combined).
  */
 function getSpikeDotColors(spikeCount: number, highestSpikePct: number | null): string[] {
   const count = Math.min(spikeCount, 10);
@@ -60,15 +60,19 @@ function getGrowthDotColors(eventCount: number, highestGrowthPct: number | null)
   return dots;
 }
 
-function sectorMedalKey(stock: SectorStock): [number, number, number, number] {
-  const spikeDots = getSpikeDotColors(stock.spike_count, stock.highest_spike_pct);
-  const growthDots = getGrowthDotColors(stock.growth_event_count, stock.highest_growth_pct);
-  const allDots = [...spikeDots, ...growthDots];
-  const total = allDots.length;
-  const green = allDots.filter(d => d === 'green').length;
-  const yellow = allDots.filter(d => d === 'yellow').length;
-  const white = allDots.filter(d => d === 'white').length;
-  return [total, green, yellow, white];
+function medalKeyFromDots(dots: string[]): [number, number, number] {
+  const green = dots.filter(d => d === 'green').length;
+  const yellow = dots.filter(d => d === 'yellow').length;
+  const white = dots.filter(d => d === 'white').length;
+  return [green, yellow, white];
+}
+
+function spikeMedalKey(stock: SectorStock): [number, number, number] {
+  return medalKeyFromDots(getSpikeDotColors(stock.spike_count, stock.highest_spike_pct));
+}
+
+function growthMedalKey(stock: SectorStock): [number, number, number] {
+  return medalKeyFromDots(getGrowthDotColors(stock.growth_event_count, stock.highest_growth_pct));
 }
 
 export function useSectorStocks(scannerType: SectorScannerType) {
@@ -162,11 +166,18 @@ export function useSectorStocks(scannerType: SectorScannerType) {
     }
 
     result.sort((a, b) => {
-      // Medal ranking for spike_count (default) — medaillespiegel
+      // Medaillespiegel for Spikes column: green desc → yellow desc → white desc
       if (sort.column === ('spike_count' as never)) {
-        const [aT, aG, aY, aW] = sectorMedalKey(a);
-        const [bT, bG, bY, bW] = sectorMedalKey(b);
-        const comparison = (bT - aT) || (bG - aG) || (bY - aY) || (bW - aW);
+        const [aG, aY, aW] = spikeMedalKey(a);
+        const [bG, bY, bW] = spikeMedalKey(b);
+        const comparison = (bG - aG) || (bY - aY) || (bW - aW);
+        return sort.direction === 'asc' ? -comparison : comparison;
+      }
+      // Medaillespiegel for Growth column: green desc → yellow desc → white desc
+      if (sort.column === ('growth_event_count' as never)) {
+        const [aG, aY, aW] = growthMedalKey(a);
+        const [bG, bY, bW] = growthMedalKey(b);
+        const comparison = (bG - aG) || (bY - aY) || (bW - aW);
         return sort.direction === 'asc' ? -comparison : comparison;
       }
       const aVal = a[sort.column as keyof SectorStock];

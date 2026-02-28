@@ -54,7 +54,8 @@ function getSpikeDots(spikeCount: number, highestSpikePct: number | null) {
 
 export function spikeDotsSortValue(stock: ZonnebloemStock): number {
   const d = getSpikeDots(stock.spike_count, stock.highest_spike_pct);
-  return d.total * 1_000_000 + d.green * 10_000 + d.yellow * 100 + d.white;
+  // True medaillespiegel: green (gold) first, then yellow (silver), then white (bronze)
+  return d.green * 1_000_000 + d.yellow * 10_000 + d.white * 100;
 }
 
 const DOT_COLORS: Record<DotColor, string> = {
@@ -93,6 +94,25 @@ export function SpikeDotDisplay({ spikeCount, highestSpikePct }: { spikeCount: n
     </div>
   );
 }
+
+const ZB_COLUMN_TOOLTIPS: Record<string, string> = {
+  ticker: 'Ticker symbool van het aandeel',
+  company_name: 'Bedrijfsnaam',
+  market: 'Markt/beurs',
+  current_price: 'Huidige koers van het aandeel',
+  base_price_median: 'Mediaan basisprijs waar het aandeel normaal rond zweeft',
+  spike_dots: 'Gekleurde bolletjes die het aantal en de grootte van prijsspikes weergeven. Groen=200%+, Geel=100-200%, Wit=<100%. Gesorteerd als medaillespiegel.',
+  spike_score: 'Regenboog-score van 0-10 specifiek voor spike-kwaliteit',
+  highest_spike_pct: 'Hoogste spike percentage ooit gemeten boven de basislijn',
+  price_change_12m_pct: 'Prijsverandering over de afgelopen 12 maanden',
+  avg_volume_30d: 'Gemiddeld dagelijks handelsvolume over 30 dagen',
+  market_cap: 'Marktkapitalisatie',
+  sector: 'Sector van het bedrijf',
+  country: 'Land van het bedrijf',
+  scan_number: 'Welke scan-sessie dit aandeel heeft gevonden',
+  scan_time: 'Tijdstip van de scan-sessie',
+  detection_date: 'Datum waarop dit aandeel voor het eerst door de Zonnebloem scanner is gevonden',
+};
 
 const RIGHT_ALIGNED = new Set(['current_price', 'base_price_median', 'highest_spike_pct', 'price_change_12m_pct', 'avg_volume_30d', 'market_cap', 'spike_score']);
 const CENTER_ALIGNED = new Set(['spike_dots', 'detection_date', 'scan_number', 'scan_time']);
@@ -296,6 +316,7 @@ export default function ZonnebloemTable({
               {activeColumns.map((col) => (
                 <th
                   key={col.key}
+                  title={ZB_COLUMN_TOOLTIPS[col.key] || ''}
                   className={`p-2 cursor-pointer hover:bg-[var(--hover-bg)] transition-colors text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider ${
                     RIGHT_ALIGNED.has(col.key) ? 'text-right' : CENTER_ALIGNED.has(col.key) ? 'text-center' : 'text-left'
                   }`}
