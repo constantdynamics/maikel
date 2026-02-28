@@ -126,7 +126,7 @@ const KUIFJE_RECOMMENDED_DEFAULTS: Settings = {
   skip_recently_scanned_hours: 0,
 };
 
-type SettingsTab = 'kuifje' | 'zonnebloem' | 'system';
+type SettingsTab = 'kuifje' | 'zonnebloem' | 'system' | 'info';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('kuifje');
@@ -291,6 +291,7 @@ export default function SettingsPage() {
     { key: 'kuifje', label: 'Kuifje', color: 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]', activeColor: 'border-[var(--accent-primary)] text-[var(--accent-primary)]' },
     { key: 'zonnebloem', label: 'Prof. Zonnebloem', color: 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]', activeColor: 'border-purple-500 text-purple-400' },
     { key: 'system', label: 'Systeem', color: 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]', activeColor: 'border-slate-400 text-slate-300' },
+    { key: 'info', label: 'Info', color: 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]', activeColor: 'border-emerald-400 text-emerald-400' },
   ];
 
   return (
@@ -847,6 +848,241 @@ export default function SettingsPage() {
                   ? 'All sectors included'
                   : `${zbSettings.zb_excluded_sectors.length} sector(s) excluded`}
               </p>
+            </section>
+          </div>
+        )}
+
+        {/* ===== INFO TAB ===== */}
+        {activeTab === 'info' && (
+          <div className="space-y-6">
+            {/* Intro */}
+            <section className="bg-emerald-900/20 border border-emerald-700/50 rounded-lg p-6 space-y-3">
+              <h2 className="text-lg font-semibold text-emerald-300">Hoe werken de scanners?</h2>
+              <p className="text-sm text-slate-300">
+                Dit systeem heeft twee onafhankelijke scanners die elk op een andere manier interessante aandelen vinden.
+                Daarnaast zijn er sector-tabs (BioPharma, Mining) die resultaten van beide scanners combineren.
+              </p>
+            </section>
+
+            {/* Kuifje Scanner */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-blue-400">Kuifje Scanner — Growth Events</h2>
+              <p className="text-sm text-slate-300">
+                Kuifje zoekt naar aandelen die <strong>hersteld zijn uit een crash</strong>. Het detecteert &quot;growth events&quot;: momenten
+                waarop de prijs explosief is gestegen vanuit een dieptepunt (trough).
+              </p>
+
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Hoe wordt een growth event gedetecteerd?</p>
+                <ol className="text-sm text-slate-400 space-y-1 pl-5 list-decimal">
+                  <li>De scanner zoekt alle <strong>dieptepunten (troughs)</strong> in de koershistorie van de afgelopen 5 jaar</li>
+                  <li>Voor elk dieptepunt berekent hij: is de prijs daarna minstens <strong>200%</strong> gestegen? (instelbaar)</li>
+                  <li>De stijging moet minstens <strong>5 opeenvolgende dagen</strong> boven het doel blijven</li>
+                  <li>Voorbeeld: aandeel zakt naar $1, klimt terug naar $3 of meer = growth event</li>
+                </ol>
+              </div>
+
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Extra vereisten</p>
+                <ul className="text-sm text-slate-400 space-y-1 pl-5 list-disc">
+                  <li><strong>ATH-daling:</strong> de huidige prijs moet 60-100% onder de All-Time High zitten</li>
+                  <li><strong>Minimum events:</strong> minstens 1 growth event nodig (instelbaar)</li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Growth bolletjes (medaillespiegel)</p>
+                <p className="text-sm text-slate-400">Elke growth event krijgt een gekleurd bolletje op basis van grootte:</p>
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full border border-gray-600" style={{ backgroundColor: '#22c55e' }} />
+                    Groen = groei van 500% of meer
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full border border-gray-600" style={{ backgroundColor: '#facc15' }} />
+                    Geel = groei van 300% - 500%
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full border border-gray-600" style={{ backgroundColor: '#ffffff' }} />
+                    Wit = groei onder 300%
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Sortering werkt als de Olympische medaillespiegel: eerst op goud (groen), dan zilver (geel), dan brons (wit).
+                </p>
+              </div>
+            </section>
+
+            {/* Zonnebloem Scanner */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-purple-400">Zonnebloem Scanner — Spike Events</h2>
+              <p className="text-sm text-slate-300">
+                Zonnebloem zoekt naar aandelen met een <strong>stabiele basisprijs en explosieve tijdelijke pieken</strong>.
+                Het detecteert &quot;spike events&quot;: korte uitschieters boven de normale koers.
+              </p>
+
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Hoe wordt een spike event gedetecteerd?</p>
+                <ol className="text-sm text-slate-400 space-y-1 pl-5 list-decimal">
+                  <li>De scanner berekent een <strong>basisprijs</strong> (60-dagen mediaan, met spikes eruit gefilterd)</li>
+                  <li>Hij zoekt naar momenten waarop de prijs minstens <strong>75%</strong> boven die basis uitkomt (instelbaar)</li>
+                  <li>De spike moet minstens <strong>4 dagen</strong> duren</li>
+                  <li>Voorbeeld: aandeel zweeft rond $1, schiet naar $1.75+ en komt weer terug = spike event</li>
+                </ol>
+              </div>
+
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Stabiliteitscheck</p>
+                <ul className="text-sm text-slate-400 space-y-1 pl-5 list-disc">
+                  <li><strong>12-maanden daling:</strong> het aandeel mag niet meer dan 40% gedaald zijn in het afgelopen jaar</li>
+                  <li><strong>Basisprijsstabiliteit:</strong> de basisprijs mag niet meer dan 50% gedaald zijn over de meetperiode</li>
+                  <li><strong>Lookback:</strong> 24 maanden aan data (instelbaar)</li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Spike bolletjes (medaillespiegel)</p>
+                <p className="text-sm text-slate-400">Elke spike event krijgt een gekleurd bolletje op basis van grootte:</p>
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full border border-gray-600" style={{ backgroundColor: '#22c55e' }} />
+                    Groen = spike van 200% of meer
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full border border-gray-600" style={{ backgroundColor: '#facc15' }} />
+                    Geel = spike van 100% - 200%
+                  </span>
+                  <span className="flex items-center gap-2 text-sm text-slate-300">
+                    <span className="inline-block w-3 h-3 rounded-full border border-gray-600" style={{ backgroundColor: '#ffffff' }} />
+                    Wit = spike onder 100%
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {/* Key Difference */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold">Verschil in een notendop</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-600">
+                      <th className="text-left p-2 text-slate-400 font-medium" />
+                      <th className="text-left p-2 text-blue-400 font-medium">Kuifje (Growth)</th>
+                      <th className="text-left p-2 text-purple-400 font-medium">Zonnebloem (Spike)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-300">
+                    <tr className="border-b border-slate-700">
+                      <td className="p-2 text-slate-400 font-medium">Zoekt naar</td>
+                      <td className="p-2">Herstel uit crash (V-shape)</td>
+                      <td className="p-2">Tijdelijke explosie boven stabiele basis</td>
+                    </tr>
+                    <tr className="border-b border-slate-700">
+                      <td className="p-2 text-slate-400 font-medium">Referentie</td>
+                      <td className="p-2">Dieptepunt (trough)</td>
+                      <td className="p-2">60-dagen mediaan (basisprijs)</td>
+                    </tr>
+                    <tr className="border-b border-slate-700">
+                      <td className="p-2 text-slate-400 font-medium">Drempel</td>
+                      <td className="p-2">200% groei (standaard)</td>
+                      <td className="p-2">75% boven basis (standaard)</td>
+                    </tr>
+                    <tr className="border-b border-slate-700">
+                      <td className="p-2 text-slate-400 font-medium">Periode</td>
+                      <td className="p-2">5 jaar</td>
+                      <td className="p-2">24 maanden</td>
+                    </tr>
+                    <tr>
+                      <td className="p-2 text-slate-400 font-medium">Typisch aandeel</td>
+                      <td className="p-2">Ondergewaardeerde recoveries</td>
+                      <td className="p-2">Volatiele microcaps met periodieke pumps</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* Score */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold">Regenboog Score (0-10)</h2>
+              <p className="text-sm text-slate-300">
+                Beide scanners geven elk aandeel een score van 0 tot 10, weergegeven als regenboog-balk.
+              </p>
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Kuifje Score</p>
+                <p className="text-sm text-slate-400">
+                  Gebaseerd op meerdere factoren: ATH-daling, aantal growth events, volume, en meer.
+                  Meer events tellen zwaarder mee via driehoeksgetallen (1 event = 1pt, 2 events = 3pt, 3 events = 6pt).
+                </p>
+              </div>
+              <div className="bg-slate-700/50 rounded p-4 space-y-2">
+                <p className="text-sm font-medium text-slate-200">Zonnebloem Spike Score</p>
+                <p className="text-sm text-slate-400">
+                  Gebaseerd op spike-grootte en duur. Grotere spikes die langer duren scoren hoger.
+                  Bonus van 20% als de basisprijs stabiel stijgt.
+                </p>
+              </div>
+            </section>
+
+            {/* Sector Tabs */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold">Sector Tabs (BioPharma & Mining)</h2>
+              <p className="text-sm text-slate-300">
+                De BioPharma en Mining tabs combineren resultaten van beide scanners, gefilterd op sector.
+              </p>
+              <ul className="text-sm text-slate-400 space-y-1 pl-5 list-disc">
+                <li><strong>Match badge:</strong> K = alleen Kuifje, Z = alleen Zonnebloem, K+Z = gevonden door beide</li>
+                <li>Je ziet zowel spike- als growth-bolletjes naast elkaar</li>
+                <li>Handig om te zien welke aandelen door beide scanners worden opgepikt</li>
+              </ul>
+            </section>
+
+            {/* Column Legend */}
+            <section className="bg-slate-800 border border-slate-700 rounded-lg p-6 space-y-4">
+              <h2 className="text-lg font-semibold">Kolom uitleg</h2>
+              <p className="text-xs text-slate-500 mb-2">Hover over een kolomnaam in de tabel voor een korte uitleg.</p>
+
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-blue-400 mb-2">Kuifje kolommen</p>
+                {[
+                  ['Events', 'Aantal growth events. Gesorteerd als medaillespiegel.'],
+                  ['Growth', 'Gekleurde bolletjes per growth event (groen/geel/wit).'],
+                  ['Top Growth', 'Hoogste growth event percentage.'],
+                  ['Score', 'Regenboog-score 0-10.'],
+                  ['ATH%', 'Hoeveel % onder de All-Time High.'],
+                  ['Price', 'Huidige koers.'],
+                  ['ATH', 'All-Time High prijs.'],
+                  ['Detected', 'Datum van eerste detectie.'],
+                  ['Scan #', 'Scan-sessie (datum + volgnummer).'],
+                  ['Stable+Spike', 'Stabiele basis met flinke spike (NovaBay-type).'],
+                ].map(([name, desc]) => (
+                  <div key={name} className="text-sm">
+                    <span className="font-medium text-slate-200">{name}</span>
+                    <span className="text-slate-400"> — {desc}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1 mt-4">
+                <p className="text-sm font-medium text-purple-400 mb-2">Zonnebloem kolommen</p>
+                {[
+                  ['Spikes', 'Gekleurde bolletjes per spike event. Gesorteerd als medaillespiegel.'],
+                  ['Max Spike %', 'Hoogste spike percentage boven de basislijn.'],
+                  ['Price', 'Huidige koers.'],
+                  ['Base Price', 'Mediaan basisprijs.'],
+                  ['12m Change', 'Prijsverandering afgelopen 12 maanden.'],
+                  ['Volume 30d', 'Gemiddeld dagvolume (30 dagen).'],
+                  ['Spike Score', 'Regenboog-score 0-10 voor spike-kwaliteit.'],
+                  ['Detected', 'Datum van eerste detectie.'],
+                  ['Scan #', 'Scan-sessienummer.'],
+                ].map(([name, desc]) => (
+                  <div key={name} className="text-sm">
+                    <span className="font-medium text-slate-200">{name}</span>
+                    <span className="text-slate-400"> — {desc}</span>
+                  </div>
+                ))}
+              </div>
             </section>
           </div>
         )}
