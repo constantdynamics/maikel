@@ -224,6 +224,7 @@ export interface UserSettings {
   fixedTabColors: FixedTabColors;  // Color customization for fixed tabs (All, Top, Purchased)
   scanPriorityWeights: ScanPriorityWeights;  // Configurable scan priority weights
   tileSettings: TileSettings;  // Mini tiles view customization
+  hiddenTabIds: string[];  // Tab IDs to hide from the tab bar (still synced, just not shown)
 }
 
 export interface TileSettings {

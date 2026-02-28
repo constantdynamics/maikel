@@ -127,6 +127,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     dayChangeFontSize: 'xs',
     rainbowPreset: 'classic',
   },
+  hiddenTabIds: [],
 };
 
 const DEFAULT_TAB: Tab = {
