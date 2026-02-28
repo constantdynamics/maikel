@@ -82,13 +82,14 @@ interface MaikelSectorStock {
   spike_score: number;
 }
 
-// Multiplier: fraction above the historical low to set as buy limit
-// Using 1.05 (5%) - conservative because scanner stocks are already at extreme lows
-const BUY_LIMIT_MULTIPLIER = 1.05;
+// Buy limit is set to the historical low, with cascade:
+// 5-year low → 3-year low → 1-year low (no multiplier)
+const BUY_LIMIT_MULTIPLIER = 1.0;
 
 /**
- * Calculate suggested buy limit from the MINIMUM of all available historical lows.
- * Uses: min(5Y low, 3Y low, 1Y low, base_price_median) × 1.05
+ * Calculate suggested buy limit using cascade priority:
+ * 5-year low → 3-year low → 1-year low.
+ * Uses the first available low (no averaging, no minimum across all).
  * Returns null if no valid historical lows are available (wait for range fetch).
  */
 function calculateBuyLimit(
@@ -100,22 +101,19 @@ function calculateBuyLimit(
   },
   _currentPrice?: number | null,
 ): number | null {
-  // Collect all valid lows and use the MINIMUM
-  const validLows = [
-    lows.fiveYearLow,
-    lows.threeYearLow,
-    lows.twelveMonthLow,
-    lows.basePriceMedian,
-  ].filter((v): v is number => v != null && v > 0);
-
-  if (validLows.length === 0) {
-    // No historical lows available — don't guess, return null
-    // The postSyncRangeFetch service will fetch ranges and set the limit
-    return null;
+  // Cascade priority: 5Y → 3Y → 1Y
+  if (lows.fiveYearLow != null && lows.fiveYearLow > 0) {
+    return Math.round(lows.fiveYearLow * 100) / 100;
   }
-
-  const minLow = Math.min(...validLows);
-  return Math.round(minLow * BUY_LIMIT_MULTIPLIER * 100) / 100;
+  if (lows.threeYearLow != null && lows.threeYearLow > 0) {
+    return Math.round(lows.threeYearLow * 100) / 100;
+  }
+  if (lows.twelveMonthLow != null && lows.twelveMonthLow > 0) {
+    return Math.round(lows.twelveMonthLow * 100) / 100;
+  }
+  // No valid lows — don't guess, return null
+  // The postSyncRangeFetch service will fetch ranges and set the limit
+  return null;
 }
 
 /**
