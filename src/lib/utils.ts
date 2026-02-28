@@ -34,48 +34,169 @@ export function generateCsvFilename(prefix: string = 'StockScreener'): string {
   return `${prefix}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.csv`;
 }
 
-export function stocksToCSV(stocks: Record<string, unknown>[]): string {
-  if (stocks.length === 0) return '';
-
-  const headers = [
-    'Ticker',
-    'Company Name',
-    'Sector',
-    'Current Price',
-    'ATH',
-    '% Decline ATH',
-    'Score',
-    'Highest Growth %',
-    '# Growth Events',
-    '5Y Low',
-    'Purchase Limit',
-    'Detection Date',
-    'Exchange',
-    'Confidence Score',
-  ];
-
-  const rows = stocks.map((s) => [
-    s.ticker,
-    `"${(s.company_name as string || '').replace(/"/g, '""')}"`,
-    s.sector || '',
-    s.current_price ?? '',
-    s.all_time_high ?? '',
-    s.ath_decline_pct ?? '',
-    s.score ?? '',
-    s.highest_growth_pct ?? '',
-    s.growth_event_count ?? '',
-    s.five_year_low ?? '',
-    s.purchase_limit ?? '',
-    s.detection_date || '',
-    s.exchange || '',
-    s.confidence_score ?? '',
-  ]);
-
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+export function generateExportFilename(prefix: string, ext: 'csv' | 'json'): string {
+  return `${prefix}_${format(new Date(), 'yyyy-MM-dd_HHmm')}.${ext}`;
 }
 
-export function downloadCSV(content: string, filename: string): void {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+/** Escape a value for CSV (wrap in quotes if it contains commas, quotes, or newlines). */
+function csvEscape(val: unknown): string {
+  if (val == null) return '';
+  const str = String(val);
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/** Generic: convert array of objects to CSV using provided column definitions. */
+function objectsToCsv(
+  rows: Record<string, unknown>[],
+  columns: { header: string; key: string }[],
+): string {
+  if (rows.length === 0) return '';
+  const headerLine = columns.map((c) => c.header).join(',');
+  const dataLines = rows.map((row) =>
+    columns.map((c) => csvEscape(row[c.key])).join(','),
+  );
+  return [headerLine, ...dataLines].join('\n');
+}
+
+// ── Kuifje CSV columns ──
+const KUIFJE_CSV_COLUMNS = [
+  { header: 'Ticker', key: 'ticker' },
+  { header: 'Company Name', key: 'company_name' },
+  { header: 'Sector', key: 'sector' },
+  { header: 'Exchange', key: 'exchange' },
+  { header: 'Current Price', key: 'current_price' },
+  { header: 'ATH', key: 'all_time_high' },
+  { header: 'ATH Decline %', key: 'ath_decline_pct' },
+  { header: 'Score', key: 'score' },
+  { header: 'Growth Events', key: 'growth_event_count' },
+  { header: 'Highest Growth %', key: 'highest_growth_pct' },
+  { header: 'Highest Growth Date', key: 'highest_growth_date' },
+  { header: '5Y Low', key: 'five_year_low' },
+  { header: '3Y Low', key: 'three_year_low' },
+  { header: '12M Low', key: 'twelve_month_low' },
+  { header: 'Purchase Limit', key: 'purchase_limit' },
+  { header: '12M Max Decline %', key: 'twelve_month_max_decline_pct' },
+  { header: '12M Max Spike %', key: 'twelve_month_max_spike_pct' },
+  { header: 'Stable+Spike', key: 'is_stable_with_spikes' },
+  { header: 'Market Cap', key: 'market_cap' },
+  { header: 'IPO Date', key: 'ipo_date' },
+  { header: 'Confidence Score', key: 'confidence_score' },
+  { header: 'Detection Date', key: 'detection_date' },
+  { header: 'Last Updated', key: 'last_updated' },
+  { header: 'Scan Number', key: 'scan_number' },
+  { header: 'Scan Date', key: 'scan_date' },
+  { header: 'Favorite', key: 'is_favorite' },
+  { header: 'Needs Review', key: 'needs_review' },
+  { header: 'Review Reason', key: 'review_reason' },
+];
+
+// ── Zonnebloem CSV columns ──
+const ZONNEBLOEM_CSV_COLUMNS = [
+  { header: 'Ticker', key: 'ticker' },
+  { header: 'Company Name', key: 'company_name' },
+  { header: 'Sector', key: 'sector' },
+  { header: 'Exchange', key: 'exchange' },
+  { header: 'Market', key: 'market' },
+  { header: 'Country', key: 'country' },
+  { header: 'Current Price', key: 'current_price' },
+  { header: 'Base Price Median', key: 'base_price_median' },
+  { header: 'Spike Score', key: 'spike_score' },
+  { header: 'Spike Count', key: 'spike_count' },
+  { header: 'Highest Spike %', key: 'highest_spike_pct' },
+  { header: 'Highest Spike Date', key: 'highest_spike_date' },
+  { header: 'Price 12M Ago', key: 'price_12m_ago' },
+  { header: '12M Change %', key: 'price_change_12m_pct' },
+  { header: 'Avg Volume 30d', key: 'avg_volume_30d' },
+  { header: 'Market Cap', key: 'market_cap' },
+  { header: 'Detection Date', key: 'detection_date' },
+  { header: 'Last Updated', key: 'last_updated' },
+  { header: 'Favorite', key: 'is_favorite' },
+  { header: 'Needs Review', key: 'needs_review' },
+  { header: 'Review Reason', key: 'review_reason' },
+];
+
+// ── Sector (BioPharma/Mining) CSV columns ──
+const SECTOR_CSV_COLUMNS = [
+  { header: 'Ticker', key: 'ticker' },
+  { header: 'Yahoo Ticker', key: 'yahoo_ticker' },
+  { header: 'Company Name', key: 'company_name' },
+  { header: 'Sector', key: 'sector' },
+  { header: 'Exchange', key: 'exchange' },
+  { header: 'Market', key: 'market' },
+  { header: 'Country', key: 'country' },
+  { header: 'Current Price', key: 'current_price' },
+  { header: 'Match Type', key: 'match_type' },
+  // Kuifje fields
+  { header: 'Score', key: 'score' },
+  { header: 'Growth Events', key: 'growth_event_count' },
+  { header: 'Highest Growth %', key: 'highest_growth_pct' },
+  { header: 'Highest Growth Date', key: 'highest_growth_date' },
+  { header: 'ATH', key: 'all_time_high' },
+  { header: 'ATH Decline %', key: 'ath_decline_pct' },
+  { header: '5Y Low', key: 'five_year_low' },
+  { header: '3Y Low', key: 'three_year_low' },
+  { header: 'Purchase Limit', key: 'purchase_limit' },
+  { header: 'Confidence Score', key: 'confidence_score' },
+  // Zonnebloem fields
+  { header: 'Spike Score', key: 'spike_score' },
+  { header: 'Spike Count', key: 'spike_count' },
+  { header: 'Highest Spike %', key: 'highest_spike_pct' },
+  { header: 'Highest Spike Date', key: 'highest_spike_date' },
+  { header: 'Base Price Median', key: 'base_price_median' },
+  { header: 'Price 12M Ago', key: 'price_12m_ago' },
+  { header: '12M Change %', key: 'price_change_12m_pct' },
+  // Shared
+  { header: 'Avg Volume 30d', key: 'avg_volume_30d' },
+  { header: 'Market Cap', key: 'market_cap' },
+  { header: 'Detection Date', key: 'detection_date' },
+  { header: 'Last Updated', key: 'last_updated' },
+  { header: 'Favorite', key: 'is_favorite' },
+  { header: 'Needs Review', key: 'needs_review' },
+  { header: 'Review Reason', key: 'review_reason' },
+];
+
+type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining';
+
+/** Convert scanner stocks to CSV based on tab type. */
+export function scannerStocksToCSV(stocks: Record<string, unknown>[], tab: ExportTab): string {
+  const columns = tab === 'kuifje' ? KUIFJE_CSV_COLUMNS
+    : tab === 'zonnebloem' ? ZONNEBLOEM_CSV_COLUMNS
+    : SECTOR_CSV_COLUMNS;
+  return objectsToCsv(stocks, columns);
+}
+
+/** Export scanner stocks as JSON string. */
+export function scannerStocksToJSON(stocks: Record<string, unknown>[], tab: ExportTab): string {
+  // Strip internal/UI fields, keep all data fields
+  const cleaned = stocks.map((s) => {
+    const { is_deleted, deleted_at, is_archived, archived_at, ...rest } = s;
+    return rest;
+  });
+  return JSON.stringify({ tab, exportedAt: new Date().toISOString(), count: cleaned.length, stocks: cleaned }, null, 2);
+}
+
+/** Export all 4 scanner tabs as a single JSON file. */
+export function allScannerTabsToJSON(data: Record<ExportTab, Record<string, unknown>[]>): string {
+  const result: Record<string, unknown> = {
+    exportedAt: new Date().toISOString(),
+    tabs: {} as Record<string, unknown>,
+  };
+  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining'] as ExportTab[]) {
+    const stocks = (data[tab] || []).map((s) => {
+      const { is_deleted, deleted_at, is_archived, archived_at, ...rest } = s;
+      return rest;
+    });
+    (result.tabs as Record<string, unknown>)[tab] = { count: stocks.length, stocks };
+  }
+  return JSON.stringify(result, null, 2);
+}
+
+/** Download a file (CSV or JSON). */
+export function downloadFile(content: string, filename: string, mimeType: string = 'text/csv;charset=utf-8;'): void {
+  const blob = new Blob([content], { type: mimeType });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;
@@ -83,6 +204,16 @@ export function downloadCSV(content: string, filename: string): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(link.href);
+}
+
+// Legacy CSV export (kept for backward compatibility)
+export function stocksToCSV(stocks: Record<string, unknown>[]): string {
+  return scannerStocksToCSV(stocks, 'kuifje');
+}
+
+// Legacy download wrapper (kept for backward compatibility)
+export function downloadCSV(content: string, filename: string): void {
+  downloadFile(content, filename, 'text/csv;charset=utf-8;');
 }
 
 export function sleep(ms: number): Promise<void> {

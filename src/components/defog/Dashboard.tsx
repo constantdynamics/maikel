@@ -2062,6 +2062,14 @@ export function Dashboard() {
             fixedTabColors={store.settings.fixedTabColors}
             allStockCount={allStocksWithTabs.length}
             purchasedStockCount={store.purchasedStocks.length}
+            hiddenTabIds={store.settings.hiddenTabIds ?? []}
+            onToggleTabVisibility={(tabId: string) => {
+              const current = store.settings.hiddenTabIds ?? [];
+              const next = current.includes(tabId)
+                ? current.filter((id) => id !== tabId)
+                : [...current, tabId];
+              store.updateSettings({ hiddenTabIds: next });
+            }}
           />
 
           {/* Column Settings Toggle - only show on desktop view */}
