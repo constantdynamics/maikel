@@ -170,7 +170,7 @@ export function useZonnebloemStocks() {
     }
 
     result.sort((a, b) => {
-      // Special sort for spike_dots: total dots → green → yellow → white
+      // Medaillespiegel for spike_dots: green (gold) first, then yellow, then white
       if (sort.column === ('spike_dots' as never)) {
         const aVal = spikeDotsSortValue(a);
         const bVal = spikeDotsSortValue(b);

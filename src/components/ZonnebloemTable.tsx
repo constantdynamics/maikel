@@ -54,7 +54,8 @@ function getSpikeDots(spikeCount: number, highestSpikePct: number | null) {
 
 export function spikeDotsSortValue(stock: ZonnebloemStock): number {
   const d = getSpikeDots(stock.spike_count, stock.highest_spike_pct);
-  return d.total * 1_000_000 + d.green * 10_000 + d.yellow * 100 + d.white;
+  // True medaillespiegel: green (gold) first, then yellow (silver), then white (bronze)
+  return d.green * 1_000_000 + d.yellow * 10_000 + d.white * 100;
 }
 
 const DOT_COLORS: Record<DotColor, string> = {

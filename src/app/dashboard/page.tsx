@@ -14,6 +14,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
 import ExportReminder from '@/components/ExportReminder';
+import ColumnLegend from '@/components/ColumnLegend';
 import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
@@ -776,23 +777,26 @@ export default function DashboardPage() {
             <span className="ml-2 text-xs text-[var(--text-muted)]">({mnStocks.length})</span>
           </button>
 
-          <button
-            onClick={() => {
-              const newState = !allAutoActive;
-              setKuifjeAutoScan(newState);
-              setZbAutoScan(newState);
-              setBpAutoScan(newState);
-              setMnAutoScan(newState);
-            }}
-            className={`ml-auto flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
-              allAutoActive
-                ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:opacity-90'
-                : 'bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white hover:opacity-90'
-            }`}
-          >
-            <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
-            {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/4)` : 'Auto-scan All'}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <ColumnLegend activeTab={activeTab} />
+            <button
+              onClick={() => {
+                const newState = !allAutoActive;
+                setKuifjeAutoScan(newState);
+                setZbAutoScan(newState);
+                setBpAutoScan(newState);
+                setMnAutoScan(newState);
+              }}
+              className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
+                allAutoActive
+                  ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:opacity-90'
+                  : 'bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white hover:opacity-90'
+              }`}
+            >
+              <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
+              {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/4)` : 'Auto-scan All'}
+            </button>
+          </div>
         </div>
 
         {/* Kuifje Tab */}
