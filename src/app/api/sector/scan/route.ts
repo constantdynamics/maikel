@@ -6,7 +6,7 @@ import type { SectorScannerType } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const VALID_TYPES: SectorScannerType[] = ['biopharma', 'mining'];
+const VALID_TYPES: SectorScannerType[] = ['biopharma', 'mining', 'hydrogen', 'shipping'];
 
 export async function POST(request: NextRequest) {
   // Verify authentication

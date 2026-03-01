@@ -279,6 +279,8 @@ export default function DefogPage() {
         if (refreshResult.zonnebloem > 0) refreshParts.push(`${refreshResult.zonnebloem} Zonnebloem`);
         if (refreshResult.biopharma > 0) refreshParts.push(`${refreshResult.biopharma} BioPharma`);
         if (refreshResult.mining > 0) refreshParts.push(`${refreshResult.mining} Mining`);
+        if (refreshResult.hydrogen > 0) refreshParts.push(`${refreshResult.hydrogen} Hydrogen`);
+        if (refreshResult.shipping > 0) refreshParts.push(`${refreshResult.shipping} Shipping`);
         if (refreshParts.length > 0) {
           setSyncMessage(`Weekly refresh: ${refreshParts.join(', ')}`);
           setTimeout(() => setSyncMessage(null), 5000);
@@ -295,6 +297,8 @@ export default function DefogPage() {
       if (result.zbAdded > 0) parts.push(`${result.zbAdded} Zonnebloem`);
       if (result.biopharmaAdded > 0) parts.push(`${result.biopharmaAdded} BioPharma`);
       if (result.miningAdded > 0) parts.push(`${result.miningAdded} Mining`);
+      if (result.hydrogenAdded > 0) parts.push(`${result.hydrogenAdded} Hydrogen`);
+      if (result.shippingAdded > 0) parts.push(`${result.shippingAdded} Shipping`);
       if (parts.length > 0) {
         setSyncMessage(`Synced: +${parts.join(', ')}`);
         setTimeout(() => setSyncMessage(null), 4000);

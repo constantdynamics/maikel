@@ -319,7 +319,7 @@ export interface ZonnebloemScanDetail {
 // Sector Scanner types (BioPharma & Mining)
 // ============================================================
 
-export type SectorScannerType = 'biopharma' | 'mining';
+export type SectorScannerType = 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
 
 export interface SectorStock {
   id: string;
@@ -456,6 +456,46 @@ export const MINING_CONFIG: SectorScannerConfig = {
     'resource', 'ore', 'smelting',
   ],
   color: '#f59e0b', // amber
+};
+
+export const HYDROGEN_CONFIG: SectorScannerConfig = {
+  type: 'hydrogen',
+  label: 'Hydrogen',
+  markets: ['america', 'canada', 'australia', 'europe', 'uk'],
+  sectorFilters: [
+    'Electronic Technology',
+    'Process Industries',
+    'Industrial Services',
+  ],
+  sectorKeywords: [
+    'hydrogen', 'fuel cell', 'fuel cells', 'h2', 'green hydrogen',
+    'hydrogen fuel', 'hydrogen production', 'hydrogen energy',
+    'electrolyzer', 'electrolysis', 'hydrogen storage',
+    'hydrogen infrastructure', 'hydrogen generator',
+    'proton exchange membrane', 'solid oxide fuel cell',
+    'alkaline fuel cell', 'fuelcell', 'bloom energy',
+    'plug power', 'ballard',
+  ],
+  color: '#06b6d4', // cyan
+};
+
+export const SHIPPING_CONFIG: SectorScannerConfig = {
+  type: 'shipping',
+  label: 'Shipping',
+  markets: ['america', 'canada', 'uk', 'europe', 'hongkong'],
+  sectorFilters: [
+    'Transportation',
+    'Marine Transportation',
+  ],
+  sectorKeywords: [
+    'shipping', 'marine', 'tanker', 'bulk carrier', 'dry bulk',
+    'container ship', 'containerline', 'vessel', 'cargo',
+    'maritime', 'freight', 'seaborne', 'ocean carrier',
+    'oil tanker', 'product tanker', 'LNG carrier',
+    'VLCC', 'suezmax', 'aframax', 'panamax', 'capesize',
+    'supramax', 'handysize', 'shipowner',
+  ],
+  color: '#3b82f6', // blue
 };
 
 // ============================================================

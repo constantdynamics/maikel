@@ -4,14 +4,16 @@ import type { Stock as DefogStock, Tab } from './types';
 // Color constants for auto-created scanner tabs
 const KUIFJE_TAB_COLOR = '#22c55e';     // Green
 const ZONNEBLOEM_TAB_COLOR = '#a855f7'; // Purple
-const BIOPHARMA_TAB_COLOR = '#06b6d4';  // Cyan
+const BIOPHARMA_TAB_COLOR = '#10b981';  // Emerald
 const MINING_TAB_COLOR = '#f59e0b';     // Amber
+const HYDROGEN_TAB_COLOR = '#06b6d4';   // Cyan
+const SHIPPING_TAB_COLOR = '#3b82f6';   // Blue
 
 // Top N stocks per tab for weekly refresh
 const TOP_N_LIMIT = 250;
 
 // Scanner tab names (used for matching)
-export const SCANNER_TAB_NAMES = ['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining'] as const;
+export const SCANNER_TAB_NAMES = ['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining', 'Hydrogen', 'Shipping'] as const;
 export type ScannerTabName = typeof SCANNER_TAB_NAMES[number];
 
 const SCANNER_TAB_COLORS: Record<ScannerTabName, string> = {
@@ -19,6 +21,8 @@ const SCANNER_TAB_COLORS: Record<ScannerTabName, string> = {
   'Prof. Zonnebloem': ZONNEBLOEM_TAB_COLOR,
   'BioPharma': BIOPHARMA_TAB_COLOR,
   'Mining': MINING_TAB_COLOR,
+  'Hydrogen': HYDROGEN_TAB_COLOR,
+  'Shipping': SHIPPING_TAB_COLOR,
 };
 
 // Weekly refresh timestamp key
@@ -557,25 +561,29 @@ async function fetchScannerStocks(url: string): Promise<unknown[]> {
 export async function syncScannerToDefog(
   getTabs: () => Tab[],
   setTabs: (updater: (tabs: Tab[]) => Tab[]) => void,
-): Promise<{ kuifjeAdded: number; zbAdded: number; biopharmaAdded: number; miningAdded: number }> {
-  // Fetch all four scanner results (top 250 each)
-  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw] = await Promise.all([
+): Promise<{ kuifjeAdded: number; zbAdded: number; biopharmaAdded: number; miningAdded: number; hydrogenAdded: number; shippingAdded: number }> {
+  // Fetch all scanner results (top 250 each)
+  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw, hydrogenRaw, shippingRaw] = await Promise.all([
     fetchScannerStocks(`/api/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/zonnebloem/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=biopharma&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=mining&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=hydrogen&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=shipping&limit=${TOP_N_LIMIT}`),
   ]);
 
   const kuifjeStocksRaw = kuifjeRaw as MaikelKuifjeStock[];
   const zbStocksRaw = zbRaw as MaikelZonnebloemStock[];
   const biopharmaStocksRaw = biopharmaRaw as MaikelSectorStock[];
   const miningStocksRaw = miningRaw as MaikelSectorStock[];
+  const hydrogenStocksRaw = hydrogenRaw as MaikelSectorStock[];
+  const shippingStocksRaw = shippingRaw as MaikelSectorStock[];
 
   // SAFETY: If ALL scanner APIs returned zero stocks, skip sync entirely
-  const totalStocks = kuifjeStocksRaw.length + zbStocksRaw.length + biopharmaStocksRaw.length + miningStocksRaw.length;
+  const totalStocks = kuifjeStocksRaw.length + zbStocksRaw.length + biopharmaStocksRaw.length + miningStocksRaw.length + hydrogenStocksRaw.length + shippingStocksRaw.length;
   if (totalStocks === 0) {
     console.log('[ScannerSync] All APIs returned 0 stocks — skipping sync to prevent data loss');
-    return { kuifjeAdded: 0, zbAdded: 0, biopharmaAdded: 0, miningAdded: 0 };
+    return { kuifjeAdded: 0, zbAdded: 0, biopharmaAdded: 0, miningAdded: 0, hydrogenAdded: 0, shippingAdded: 0 };
   }
 
   // Deduplicate incoming scanner results by company name
@@ -583,14 +591,18 @@ export async function syncScannerToDefog(
   const zbStocks = deduplicateScannerStocks(zbStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...zbBuyLimitInput(s)));
   const biopharmaStocks = deduplicateScannerStocks(biopharmaStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
   const miningStocks = deduplicateScannerStocks(miningStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
+  const hydrogenStocks = deduplicateScannerStocks(hydrogenStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
+  const shippingStocks = deduplicateScannerStocks(shippingStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
 
   const tabs = getTabs();
 
-  // Find or create all 4 tabs
+  // Find or create all tabs
   const kuifjeResult = findOrCreateTab(tabs, 'Kuifje');
   const zbResult = findOrCreateTab(tabs, 'Prof. Zonnebloem');
   const biopharmaResult = findOrCreateTab(tabs, 'BioPharma');
   const miningResult = findOrCreateTab(tabs, 'Mining');
+  const hydrogenResult = findOrCreateTab(tabs, 'Hydrogen');
+  const shippingResult = findOrCreateTab(tabs, 'Shipping');
 
   // Process each scanner's stocks
   const kuifjeProcessed = kuifjeStocksRaw.length > 0
@@ -609,12 +621,22 @@ export async function syncScannerToDefog(
     ? processStocksForTab(miningStocks, miningResult.tab, getDefogTicker, sectorBuyLimitInput)
     : { newStocks: [], updates: new Map(), added: 0 };
 
+  const hydrogenProcessed = hydrogenStocksRaw.length > 0
+    ? processStocksForTab(hydrogenStocks, hydrogenResult.tab, getDefogTicker, sectorBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
+
+  const shippingProcessed = shippingStocksRaw.length > 0
+    ? processStocksForTab(shippingStocks, shippingResult.tab, getDefogTicker, sectorBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
+
   // Apply all updates in a single setTabs call
   const tabConfigs = [
     { tab: kuifjeResult, processed: kuifjeProcessed },
     { tab: zbResult, processed: zbProcessed },
     { tab: biopharmaResult, processed: biopharmaProcessed },
     { tab: miningResult, processed: miningProcessed },
+    { tab: hydrogenResult, processed: hydrogenProcessed },
+    { tab: shippingResult, processed: shippingProcessed },
   ];
 
   setTabs((currentTabs) => {
@@ -642,6 +664,8 @@ export async function syncScannerToDefog(
     zbAdded: zbProcessed.added,
     biopharmaAdded: biopharmaProcessed.added,
     miningAdded: miningProcessed.added,
+    hydrogenAdded: hydrogenProcessed.added,
+    shippingAdded: shippingProcessed.added,
   };
 }
 
@@ -679,15 +703,17 @@ export function markWeeklyRefreshDone(): void {
 export async function refreshDefogTop250(
   getTabs: () => Tab[],
   setTabs: (updater: (tabs: Tab[]) => Tab[]) => void,
-): Promise<{ kuifje: number; zonnebloem: number; biopharma: number; mining: number }> {
+): Promise<{ kuifje: number; zonnebloem: number; biopharma: number; mining: number; hydrogen: number; shipping: number }> {
   console.log('[ScannerSync] Starting weekly top-250 refresh...');
 
   // Fetch top 250 from each scanner
-  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw] = await Promise.all([
+  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw, hydrogenRaw, shippingRaw] = await Promise.all([
     fetchScannerStocks(`/api/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/zonnebloem/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=biopharma&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=mining&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=hydrogen&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/sector/stocks?type=shipping&limit=${TOP_N_LIMIT}`),
   ]);
 
   const kuifjeStocks = deduplicateScannerStocks(
@@ -706,11 +732,19 @@ export async function refreshDefogTop250(
     miningRaw as MaikelSectorStock[], getDefogTicker,
     (s) => calculateBuyLimit(...sectorBuyLimitInput(s)),
   );
+  const hydrogenStocks = deduplicateScannerStocks(
+    hydrogenRaw as MaikelSectorStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...sectorBuyLimitInput(s)),
+  );
+  const shippingStocks = deduplicateScannerStocks(
+    shippingRaw as MaikelSectorStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...sectorBuyLimitInput(s)),
+  );
 
   // SAFETY: if all APIs return 0, skip
-  if (kuifjeStocks.length + zbStocks.length + biopharmaStocks.length + miningStocks.length === 0) {
+  if (kuifjeStocks.length + zbStocks.length + biopharmaStocks.length + miningStocks.length + hydrogenStocks.length + shippingStocks.length === 0) {
     console.log('[ScannerSync] Weekly refresh: All APIs returned 0 stocks — skipping');
-    return { kuifje: 0, zonnebloem: 0, biopharma: 0, mining: 0 };
+    return { kuifje: 0, zonnebloem: 0, biopharma: 0, mining: 0, hydrogen: 0, shipping: 0 };
   }
 
   const tabs = getTabs();
@@ -782,8 +816,10 @@ export async function refreshDefogTop250(
   const zbResult = replaceTabStocks('Prof. Zonnebloem', zbStocks, getDefogTicker);
   const biopharmaResult = replaceTabStocks('BioPharma', biopharmaStocks, getDefogTicker);
   const miningResult = replaceTabStocks('Mining', miningStocks, getDefogTicker);
+  const hydrogenResult = replaceTabStocks('Hydrogen', hydrogenStocks, getDefogTicker);
+  const shippingResult = replaceTabStocks('Shipping', shippingStocks, getDefogTicker);
 
-  const allResults = [kuifjeResult, zbResult, biopharmaResult, miningResult];
+  const allResults = [kuifjeResult, zbResult, biopharmaResult, miningResult, hydrogenResult, shippingResult];
 
   setTabs((currentTabs) => {
     let result = [...currentTabs];
@@ -793,7 +829,9 @@ export async function refreshDefogTop250(
       if (r.isNewTab) {
         const tabName = r === kuifjeResult ? 'Kuifje'
           : r === zbResult ? 'Prof. Zonnebloem'
-          : r === biopharmaResult ? 'BioPharma' : 'Mining';
+          : r === biopharmaResult ? 'BioPharma'
+          : r === miningResult ? 'Mining'
+          : r === hydrogenResult ? 'Hydrogen' : 'Shipping';
         const { tab } = findOrCreateTab([], tabName);
         tab.id = r.tabId;
         if (!result.find((t) => t.id === r.tabId)) {
@@ -820,9 +858,11 @@ export async function refreshDefogTop250(
     zonnebloem: zbResult.newStocks.length,
     biopharma: biopharmaResult.newStocks.length,
     mining: miningResult.newStocks.length,
+    hydrogen: hydrogenResult.newStocks.length,
+    shipping: shippingResult.newStocks.length,
   };
 
-  console.log(`[ScannerSync] Weekly refresh complete: K=${counts.kuifje}, Z=${counts.zonnebloem}, BP=${counts.biopharma}, M=${counts.mining}`);
+  console.log(`[ScannerSync] Weekly refresh complete: K=${counts.kuifje}, Z=${counts.zonnebloem}, BP=${counts.biopharma}, M=${counts.mining}, H2=${counts.hydrogen}, SH=${counts.shipping}`);
 
   return counts;
 }

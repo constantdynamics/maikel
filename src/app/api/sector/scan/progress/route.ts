@@ -4,7 +4,7 @@ import type { SectorScannerType } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-const VALID_TYPES: SectorScannerType[] = ['biopharma', 'mining'];
+const VALID_TYPES: SectorScannerType[] = ['biopharma', 'mining', 'hydrogen', 'shipping'];
 
 /**
  * GET /api/sector/scan/progress?type=biopharma

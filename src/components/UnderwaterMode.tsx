@@ -36,6 +36,8 @@ interface UnderwaterModeProps {
   kuifjeStocks: Stock[];
   biopharmaStocks: SectorStock[];
   miningStocks: SectorStock[];
+  hydrogenStocks: SectorStock[];
+  shippingStocks: SectorStock[];
   onExit: () => void;
   // Zonnebloem scan
   autoScanActive: boolean;
@@ -57,6 +59,16 @@ interface UnderwaterModeProps {
   mnAutoScanNext: Date | null;
   mnScanRunning: boolean;
   onRefreshMnStocks: () => void;
+  // Hydrogen scan
+  h2AutoScanActive: boolean;
+  h2AutoScanNext: Date | null;
+  h2ScanRunning: boolean;
+  onRefreshH2Stocks: () => void;
+  // Shipping scan
+  shpAutoScanActive: boolean;
+  shpAutoScanNext: Date | null;
+  shpScanRunning: boolean;
+  onRefreshShpStocks: () => void;
 }
 
 /**
@@ -168,24 +180,32 @@ function getGrowthDotHexColors(eventCount: number, highestGrowthPct: number | nu
 }
 
 export default function UnderwaterMode({
-  zbStocks, kuifjeStocks, biopharmaStocks, miningStocks, onExit,
+  zbStocks, kuifjeStocks, biopharmaStocks, miningStocks, hydrogenStocks, shippingStocks, onExit,
   autoScanActive, autoScanNext, scanRunning, onRefreshStocks,
   kuifjeAutoScanActive, kuifjeAutoScanNext, kuifjeScanRunning, onRefreshKuifjeStocks,
   bpAutoScanActive, bpAutoScanNext, bpScanRunning, onRefreshBpStocks,
   mnAutoScanActive, mnAutoScanNext, mnScanRunning, onRefreshMnStocks,
+  h2AutoScanActive, h2AutoScanNext, h2ScanRunning, onRefreshH2Stocks,
+  shpAutoScanActive, shpAutoScanNext, shpScanRunning, onRefreshShpStocks,
 }: UnderwaterModeProps) {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [kuifjeScanStatus, setKuifjeScanStatus] = useState<KuifjeScanStatus | null>(null);
   const [bpScanStatus, setBpScanStatus] = useState<ScanStatus | null>(null);
   const [mnScanStatus, setMnScanStatus] = useState<ScanStatus | null>(null);
+  const [h2ScanStatus, setH2ScanStatus] = useState<ScanStatus | null>(null);
+  const [shpScanStatus, setShpScanStatus] = useState<ScanStatus | null>(null);
   const [completedScans, setCompletedScans] = useState(0);
   const [completedKuifjeScans, setCompletedKuifjeScans] = useState(0);
   const [completedBpScans, setCompletedBpScans] = useState(0);
   const [completedMnScans, setCompletedMnScans] = useState(0);
+  const [completedH2Scans, setCompletedH2Scans] = useState(0);
+  const [completedShpScans, setCompletedShpScans] = useState(0);
   const [lastScanId, setLastScanId] = useState<string | null>(null);
   const [lastKuifjeScanId, setLastKuifjeScanId] = useState<string | null>(null);
   const [lastBpScanId, setLastBpScanId] = useState<string | null>(null);
   const [lastMnScanId, setLastMnScanId] = useState<string | null>(null);
+  const [lastH2ScanId, setLastH2ScanId] = useState<string | null>(null);
+  const [lastShpScanId, setLastShpScanId] = useState<string | null>(null);
 
   // Font size for the big total number — persists in localStorage
   const FONT_SIZES = ['1.5rem', '2.5rem', '4rem', '6rem'];
@@ -200,7 +220,7 @@ export default function UnderwaterMode({
   // Set browser tab title in underwater mode
   useEffect(() => {
     const prev = document.title;
-    document.title = 'K&Z&B&M';
+    document.title = 'K&Z&B&M&H&S';
     return () => { document.title = prev; };
   }, []);
 
@@ -256,11 +276,39 @@ export default function UnderwaterMode({
     return null;
   }, []);
 
+  // Poll Hydrogen scan progress
+  const fetchH2Status = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sector/scan/progress?type=hydrogen');
+      if (res.ok) {
+        const json = await res.json();
+        setH2ScanStatus(json);
+        return json as ScanStatus;
+      }
+    } catch { /* silent */ }
+    return null;
+  }, []);
+
+  // Poll Shipping scan progress
+  const fetchShpStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sector/scan/progress?type=shipping');
+      if (res.ok) {
+        const json = await res.json();
+        setShpScanStatus(json);
+        return json as ScanStatus;
+      }
+    } catch { /* silent */ }
+    return null;
+  }, []);
+
   useEffect(() => {
     fetchZbStatus();
     fetchKuifjeStatus();
     fetchBpStatus();
     fetchMnStatus();
+    fetchH2Status();
+    fetchShpStatus();
     const timer = setInterval(async () => {
       const zbResult = await fetchZbStatus();
       if (zbResult?.scan?.completedAt && zbResult.scan.completedAt !== lastScanId) {
@@ -289,9 +337,23 @@ export default function UnderwaterMode({
         setCompletedMnScans(prev => prev + 1);
         onRefreshMnStocks();
       }
+
+      const h2Result = await fetchH2Status();
+      if (h2Result?.scan?.completedAt && h2Result.scan.completedAt !== lastH2ScanId) {
+        setLastH2ScanId(h2Result.scan.completedAt);
+        setCompletedH2Scans(prev => prev + 1);
+        onRefreshH2Stocks();
+      }
+
+      const shpResult = await fetchShpStatus();
+      if (shpResult?.scan?.completedAt && shpResult.scan.completedAt !== lastShpScanId) {
+        setLastShpScanId(shpResult.scan.completedAt);
+        setCompletedShpScans(prev => prev + 1);
+        onRefreshShpStocks();
+      }
     }, 5000);
     return () => clearInterval(timer);
-  }, [fetchZbStatus, fetchKuifjeStatus, fetchBpStatus, fetchMnStatus, lastScanId, lastKuifjeScanId, lastBpScanId, lastMnScanId, onRefreshStocks, onRefreshKuifjeStocks, onRefreshBpStocks, onRefreshMnStocks]);
+  }, [fetchZbStatus, fetchKuifjeStatus, fetchBpStatus, fetchMnStatus, fetchH2Status, fetchShpStatus, lastScanId, lastKuifjeScanId, lastBpScanId, lastMnScanId, lastH2ScanId, lastShpScanId, onRefreshStocks, onRefreshKuifjeStocks, onRefreshBpStocks, onRefreshMnStocks, onRefreshH2Stocks, onRefreshShpStocks]);
 
   const zbIsRunning = scanStatus?.running || scanRunning;
   const zbScan = scanStatus?.scan;
@@ -317,6 +379,18 @@ export default function UnderwaterMode({
     ? Math.round((Date.now() - new Date(mnScan.startedAt).getTime()) / 1000)
     : null;
 
+  const h2IsRunning = h2ScanStatus?.running || h2ScanRunning;
+  const h2Scan = h2ScanStatus?.scan;
+  const h2Elapsed = h2Scan?.startedAt && h2IsRunning
+    ? Math.round((Date.now() - new Date(h2Scan.startedAt).getTime()) / 1000)
+    : null;
+
+  const shpIsRunning = shpScanStatus?.running || shpScanRunning;
+  const shpScan = shpScanStatus?.scan;
+  const shpElapsed = shpScan?.startedAt && shpIsRunning
+    ? Math.round((Date.now() - new Date(shpScan.startedAt).getTime()) / 1000)
+    : null;
+
   // Sort Kuifje stocks by medal ranking: green > yellow > white (like medal table)
   const sortedKuifjeStocks = useMemo(() => {
     return [...kuifjeStocks].sort((a, b) => {
@@ -328,7 +402,7 @@ export default function UnderwaterMode({
     });
   }, [kuifjeStocks]);
 
-  const anyAutoActive = autoScanActive || kuifjeAutoScanActive || bpAutoScanActive || mnAutoScanActive;
+  const anyAutoActive = autoScanActive || kuifjeAutoScanActive || bpAutoScanActive || mnAutoScanActive || h2AutoScanActive || shpAutoScanActive;
 
   // Use portal to escape AuthGuard's z-0 stacking context
   const content = (
@@ -468,6 +542,58 @@ export default function UnderwaterMode({
           )}
         </div>
 
+        {/* Hydrogen status */}
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] bg-[#2a2d31] border border-[#3a3d41]">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              h2IsRunning ? 'bg-cyan-400 animate-pulse' : h2AutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+            }`}
+          />
+          <span style={{ color: h2IsRunning ? '#22d3ee' : '#6a6d72' }}>
+            {h2IsRunning
+              ? `H2${h2Elapsed ? ` ${h2Elapsed}s` : ''}...`
+              : h2AutoScanActive
+                ? 'H2 waiting'
+                : 'H2 off'}
+          </span>
+          {h2IsRunning && h2Scan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{h2Scan.stocksDeepScanned}</span>
+              {'/'}
+              <span style={{ color: '#22c55e' }}>{h2Scan.stocksMatched}</span>
+            </span>
+          )}
+          {!h2IsRunning && completedH2Scans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedH2Scans}</span>
+          )}
+        </div>
+
+        {/* Shipping status */}
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-[11px] bg-[#2a2d31] border border-[#3a3d41]">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              shpIsRunning ? 'bg-blue-400 animate-pulse' : shpAutoScanActive ? 'bg-green-500' : 'bg-[#4a4d52]'
+            }`}
+          />
+          <span style={{ color: shpIsRunning ? '#60a5fa' : '#6a6d72' }}>
+            {shpIsRunning
+              ? `SH${shpElapsed ? ` ${shpElapsed}s` : ''}...`
+              : shpAutoScanActive
+                ? 'SH waiting'
+                : 'SH off'}
+          </span>
+          {shpIsRunning && shpScan && (
+            <span className="text-[10px]" style={{ color: '#5a5d62' }}>
+              <span style={{ color: '#7a7d82' }}>{shpScan.stocksDeepScanned}</span>
+              {'/'}
+              <span style={{ color: '#22c55e' }}>{shpScan.stocksMatched}</span>
+            </span>
+          )}
+          {!shpIsRunning && completedShpScans > 0 && (
+            <span className="text-[10px]" style={{ color: '#4a4d52' }}>#{completedShpScans}</span>
+          )}
+        </div>
+
         {/* Next scan times */}
         <div className="flex items-center gap-2 px-2 py-1 rounded text-[10px] bg-[#2a2d31] border border-[#3a3d41] flex-wrap" style={{ color: '#4a4d52' }}>
           {autoScanActive && autoScanNext && !zbIsRunning && (
@@ -482,14 +608,20 @@ export default function UnderwaterMode({
           {mnAutoScanActive && mnAutoScanNext && !mnIsRunning && (
             <span>MN <span style={{ color: '#6a6d72' }}>{mnAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
           )}
+          {h2AutoScanActive && h2AutoScanNext && !h2IsRunning && (
+            <span>H2 <span style={{ color: '#6a6d72' }}>{h2AutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+          )}
+          {shpAutoScanActive && shpAutoScanNext && !shpIsRunning && (
+            <span>SH <span style={{ color: '#6a6d72' }}>{shpAutoScanNext.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></span>
+          )}
           {!anyAutoActive && (
             <span>Auto-scan off</span>
           )}
         </div>
       </div>
 
-      {/* Four-panel layout: 2x2 grid */}
-      <div className="pt-14 px-4 pb-8 grid grid-cols-2 grid-rows-2 gap-4" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
+      {/* Six-panel layout: 3x2 grid */}
+      <div className="pt-14 px-4 pb-8 grid grid-cols-3 grid-rows-2 gap-4" style={{ minHeight: 'calc(100vh - 3.5rem)' }}>
         {/* TOP LEFT: Prof. Zonnebloem */}
         <div>
           <div className="flex items-baseline gap-3 mb-2 px-2">
@@ -503,7 +635,7 @@ export default function UnderwaterMode({
               Prof. Zonnebloem
             </span>
           </div>
-          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
+          <div style={{ columnCount: 2, columnGap: '0.75rem' }}>
             {zbStocks.map((stock) => (
               <div
                 key={stock.id}
@@ -528,7 +660,7 @@ export default function UnderwaterMode({
           </div>
         </div>
 
-        {/* TOP RIGHT: Kuifje */}
+        {/* TOP CENTER: Kuifje */}
         <div>
           <div className="flex items-baseline gap-3 mb-2 px-2">
             <span
@@ -541,7 +673,7 @@ export default function UnderwaterMode({
               Kuifje
             </span>
           </div>
-          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
+          <div style={{ columnCount: 2, columnGap: '0.75rem' }}>
             {sortedKuifjeStocks.map((stock) => (
               <div
                 key={stock.id}
@@ -579,7 +711,7 @@ export default function UnderwaterMode({
               BioPharma
             </span>
           </div>
-          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
+          <div style={{ columnCount: 2, columnGap: '0.75rem' }}>
             {biopharmaStocks.map((stock) => (
               <div
                 key={stock.id}
@@ -601,7 +733,7 @@ export default function UnderwaterMode({
           </div>
         </div>
 
-        {/* BOTTOM RIGHT: Mining */}
+        {/* BOTTOM CENTER: Mining */}
         <div>
           <div className="flex items-baseline gap-3 mb-2 px-2">
             <span
@@ -614,8 +746,80 @@ export default function UnderwaterMode({
               Mining
             </span>
           </div>
-          <div style={{ columnCount: 3, columnGap: '0.75rem' }}>
+          <div style={{ columnCount: 2, columnGap: '0.75rem' }}>
             {miningStocks.map((stock) => (
+              <div
+                key={stock.id}
+                className="flex items-center gap-1.5 py-0.5 border-b"
+                style={{ borderColor: '#252729', breakInside: 'avoid' }}
+              >
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
+                  style={{ color: '#7a7d82' }}
+                >
+                  {stock.ticker}
+                </a>
+                <SectorDotsDisplay stock={stock} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* BOTTOM RIGHT: Hydrogen */}
+        <div>
+          <div className="flex items-baseline gap-3 mb-2 px-2">
+            <span
+              className="font-mono font-bold tracking-tight"
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
+            >
+              {hydrogenStocks.length}
+            </span>
+            <span className="text-xs font-medium" style={{ color: '#06b6d4' }}>
+              Hydrogen
+            </span>
+          </div>
+          <div style={{ columnCount: 2, columnGap: '0.75rem' }}>
+            {hydrogenStocks.map((stock) => (
+              <div
+                key={stock.id}
+                className="flex items-center gap-1.5 py-0.5 border-b"
+                style={{ borderColor: '#252729', breakInside: 'avoid' }}
+              >
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
+                  style={{ color: '#7a7d82' }}
+                >
+                  {stock.ticker}
+                </a>
+                <SectorDotsDisplay stock={stock} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ROW 3: Shipping (full width at bottom) */}
+      <div className="px-4 pb-8">
+        <div>
+          <div className="flex items-baseline gap-3 mb-2 px-2">
+            <span
+              className="font-mono font-bold tracking-tight"
+              style={{ color: '#b0b3b8', fontSize: FONT_SIZES[fontSizeIdx], lineHeight: 1 }}
+            >
+              {shippingStocks.length}
+            </span>
+            <span className="text-xs font-medium" style={{ color: '#3b82f6' }}>
+              Shipping
+            </span>
+          </div>
+          <div style={{ columnCount: 6, columnGap: '0.75rem' }}>
+            {shippingStocks.map((stock) => (
               <div
                 key={stock.id}
                 className="flex items-center gap-1.5 py-0.5 border-b"
@@ -639,12 +843,16 @@ export default function UnderwaterMode({
 
       {/* Grid divider lines */}
       <div
-        className="fixed top-14 bottom-0 left-1/2 w-px"
-        style={{ backgroundColor: '#2a2d31' }}
+        className="fixed top-14 bottom-0 w-px"
+        style={{ backgroundColor: '#2a2d31', left: '33.333%' }}
       />
       <div
-        className="fixed left-0 right-0 top-1/2 h-px"
-        style={{ backgroundColor: '#2a2d31' }}
+        className="fixed top-14 bottom-0 w-px"
+        style={{ backgroundColor: '#2a2d31', left: '66.666%' }}
+      />
+      <div
+        className="fixed left-0 right-0 h-px"
+        style={{ backgroundColor: '#2a2d31', top: '50%' }}
       />
 
       {/* Version — bottom-left */}

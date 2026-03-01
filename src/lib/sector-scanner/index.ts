@@ -17,7 +17,7 @@ import { analyzeSpikeEvents } from '../zonnebloem/scorer';
 import { validatePriceHistory, detectStockSplit } from '../scanner/validator';
 import { sleep } from '../utils';
 import type { SectorScannerConfig, SectorScanDetail, SectorScannerType } from '../types';
-import { BIOPHARMA_CONFIG, MINING_CONFIG } from '../types';
+import { BIOPHARMA_CONFIG, MINING_CONFIG, HYDROGEN_CONFIG, SHIPPING_CONFIG } from '../types';
 
 const TIME_BUDGET_MS = 240_000;
 
@@ -35,7 +35,12 @@ interface SectorScanResult {
 }
 
 function getConfigForType(type: SectorScannerType): SectorScannerConfig {
-  return type === 'biopharma' ? BIOPHARMA_CONFIG : MINING_CONFIG;
+  switch (type) {
+    case 'biopharma': return BIOPHARMA_CONFIG;
+    case 'mining': return MINING_CONFIG;
+    case 'hydrogen': return HYDROGEN_CONFIG;
+    case 'shipping': return SHIPPING_CONFIG;
+  }
 }
 
 /**
