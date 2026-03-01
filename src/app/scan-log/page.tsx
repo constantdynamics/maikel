@@ -312,7 +312,7 @@ export default function ScanLogPage() {
           /* ====== ZONNEBLOEM SCAN LOG ====== */
           zbScanLogs.length === 0 ? (
             <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-8 text-center">
-              <p className="text-[var(--text-muted)]">No Zonnebloem scan logs yet. Run a scan from the Dashboard first.</p>
+              <p className="text-[var(--text-muted)]">No Zonnebloem scan logs yet. Run a scan from the Scanner first.</p>
             </div>
           ) : (
             <>

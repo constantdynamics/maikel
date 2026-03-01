@@ -527,7 +527,7 @@ function findOrCreateTab(tabs: Tab[], name: ScannerTabName): { tab: Tab; isNew: 
       name,
       accentColor: SCANNER_TAB_COLORS[name],
       stocks: [],
-      sortField: 'ticker',
+      sortField: 'distanceToLimit',
       sortDirection: 'asc',
       createdAt: new Date().toISOString(),
     },
