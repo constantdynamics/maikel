@@ -187,6 +187,15 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Apply autoScanDefault setting on mount: set autoScanEnabled to the user's preferred default
+  useEffect(() => {
+    const defaultState = store.settings.autoScanDefault === true;
+    if (store.settings.autoScanEnabled !== defaultState) {
+      store.updateSettings({ autoScanEnabled: defaultState });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Weekend background task for 5-year range data
   useEffect(() => {
     if (!store.settings.apiKey || store.tabs.length === 0) return;

@@ -129,6 +129,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   },
   hiddenTabIds: [],
   weekendTaskEnabled: true,
+  autoScanDefault: false,  // Auto-scan off by default when page loads
 };
 
 const DEFAULT_TAB: Tab = {
