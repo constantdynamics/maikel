@@ -191,6 +191,9 @@ export function Dashboard() {
   useEffect(() => {
     if (!store.settings.apiKey || store.tabs.length === 0) return;
 
+    // Check if weekend task is disabled in settings
+    if (store.settings.weekendTaskEnabled === false) return;
+
     // Check if we should run the weekend task
     if (!shouldRunWeekendTask()) return;
 

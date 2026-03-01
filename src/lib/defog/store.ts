@@ -128,6 +128,7 @@ const DEFAULT_SETTINGS: UserSettings = {
     rainbowPreset: 'classic',
   },
   hiddenTabIds: [],
+  weekendTaskEnabled: true,
 };
 
 const DEFAULT_TAB: Tab = {
