@@ -1256,10 +1256,10 @@ export function Dashboard() {
         return;
       }
 
-      // Build prioritized queue
+      // Build prioritized queue — scan up to 3 stocks per cycle for daily coverage
       const queue = buildPrioritizedScanQueue(store.tabs, {
         onlyOpenMarkets: true,
-        maxStocks: 1, // Only scan 1 stock at a time for rate limiting
+        maxStocks: 3,
       });
 
       if (queue.length === 0) {
@@ -1267,16 +1267,24 @@ export function Dashboard() {
         return;
       }
 
-      const topPriority = queue[0];
-      console.log(`[AutoScan] Scanning ${topPriority.stock.ticker} (priority: ${topPriority.score}, reasons: ${formatScanReason(topPriority.reasons)})`);
+      const limits = RATE_LIMITS[store.settings.apiProvider || 'twelvedata'];
 
-      // Scan the highest priority stock with auto scan type and reasons
-      await refreshSingleStock(
-        { tabId: topPriority.tabId, stock: topPriority.stock },
-        undefined,
-        'auto',
-        topPriority.reasons
-      );
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        console.log(`[AutoScan] Scanning ${item.stock.ticker} (${i + 1}/${queue.length}, priority: ${item.score}, reasons: ${formatScanReason(item.reasons)})`);
+
+        await refreshSingleStock(
+          { tabId: item.tabId, stock: item.stock },
+          undefined,
+          'auto',
+          item.reasons
+        );
+
+        // Wait between stocks to respect rate limits
+        if (i < queue.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, limits.minDelayMs));
+        }
+      }
     };
 
     // Set initial countdown — do NOT run immediately on page load
