@@ -111,6 +111,7 @@ export function Dashboard() {
   const autoScanTimerRef = useRef<number | null>(null);
   const [isManualWeekendTaskRunning, setIsManualWeekendTaskRunning] = useState(false);
   const [rangeFetchProgress, setRangeFetchProgress] = useState<RangeFetchProgress | null>(null);
+  const [isRefreshingTab, setIsRefreshingTab] = useState(false);
 
   // Dashboard view: list or tiles (separate from mobile/desktop view mode)
   const [dashboardView, setDashboardView] = useState<'list' | 'tiles'>(() => {
@@ -653,6 +654,19 @@ export function Dashboard() {
       }
     }
   }, [store.settings.apiKey, store.settings.apiProvider, store.settings.apiKeys, refreshSingleStock]);
+
+  // Refresh all stocks in the currently active tab
+  const refreshActiveTabStocks = useCallback(async () => {
+    const tab = useStore.getState().tabs.find(t => t.id === store.activeTabId);
+    if (!tab || tab.stocks.length === 0) return;
+    setIsRefreshingTab(true);
+    try {
+      const items = tab.stocks.map(stock => ({ tabId: tab.id, stock }));
+      await refreshSelectedStocks(items);
+    } finally {
+      setIsRefreshingTab(false);
+    }
+  }, [store.activeTabId, refreshSelectedStocks]);
 
   // Refresh archived stock prices
   const refreshArchivedPrices = useCallback(async () => {
@@ -1906,6 +1920,21 @@ export function Dashboard() {
                   >
                     <ArrowPathIcon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                   </button>
+                  {activeTab && (
+                    <button
+                      onClick={refreshActiveTabStocks}
+                      disabled={isRefreshingTab || isRefreshing || (apiStatus !== null && apiStatus.available <= 0)}
+                      className={`flex items-center gap-1 px-2 py-1 text-xs rounded-lg transition-colors ${
+                        isRefreshingTab
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'hover:bg-white/10 text-gray-400 hover:text-white'
+                      } ${isRefreshingTab || isRefreshing || (apiStatus !== null && apiStatus.available <= 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      title={`Ververs alle ${activeTab.stocks.length} aandelen in dit tabblad`}
+                    >
+                      <ArrowPathIcon className={`w-3.5 h-3.5 ${isRefreshingTab ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">Ververs tab</span>
+                    </button>
+                  )}
                 </>
               )}
 

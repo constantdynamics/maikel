@@ -794,54 +794,56 @@ export default function DashboardPage() {
       <div className="space-y-4">
         <ExportReminder onExport={handleExport} />
 
-        {/* Scanner tabs */}
-        <div className="flex items-center gap-2 border-b border-[var(--border-color)] overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('kuifje')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              activeTab === 'kuifje'
-                ? 'border-[var(--accent-primary)] text-[var(--accent-primary)]'
-                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}
-          >
-            Kuifje
-            <span className="ml-2 text-xs text-[var(--text-muted)]">({stocks.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('zonnebloem')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              activeTab === 'zonnebloem'
-                ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}
-          >
-            Prof. Zonnebloem
-            <span className="ml-2 text-xs text-[var(--text-muted)]">({zbStocks.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('biopharma')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              activeTab === 'biopharma'
-                ? 'border-emerald-500 text-emerald-400'
-                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}
-          >
-            BioPharma
-            <span className="ml-2 text-xs text-[var(--text-muted)]">({bpStocks.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('mining')}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              activeTab === 'mining'
-                ? 'border-amber-500 text-amber-400'
-                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}
-          >
-            Mining
-            <span className="ml-2 text-xs text-[var(--text-muted)]">({mnStocks.length})</span>
-          </button>
+        {/* Scanner tabs + actions */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border-color)]">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('kuifje')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'kuifje'
+                  ? 'border-[var(--accent-primary)] text-[var(--accent-primary)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Kuifje
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({stocks.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('zonnebloem')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'zonnebloem'
+                  ? 'border-purple-500 text-purple-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Prof. Zonnebloem
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({zbStocks.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('biopharma')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'biopharma'
+                  ? 'border-emerald-500 text-emerald-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              BioPharma
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({bpStocks.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('mining')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'mining'
+                  ? 'border-amber-500 text-amber-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Mining
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({mnStocks.length})</span>
+            </button>
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2 py-1">
             <button
               onClick={() => {
                 const newState = !allAutoActive;
