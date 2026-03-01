@@ -10,7 +10,7 @@ export const RAINBOW_PRESETS: RainbowPreset[] = [
   {
     id: 'classic',
     name: 'Klassiek Regenboog',
-    colors: ['#ff0000', '#ff4400', '#ff8800', '#ffcc00', '#88cc00', '#44bb00', '#00ff44'],
+    colors: ['#cc0000', '#dd3300', '#ee6600', '#dd9900', '#ccbb00', '#88aa00', '#339900'],
     thresholds: [100, 50, 25, 15, 10, 5, 0],
   },
   {
