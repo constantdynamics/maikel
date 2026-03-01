@@ -269,7 +269,7 @@ export function Settings({
     const res = await fetch(url);
     if (!res.ok) return [];
     const json = await res.json();
-    return (json.stocks || json.data || []) as Record<string, unknown>[];
+    return (Array.isArray(json) ? json : (json.stocks || json.data || [])) as Record<string, unknown>[];
   }
 
   async function handleScannerExportTab(tab: ScannerTab, fmt: 'csv' | 'json') {

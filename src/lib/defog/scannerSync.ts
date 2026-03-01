@@ -500,7 +500,9 @@ function processStocksForTab<T extends { company_name: string }>(
         updates.set(existing.id, { ...prev, ...upd });
       }
     } else {
-      const defogStock = maikelToDefogStock(stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock, null);
+      const [limitInput, currentPrice] = getBuyLimitInputFn(stock);
+      const buyLimit = calculateBuyLimit(limitInput, currentPrice);
+      const defogStock = maikelToDefogStock(stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock, buyLimit);
       newStocks.push(defogStock);
       maps.tickerSet.add(defogTicker);
       maps.nameMap.set(normalizeCompanyName(stock.company_name), defogStock);
@@ -757,6 +759,7 @@ export async function refreshDefogTop250(
     tabName: ScannerTabName,
     scannerStocks: T[],
     getTickerFn: (s: T) => string,
+    getBuyLimitInputFn: (s: T) => [Parameters<typeof calculateBuyLimit>[0], number | null],
   ): { tabId: string; newStocks: DefogStock[]; isNewTab: boolean } {
     const { tab, isNew } = findOrCreateTab(tabs, tabName);
 
@@ -800,10 +803,12 @@ export async function refreshDefogTop250(
           ticker: tickerQualityScore(ticker) > tickerQualityScore(existing.ticker) ? ticker : existing.ticker,
         });
       } else {
-        // Brand new stock
+        // Brand new stock — calculate buy limit from scanner data
+        const [limitInput, currentPrice] = getBuyLimitInputFn(stock);
+        const buyLimit = calculateBuyLimit(limitInput, currentPrice);
         newStockList.push(maikelToDefogStock(
           stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock,
-          null,
+          buyLimit,
         ));
       }
     }
@@ -812,12 +817,12 @@ export async function refreshDefogTop250(
   }
 
   // Process each tab
-  const kuifjeResult = replaceTabStocks('Kuifje', kuifjeStocks, getDefogTicker);
-  const zbResult = replaceTabStocks('Prof. Zonnebloem', zbStocks, getDefogTicker);
-  const biopharmaResult = replaceTabStocks('BioPharma', biopharmaStocks, getDefogTicker);
-  const miningResult = replaceTabStocks('Mining', miningStocks, getDefogTicker);
-  const hydrogenResult = replaceTabStocks('Hydrogen', hydrogenStocks, getDefogTicker);
-  const shippingResult = replaceTabStocks('Shipping', shippingStocks, getDefogTicker);
+  const kuifjeResult = replaceTabStocks('Kuifje', kuifjeStocks, getDefogTicker, kuifjeBuyLimitInput);
+  const zbResult = replaceTabStocks('Prof. Zonnebloem', zbStocks, getDefogTicker, zbBuyLimitInput);
+  const biopharmaResult = replaceTabStocks('BioPharma', biopharmaStocks, getDefogTicker, sectorBuyLimitInput);
+  const miningResult = replaceTabStocks('Mining', miningStocks, getDefogTicker, sectorBuyLimitInput);
+  const hydrogenResult = replaceTabStocks('Hydrogen', hydrogenStocks, getDefogTicker, sectorBuyLimitInput);
+  const shippingResult = replaceTabStocks('Shipping', shippingStocks, getDefogTicker, sectorBuyLimitInput);
 
   const allResults = [kuifjeResult, zbResult, biopharmaResult, miningResult, hydrogenResult, shippingResult];
 
