@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-type TabType = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining';
+type TabType = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
 
 interface ColumnLegendProps {
   activeTab: TabType;
@@ -63,7 +63,7 @@ export default function ColumnLegend({ activeTab }: ColumnLegendProps) {
 
   const isKuifje = activeTab === 'kuifje';
   const isZonnebloem = activeTab === 'zonnebloem';
-  const isSector = activeTab === 'biopharma' || activeTab === 'mining';
+  const isSector = activeTab === 'biopharma' || activeTab === 'mining' || activeTab === 'hydrogen' || activeTab === 'shipping';
 
   return (
     <div className="relative">

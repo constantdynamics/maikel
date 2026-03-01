@@ -7,10 +7,10 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceClient();
   const { searchParams } = new URL(request.url);
 
-  const scannerType = searchParams.get('type'); // 'biopharma' or 'mining'
-  if (!scannerType || !['biopharma', 'mining'].includes(scannerType)) {
+  const scannerType = searchParams.get('type'); // 'biopharma' | 'mining' | 'hydrogen' | 'shipping'
+  if (!scannerType || !['biopharma', 'mining', 'hydrogen', 'shipping'].includes(scannerType)) {
     return NextResponse.json(
-      { error: 'Missing or invalid type parameter. Use ?type=biopharma or ?type=mining' },
+      { error: 'Missing or invalid type parameter. Use ?type=biopharma, mining, hydrogen, or shipping' },
       { status: 400 },
     );
   }

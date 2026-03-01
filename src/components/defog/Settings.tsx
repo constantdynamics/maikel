@@ -260,7 +260,7 @@ export function Settings({
   // ── Scanner Export ──
   const [scannerExportStatus, setScannerExportStatus] = useState<string | null>(null);
 
-  type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining';
+  type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
 
   async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
     const url = tab === 'kuifje' ? '/api/stocks'
@@ -277,7 +277,8 @@ export function Settings({
     try {
       const data = await fetchScannerData(tab);
       if (data.length === 0) { setScannerExportStatus('Geen data'); setTimeout(() => setScannerExportStatus(null), 2000); return; }
-      const label = tab === 'kuifje' ? 'Kuifje' : tab === 'zonnebloem' ? 'Zonnebloem' : tab === 'biopharma' ? 'BioPharma' : 'Mining';
+      const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' };
+      const label = labelMap[tab];
       if (fmt === 'csv') {
         downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
       } else {
@@ -290,16 +291,18 @@ export function Settings({
   async function handleScannerExportAll(fmt: 'csv' | 'json') {
     setScannerExportStatus('Alle tabs ophalen...');
     try {
-      const [kuifje, zonnebloem, biopharma, mining] = await Promise.all([
+      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping] = await Promise.all([
         fetchScannerData('kuifje'), fetchScannerData('zonnebloem'),
         fetchScannerData('biopharma'), fetchScannerData('mining'),
+        fetchScannerData('hydrogen'), fetchScannerData('shipping'),
       ]);
       if (fmt === 'json') {
-        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining }), generateExportFilename('AllScanners', 'json'), 'application/json');
+        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping }), generateExportFilename('AllScanners', 'json'), 'application/json');
       } else {
         for (const [tab, data, label] of [
           ['kuifje', kuifje, 'Kuifje'], ['zonnebloem', zonnebloem, 'Zonnebloem'],
           ['biopharma', biopharma, 'BioPharma'], ['mining', mining, 'Mining'],
+          ['hydrogen', hydrogen, 'Hydrogen'], ['shipping', shipping, 'Shipping'],
         ] as [ScannerTab, Record<string, unknown>[], string][]) {
           if (data.length > 0) downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
         }
@@ -645,7 +648,7 @@ export function Settings({
             <div className="p-3 bg-[#2d2d2d] rounded-lg">
               <div className="mb-2">
                 <div className="text-sm text-gray-300">Scanner Export</div>
-                <div className="text-xs text-gray-500">Exporteer scanner-uitslagen (Kuifje, Zonnebloem, BioPharma, Mining)</div>
+                <div className="text-xs text-gray-500">Exporteer scanner-uitslagen (Kuifje, Zonnebloem, BioPharma, Mining, Hydrogen, Shipping)</div>
               </div>
               {scannerExportStatus && (
                 <div className="mb-2 text-xs text-blue-400">{scannerExportStatus}</div>
@@ -656,8 +659,10 @@ export function Settings({
                   {([
                     { tab: 'kuifje' as ScannerTab, label: 'Kuifje', color: '#3b82f6' },
                     { tab: 'zonnebloem' as ScannerTab, label: 'Zonnebloem', color: '#8b5cf6' },
-                    { tab: 'biopharma' as ScannerTab, label: 'BioPharma', color: '#06b6d4' },
+                    { tab: 'biopharma' as ScannerTab, label: 'BioPharma', color: '#10b981' },
                     { tab: 'mining' as ScannerTab, label: 'Mining', color: '#f59e0b' },
+                    { tab: 'hydrogen' as ScannerTab, label: 'Hydrogen', color: '#06b6d4' },
+                    { tab: 'shipping' as ScannerTab, label: 'Shipping', color: '#3b82f6' },
                   ]).map(({ tab, label, color }) => (
                     <div key={tab} className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
@@ -668,7 +673,7 @@ export function Settings({
                   ))}
                 </div>
                 <div className="border-t border-[#3d3d3d] pt-2 mt-2">
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-2">Alle 4 tabs</div>
+                  <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-2">Alle 6 tabs</div>
                   <div className="flex gap-2">
                     <button onClick={() => handleScannerExportAll('json')} className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-xs font-medium rounded-lg transition-colors"><ArrowDownTrayIcon className="w-3.5 h-3.5" />Alles als JSON</button>
                     <button onClick={() => handleScannerExportAll('csv')} className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-xs font-medium rounded-lg transition-colors"><ArrowDownTrayIcon className="w-3.5 h-3.5" />Alles als CSV</button>
