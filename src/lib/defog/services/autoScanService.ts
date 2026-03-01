@@ -82,12 +82,25 @@ export function calculateScanPriority(stock: Stock, weights?: ScanPriorityWeight
   const rainbowFactor = w.rainbowBlocks / 100;
 
   // 1. Last scan time - priority for stocks not scanned recently
+  //    Massive escalation for stale stocks to guarantee daily coverage
   if (stock.lastUpdated) {
     const lastScan = new Date(stock.lastUpdated).getTime();
     const now = Date.now();
     const minutesSinceLastScan = (now - lastScan) / (1000 * 60);
 
-    if (minutesSinceLastScan > 60) {
+    if (minutesSinceLastScan > 24 * 60) {
+      // >24 hours - CRITICAL: must refresh for daily coverage
+      score -= 100;
+      reasons.push(`STALE: ${Math.floor(minutesSinceLastScan / 60)}h ago`);
+    } else if (minutesSinceLastScan > 8 * 60) {
+      // >8 hours - very high priority to ensure daily coverage
+      score -= 70;
+      reasons.push(`Stale: ${Math.floor(minutesSinceLastScan / 60)}h ago`);
+    } else if (minutesSinceLastScan > 4 * 60) {
+      // >4 hours - elevated priority
+      score -= 50;
+      reasons.push(`Old: ${Math.floor(minutesSinceLastScan / 60)}h ago`);
+    } else if (minutesSinceLastScan > 60) {
       score -= Math.round(40 * lastScanFactor);
       reasons.push(`Last scan: ${Math.floor(minutesSinceLastScan / 60)}h ago`);
     } else if (minutesSinceLastScan > 30) {
@@ -100,7 +113,7 @@ export function calculateScanPriority(stock: Stock, weights?: ScanPriorityWeight
       score += Math.round(20 * lastScanFactor); // Lower priority if recently scanned
     }
   } else {
-    score -= Math.round(50 * lastScanFactor); // Never scanned - highest priority
+    score -= 100; // Never scanned - same as >24h stale
     reasons.push('Never scanned');
   }
 
@@ -193,17 +206,27 @@ export function buildPrioritizedScanQueue(
 
   for (const tab of tabs) {
     for (const stock of tab.stocks) {
-      // Skip if we only want open markets and this market is closed
-      if (options?.onlyOpenMarkets) {
-        const marketStatus = isMarketOpen(stock.exchange || '');
-        if (!marketStatus.isOpen) {
+      // Check how stale this stock is
+      const minutesSinceLastScan = stock.lastUpdated
+        ? (Date.now() - new Date(stock.lastUpdated).getTime()) / (1000 * 60)
+        : Infinity;
+      const isVeryStaleCoverage = minutesSinceLastScan > 20 * 60; // >20 hours
+
+      // For very stale stocks, skip market hours check to ensure daily coverage
+      // (we can still fetch the last close price even when market is closed)
+      if (!isVeryStaleCoverage) {
+        // Skip if we only want open markets and this market is closed
+        if (options?.onlyOpenMarkets) {
+          const marketStatus = isMarketOpen(stock.exchange || '');
+          if (!marketStatus.isOpen) {
+            continue;
+          }
+        }
+
+        // Check if within scan hours for this stock's exchange
+        if (!isWithinScanHours(stock.exchange || '')) {
           continue;
         }
-      }
-
-      // Check if within scan hours for this stock's exchange
-      if (!isWithinScanHours(stock.exchange || '')) {
-        continue;
       }
 
       const priority = calculateScanPriority(stock, options?.weights);

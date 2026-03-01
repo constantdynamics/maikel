@@ -225,6 +225,8 @@ export interface UserSettings {
   scanPriorityWeights: ScanPriorityWeights;  // Configurable scan priority weights
   tileSettings: TileSettings;  // Mini tiles view customization
   hiddenTabIds: string[];  // Tab IDs to hide from the tab bar (still synced, just not shown)
+  weekendTaskEnabled: boolean;  // Auto-fetch 5-year range data on weekends
+  autoScanDefault: boolean;  // Default state for auto-scan when Defog page loads
 }
 
 export interface TileSettings {

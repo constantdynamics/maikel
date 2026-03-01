@@ -118,6 +118,12 @@ export function Settings({
   const [hiddenTabIds, setHiddenTabIds] = useState<string[]>(
     settings.hiddenTabIds || []
   );
+  const [weekendTaskEnabled, setWeekendTaskEnabled] = useState(
+    settings.weekendTaskEnabled !== false
+  );
+  const [autoScanDefault, setAutoScanDefault] = useState(
+    settings.autoScanDefault === true
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -148,6 +154,8 @@ export function Settings({
     setFixedTabColors(settings.fixedTabColors || { all: 'rainbow', topGainers: '#00ff88', topLosers: '#ff3366', purchased: '#00ff88' });
     setScanWeights(settings.scanPriorityWeights || DEFAULT_SCAN_WEIGHTS);
     setHiddenTabIds(settings.hiddenTabIds || []);
+    setWeekendTaskEnabled(settings.weekendTaskEnabled !== false);
+    setAutoScanDefault(settings.autoScanDefault === true);
   }, [settings]);
 
   // Collect all current local state into a settings update
@@ -157,9 +165,9 @@ export function Settings({
     return {
       apiKey, apiProvider, apiKeys: apiKeys.filter(k => k.apiKey),
       notifications: { enabled: notificationsEnabled, audioEnabled, pushEnabled, thresholds: parsedThresholds, quietHours: { enabled: quietHoursEnabled, start: quietHoursStart, end: quietHoursEnd }, dailyDropAlert: parsedDailyDrop && !isNaN(parsedDailyDrop) ? parsedDailyDrop : null },
-      globalChartTimeframe: globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanPriorityWeights: scanWeights, hiddenTabIds,
+      globalChartTimeframe: globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanPriorityWeights: scanWeights, hiddenTabIds, weekendTaskEnabled, autoScanDefault,
     };
-  }, [apiKey, apiProvider, apiKeys, notificationsEnabled, audioEnabled, pushEnabled, thresholds, quietHoursEnabled, quietHoursStart, quietHoursEnd, dailyDropAlert, globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanWeights, hiddenTabIds]);
+  }, [apiKey, apiProvider, apiKeys, notificationsEnabled, audioEnabled, pushEnabled, thresholds, quietHoursEnabled, quietHoursStart, quietHoursEnd, dailyDropAlert, globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanWeights, hiddenTabIds, weekendTaskEnabled, autoScanDefault]);
 
   // ALWAYS save when closing — whether via Save button or X/overlay close
   const handleClose = useCallback(() => {
@@ -712,6 +720,26 @@ export function Settings({
               </div>
               <button onClick={() => setScanWeights(w => ({ ...w, skipErrorStocks: !w.skipErrorStocks }))} className={`w-12 h-6 rounded-full transition-colors ${scanWeights.skipErrorStocks ? 'bg-[#00ff88]' : 'bg-[#3d3d3d]'}`}>
                 <div className={`w-5 h-5 bg-white rounded-full transition-transform ${scanWeights.skipErrorStocks ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between py-2 border-t border-[#3d3d3d]">
+              <div>
+                <label className="text-sm text-gray-300">Auto-scan bij openen</label>
+                <p className="text-[10px] text-gray-600">Automatisch scannen starten wanneer je Defog opent</p>
+              </div>
+              <button onClick={() => setAutoScanDefault(!autoScanDefault)} className={`w-12 h-6 rounded-full transition-colors ${autoScanDefault ? 'bg-[#00ff88]' : 'bg-[#3d3d3d]'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${autoScanDefault ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between py-2 border-t border-[#3d3d3d]">
+              <div>
+                <label className="text-sm text-gray-300">Weekend background fetch</label>
+                <p className="text-[10px] text-gray-600">Automatisch 5-jaar range data ophalen in het weekend</p>
+              </div>
+              <button onClick={() => setWeekendTaskEnabled(!weekendTaskEnabled)} className={`w-12 h-6 rounded-full transition-colors ${weekendTaskEnabled ? 'bg-[#00ff88]' : 'bg-[#3d3d3d]'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${weekendTaskEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
