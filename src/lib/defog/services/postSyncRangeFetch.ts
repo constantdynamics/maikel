@@ -113,9 +113,6 @@ function findStocksNeedingRanges(tabs: Tab[]): Array<{ tabId: string; stock: Sto
   const results: Array<{ tabId: string; stock: Stock }> = [];
 
   for (const tab of tabs) {
-    // Only check scanner tabs (Kuifje, Prof. Zonnebloem, BioPharma, Mining)
-    if (!['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining'].includes(tab.name)) continue;
-
     for (const stock of tab.stocks) {
       // Already fetched ranges — skip
       if (stock.rangeFetched) continue;
@@ -563,8 +560,6 @@ export function recalculateAllBuyLimits(
   let fixed = 0;
 
   for (const tab of tabs) {
-    if (!['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining'].includes(tab.name)) continue;
-
     for (const stock of tab.stocks) {
       // Only recalculate if we have range data
       if (!stock.year5Low && !stock.year3Low && !stock.week52Low) continue;
