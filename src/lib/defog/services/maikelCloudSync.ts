@@ -1,11 +1,9 @@
-// Cloud sync for Defog state using the MAIKEL Supabase instance
-// This ensures data persists even when IndexedDB is cleared
-// Uses the 'settings' table with key 'defog_state'
+// Cloud sync for Defog state via server-side API route.
+// Uses /api/defog-sync which has the service role key — no client auth needed.
+// This ensures data persists across deployments, URL changes, and auth issues.
 
-import { getSupabase } from '@/lib/supabase';
 import type { AppState } from '../types';
 
-const DEFOG_STATE_KEY = 'defog_state';
 const SYNC_DEBOUNCE_MS = 3000;
 
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -23,13 +21,10 @@ function simpleHash(str: string): string {
   return String(hash);
 }
 
-// Track whether we successfully loaded data from cloud this session.
-// Prevents overwriting cloud data with empty state on a fresh deployment.
-let cloudLoadedThisSession = false;
+// Track cloud load success to prevent overwriting good data
 let minimumStockCountForSave = 0;
 
 export function markCloudLoadSuccess(stockCount: number) {
-  cloudLoadedThisSession = true;
   minimumStockCountForSave = Math.max(minimumStockCountForSave, Math.floor(stockCount * 0.7));
 }
 
@@ -37,8 +32,6 @@ export async function saveDefogStateToCloud(
   state: Partial<AppState>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = getSupabase();
-
     const dataToSave = {
       tabs: state.tabs,
       archive: state.archive,
@@ -50,17 +43,14 @@ export async function saveDefogStateToCloud(
       encryptionKeyHash: state.encryptionKeyHash,
     };
 
-    // SAFETY: Never overwrite cloud data with empty/near-empty state
-    const totalStocks = dataToSave.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0) || 0;
+    // SAFETY: Never save empty state
+    const totalStocks = dataToSave.tabs?.reduce(
+      (n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0
+    ) || 0;
 
     if (totalStocks === 0) {
-      console.warn('[Defog CloudSync] BLOCKED: refusing to save empty state to cloud');
+      console.warn('[Defog CloudSync] BLOCKED: refusing to save empty state');
       return { success: false, error: 'Blocked: empty state' };
-    }
-
-    if (cloudLoadedThisSession && totalStocks < minimumStockCountForSave) {
-      console.warn(`[Defog CloudSync] BLOCKED: stock count ${totalStocks} is below safety threshold ${minimumStockCountForSave}`);
-      return { success: false, error: 'Blocked: stock count too low' };
     }
 
     const json = JSON.stringify(dataToSave);
@@ -71,18 +61,21 @@ export async function saveDefogStateToCloud(
       return { success: true };
     }
 
-    console.log('[Defog CloudSync] Saving', Math.round(json.length / 1024), 'KB to Maikel Supabase...');
+    console.log('[Defog CloudSync] Saving', Math.round(json.length / 1024), 'KB via API...');
 
-    const { error } = await supabase
-      .from('settings')
-      .upsert(
-        { key: DEFOG_STATE_KEY, value: json, updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
-      );
+    const response = await fetch('/api/defog-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        state: dataToSave,
+        minStockCount: minimumStockCountForSave || undefined,
+      }),
+    });
 
-    if (error) {
-      console.error('[Defog CloudSync] Save failed:', error.message);
-      return { success: false, error: error.message };
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }));
+      console.error('[Defog CloudSync] Save failed:', err.error);
+      return { success: false, error: err.error };
     }
 
     lastSavedHash = hash;
@@ -100,38 +93,34 @@ export async function loadDefogStateFromCloud(): Promise<{
   error?: string;
 }> {
   try {
-    const supabase = getSupabase();
+    const response = await fetch('/api/defog-sync');
 
-    const { data, error } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('key', DEFOG_STATE_KEY)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No data found - that's OK
-        console.log('[Defog CloudSync] No cloud data found');
-        return { data: null };
-      }
-      console.error('[Defog CloudSync] Load failed:', error.message);
-      return { data: null, error: error.message };
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: response.statusText }));
+      console.error('[Defog CloudSync] Load failed:', err.error);
+      return { data: null, error: err.error };
     }
 
-    if (!data?.value) {
+    const result = await response.json();
+
+    if (!result.data) {
+      console.log('[Defog CloudSync] No cloud data found');
       return { data: null };
     }
 
-    const parsed = JSON.parse(data.value);
+    const parsed = result.data;
+    const totalStocks = parsed.tabs?.reduce(
+      (n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0
+    ) || 0;
+
     console.log(
       '[Defog CloudSync] Loaded from cloud:',
       parsed.tabs?.length, 'tabs,',
-      parsed.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0), 'stocks,',
-      parsed.settings?.apiKey ? 'API key present' : 'no API key'
+      totalStocks, 'stocks'
     );
 
-    // Update the hash so we don't immediately re-save what we just loaded
-    lastSavedHash = simpleHash(data.value);
+    // Update hash so we don't immediately re-save what we just loaded
+    lastSavedHash = simpleHash(JSON.stringify(parsed));
 
     return { data: parsed };
   } catch (err) {
@@ -141,7 +130,7 @@ export async function loadDefogStateFromCloud(): Promise<{
   }
 }
 
-// Debounced cloud save - call this on every state change
+// Debounced cloud save — call this on every state change
 export function scheduleCloudSave(state: Partial<AppState>): void {
   if (syncTimeout) {
     clearTimeout(syncTimeout);
