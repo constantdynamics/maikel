@@ -22,14 +22,37 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       return;
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.push('/login');
-      } else {
+    let cancelled = false;
+
+    async function checkAuth() {
+      // First try getSession (reads from storage)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+
+      if (session) {
         setAuthenticated(true);
+        setLoading(false);
+        return;
+      }
+
+      // No session from storage — give onAuthStateChange a moment
+      // to fire (e.g. token refresh in progress or OAuth redirect)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (cancelled) return;
+
+      // Check once more after the brief wait
+      const { data: { session: retrySession } } = await supabase.auth.getSession();
+      if (cancelled) return;
+
+      if (retrySession) {
+        setAuthenticated(true);
+      } else {
+        router.push('/login');
       }
       setLoading(false);
-    });
+    }
+
+    checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -38,11 +61,15 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           setAuthenticated(false);
         } else if (session) {
           setAuthenticated(true);
+          setLoading(false);
         }
       },
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [router, isPublicRoute]);
 
   // Public routes render without auth wrapper

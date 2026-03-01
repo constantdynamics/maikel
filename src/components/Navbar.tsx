@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -57,7 +58,7 @@ export default function Navbar() {
     <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3 relative z-50 shrink-0">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <a href="/dashboard" className="flex items-center">
+          <Link href="/dashboard" className="flex items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
@@ -66,10 +67,10 @@ export default function Navbar() {
               height={40}
               className="rounded-lg"
             />
-          </a>
+          </Link>
           <div className="flex items-center gap-1">
             {navItems.map((item) => (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
                 className={`px-3 py-1.5 rounded text-sm transition-colors ${
@@ -79,7 +80,7 @@ export default function Navbar() {
                 }`}
               >
                 {item.label}
-              </a>
+              </Link>
             ))}
           </div>
         </div>

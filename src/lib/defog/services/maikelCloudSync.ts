@@ -23,6 +23,16 @@ function simpleHash(str: string): string {
   return String(hash);
 }
 
+// Track whether we successfully loaded data from cloud this session.
+// Prevents overwriting cloud data with empty state on a fresh deployment.
+let cloudLoadedThisSession = false;
+let minimumStockCountForSave = 0;
+
+export function markCloudLoadSuccess(stockCount: number) {
+  cloudLoadedThisSession = true;
+  minimumStockCountForSave = Math.max(minimumStockCountForSave, Math.floor(stockCount * 0.7));
+}
+
 export async function saveDefogStateToCloud(
   state: Partial<AppState>
 ): Promise<{ success: boolean; error?: string }> {
@@ -39,6 +49,19 @@ export async function saveDefogStateToCloud(
       lastSyncTime: new Date().toISOString(),
       encryptionKeyHash: state.encryptionKeyHash,
     };
+
+    // SAFETY: Never overwrite cloud data with empty/near-empty state
+    const totalStocks = dataToSave.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0) || 0;
+
+    if (totalStocks === 0) {
+      console.warn('[Defog CloudSync] BLOCKED: refusing to save empty state to cloud');
+      return { success: false, error: 'Blocked: empty state' };
+    }
+
+    if (cloudLoadedThisSession && totalStocks < minimumStockCountForSave) {
+      console.warn(`[Defog CloudSync] BLOCKED: stock count ${totalStocks} is below safety threshold ${minimumStockCountForSave}`);
+      return { success: false, error: 'Blocked: stock count too low' };
+    }
 
     const json = JSON.stringify(dataToSave);
     const hash = simpleHash(json);

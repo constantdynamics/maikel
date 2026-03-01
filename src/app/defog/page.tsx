@@ -7,7 +7,7 @@ import { syncScannerToDefog, shouldRunWeeklyRefresh, refreshDefogTop250 } from '
 import { SmartRefreshEngine } from '@/lib/defog/services/smartRefresh';
 import { fetchRangesForNewStocks, recalculateAllBuyLimits } from '@/lib/defog/services/postSyncRangeFetch';
 import { saveToLocalStorage, loadFromLocalStorage, getSessionPassword } from '@/lib/defog/utils/storage';
-import { loadDefogStateFromCloud, scheduleCloudSave } from '@/lib/defog/services/maikelCloudSync';
+import { loadDefogStateFromCloud, scheduleCloudSave, markCloudLoadSuccess } from '@/lib/defog/services/maikelCloudSync';
 
 const SESSION_PASSWORD = 'maikel-integrated';
 
@@ -130,24 +130,38 @@ export default function DefogPage() {
         } catch { /* ignore parse errors */ }
       }
 
-      // Fallback: try Maikel Supabase cloud backup
+      // Fallback: try Maikel Supabase cloud backup (with retry)
       if (!saved) {
-        try {
-          console.log('[Defog] No local data found, trying cloud...');
-          const { data: cloudData } = await loadDefogStateFromCloud();
-          if (cloudData) {
-            saved = cloudData;
-            source = 'Maikel cloud';
-            console.log('[Defog] Restored from Maikel cloud backup!');
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            console.log(`[Defog] No local data found, trying cloud (attempt ${attempt}/3)...`);
+            const { data: cloudData, error: cloudError } = await loadDefogStateFromCloud();
+            if (cloudData) {
+              saved = cloudData;
+              source = 'Maikel cloud';
+              console.log('[Defog] Restored from Maikel cloud backup!');
+              break;
+            }
+            if (cloudError && attempt < 3) {
+              console.warn(`[Defog] Cloud attempt ${attempt} failed: ${cloudError}, retrying...`);
+              await new Promise(r => setTimeout(r, attempt * 1000));
+            }
+          } catch (e) {
+            console.error(`[Defog] Cloud restore attempt ${attempt} failed:`, e);
+            if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 1000));
           }
-        } catch (e) {
-          console.error('[Defog] Cloud restore failed:', e);
         }
       }
 
       if (saved) {
         useStore.getState().loadState(saved);
         console.log(`[Defog] Loaded persisted state from ${source}:`, saved.tabs?.length, 'tabs');
+
+        // Track cloud load success for safety checks
+        const totalStocks = saved.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0) || 0;
+        if (totalStocks > 0) {
+          markCloudLoadSuccess(totalStocks);
+        }
 
         // Deduplicate all tabs on load (clean up historical duplicates)
         deduplicateAllTabs();
