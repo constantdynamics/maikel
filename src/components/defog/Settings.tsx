@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { UserSettings, ApiProvider, ChartTimeframe, FontSize, ColorScheme, ApiKeyConfig, Tab, ArchivedStock, PurchasedStock, LimitHistory, ColumnVisibility, ViewMode, HeaderButtonVisibility, BuySignalDisplayOptions, FixedTabColors, ScanPriorityWeights } from '@/lib/defog/types';
 import { Modal } from './Modal';
+import { SCANNER_TAB_NAMES } from '@/lib/defog/scannerSync';
 import { VERSION, BUILD_DATE } from '@/lib/defog/version';
 import { getAllApiUsage, resetAllUsage } from '@/lib/defog/services/rateLimiter';
 import { PlusIcon, TrashIcon, DevicePhoneMobileIcon, ComputerDesktopIcon, ArrowsRightLeftIcon, ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
@@ -113,6 +114,9 @@ export function Settings({
   const [scanWeights, setScanWeights] = useState<ScanPriorityWeights>(
     settings.scanPriorityWeights || DEFAULT_SCAN_WEIGHTS
   );
+  const [hiddenTabIds, setHiddenTabIds] = useState<string[]>(
+    settings.hiddenTabIds || []
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -142,6 +146,7 @@ export function Settings({
     setBuySignalDisplay(settings.buySignalDisplay || { showTabName: false, compactMode: true });
     setFixedTabColors(settings.fixedTabColors || { all: 'rainbow', topGainers: '#00ff88', topLosers: '#ff3366', purchased: '#00ff88' });
     setScanWeights(settings.scanPriorityWeights || DEFAULT_SCAN_WEIGHTS);
+    setHiddenTabIds(settings.hiddenTabIds || []);
   }, [settings]);
 
   // Collect all current local state into a settings update
@@ -151,9 +156,9 @@ export function Settings({
     return {
       apiKey, apiProvider, apiKeys: apiKeys.filter(k => k.apiKey),
       notifications: { enabled: notificationsEnabled, audioEnabled, pushEnabled, thresholds: parsedThresholds, quietHours: { enabled: quietHoursEnabled, start: quietHoursStart, end: quietHoursEnd }, dailyDropAlert: parsedDailyDrop && !isNaN(parsedDailyDrop) ? parsedDailyDrop : null },
-      globalChartTimeframe: globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanPriorityWeights: scanWeights,
+      globalChartTimeframe: globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanPriorityWeights: scanWeights, hiddenTabIds,
     };
-  }, [apiKey, apiProvider, apiKeys, notificationsEnabled, audioEnabled, pushEnabled, thresholds, quietHoursEnabled, quietHoursStart, quietHoursEnd, dailyDropAlert, globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanWeights]);
+  }, [apiKey, apiProvider, apiKeys, notificationsEnabled, audioEnabled, pushEnabled, thresholds, quietHoursEnabled, quietHoursStart, quietHoursEnd, dailyDropAlert, globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanWeights, hiddenTabIds]);
 
   // ALWAYS save when closing — whether via Save button or X/overlay close
   const handleClose = useCallback(() => {
@@ -381,6 +386,36 @@ export function Settings({
                     <input type="color" value={fixedTabColors[key]} onChange={(e) => setFixedTabColors(prev => ({ ...prev, [key]: e.target.value }))} className="w-8 h-8 rounded cursor-pointer bg-transparent" />
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="p-3 bg-[#2d2d2d] rounded-lg">
+              <label className="block text-sm text-gray-400 mb-3">Tabbladen zichtbaarheid</label>
+              <p className="text-xs text-gray-500 mb-3">Verborgen tabbladen worden nog steeds gesynchroniseerd maar niet getoond.</p>
+              <div className="space-y-2">
+                {tabs.map((tab) => {
+                  const isScanner = (SCANNER_TAB_NAMES as readonly string[]).includes(tab.name);
+                  const isHidden = hiddenTabIds.includes(tab.id);
+                  return (
+                    <label key={tab.id} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!isHidden}
+                        onChange={() => {
+                          setHiddenTabIds((prev) =>
+                            prev.includes(tab.id) ? prev.filter((id) => id !== tab.id) : [...prev, tab.id]
+                          );
+                        }}
+                        className="w-4 h-4 rounded border-gray-500 bg-[#3d3d3d] text-[#00ff88] focus:ring-[#00ff88] focus:ring-offset-0"
+                      />
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tab.accentColor }} />
+                      <span className={`text-sm ${isHidden ? 'text-gray-500' : 'text-white'}`}>{tab.name}</span>
+                      <span className="text-xs text-gray-500">({tab.stocks.length})</span>
+                      {isScanner && <span className="text-[10px] text-gray-600 ml-auto">scanner</span>}
+                    </label>
+                  );
+                })}
+                {tabs.length === 0 && <p className="text-xs text-gray-500">Geen tabbladen beschikbaar</p>}
               </div>
             </div>
 

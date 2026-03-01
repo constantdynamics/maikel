@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { PlusIcon, Cog6ToothIcon, ChevronUpIcon, ChevronDownIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { useState } from 'react';
+import { PlusIcon, Cog6ToothIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import type { Tab, FixedTabColors } from '@/lib/defog/types';
 import { SCANNER_TAB_NAMES } from '@/lib/defog/scannerSync';
 import { Modal } from './Modal';
@@ -19,7 +19,6 @@ interface TabBarProps {
   allStockCount?: number;
   purchasedStockCount?: number;
   hiddenTabIds: string[];
-  onToggleTabVisibility: (tabId: string) => void;
 }
 
 const ACCENT_COLORS = [
@@ -56,7 +55,6 @@ export function TabBar({
   allStockCount = 0,
   purchasedStockCount = 0,
   hiddenTabIds,
-  onToggleTabVisibility,
 }: TabBarProps) {
   // Merge with defaults to ensure all colors are present
   const colors = { ...DEFAULT_FIXED_COLORS, ...fixedTabColors };
@@ -65,26 +63,11 @@ export function TabBar({
   const [editingTab, setEditingTab] = useState<Tab | null>(null);
   const [newTabName, setNewTabName] = useState('');
   const [newTabColor, setNewTabColor] = useState(ACCENT_COLORS[0]);
-  const [showVisibilityMenu, setShowVisibilityMenu] = useState(false);
-  const visMenuRef = useRef<HTMLDivElement>(null);
 
-  // Close visibility menu on outside click
-  useEffect(() => {
-    if (!showVisibilityMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (visMenuRef.current && !visMenuRef.current.contains(e.target as Node)) {
-        setShowVisibilityMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showVisibilityMenu]);
-
-  // Split tabs into scanner tabs and user tabs
+  // Split tabs into scanner tabs and user tabs, filter by visibility
+  const hiddenSet = new Set(hiddenTabIds);
   const scannerTabs = tabs.filter((t) => SCANNER_TAB_SET.has(t.name));
   const userTabs = tabs.filter((t) => !SCANNER_TAB_SET.has(t.name));
-
-  const hiddenSet = new Set(hiddenTabIds);
   const visibleUserTabs = userTabs.filter((t) => !hiddenSet.has(t.id));
   const visibleScannerTabs = scannerTabs.filter((t) => !hiddenSet.has(t.id));
 
@@ -164,7 +147,7 @@ export function TabBar({
   return (
     <>
       <div className="space-y-2">
-        {/* Row 1: Fixed tabs (Alles, Top, Gekocht) + Visibility toggle */}
+        {/* Row 1: Fixed tabs (Alles, Top, Gekocht) */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-[#3d3d3d] scrollbar-track-transparent">
         {/* "All" overview tab - Custom color or Rainbow style */}
         <button
@@ -237,99 +220,9 @@ export function TabBar({
           <span className="text-sm font-bold">💰 Gekocht</span>
           <span className="text-xs opacity-80">({purchasedStockCount})</span>
         </button>
-
-        {/* Visibility toggle button */}
-        <div className="relative ml-auto" ref={visMenuRef}>
-          <button
-            onClick={() => setShowVisibilityMenu(!showVisibilityMenu)}
-            className={`flex items-center gap-1 px-3 py-2.5 rounded-lg transition-colors ${
-              showVisibilityMenu
-                ? 'bg-[#2d2d2d] text-white'
-                : 'text-gray-400 hover:text-white hover:bg-[#2d2d2d]'
-            }`}
-            title="Tabbladen zichtbaarheid"
-          >
-            <EyeIcon className="w-4 h-4" />
-          </button>
-
-          {showVisibilityMenu && (
-            <div className="absolute right-0 top-full mt-1 w-64 rounded-lg shadow-xl z-50"
-              style={{ backgroundColor: '#222', border: '1px solid #3d3d3d' }}
-            >
-              <div className="p-2">
-                {/* Scanner tabs section */}
-                {scannerTabs.length > 0 && (
-                  <>
-                    <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
-                      Scanner tabs
-                    </div>
-                    {scannerTabs.map((tab) => {
-                      const isHidden = hiddenSet.has(tab.id);
-                      return (
-                        <button
-                          key={tab.id}
-                          onClick={() => onToggleTabVisibility(tab.id)}
-                          className="flex items-center gap-2 w-full px-2 py-1.5 rounded hover:bg-white/5 transition-colors"
-                        >
-                          {isHidden ? (
-                            <EyeSlashIcon className="w-4 h-4 text-gray-500" />
-                          ) : (
-                            <EyeIcon className="w-4 h-4 text-white" />
-                          )}
-                          <span
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: tab.accentColor }}
-                          />
-                          <span className={`text-sm ${isHidden ? 'text-gray-500' : 'text-white'}`}>
-                            {tab.name}
-                          </span>
-                          <span className="text-xs text-gray-500 ml-auto">({tab.stocks.length})</span>
-                        </button>
-                      );
-                    })}
-                  </>
-                )}
-
-                {/* User tabs section */}
-                {userTabs.length > 0 && (
-                  <>
-                    <div className="px-2 py-1 mt-1 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-t border-[#3d3d3d]">
-                      Eigen tabs
-                    </div>
-                    {userTabs.map((tab) => {
-                      const isHidden = hiddenSet.has(tab.id);
-                      return (
-                        <button
-                          key={tab.id}
-                          onClick={() => onToggleTabVisibility(tab.id)}
-                          className="flex items-center gap-2 w-full px-2 py-1.5 rounded hover:bg-white/5 transition-colors"
-                        >
-                          {isHidden ? (
-                            <EyeSlashIcon className="w-4 h-4 text-gray-500" />
-                          ) : (
-                            <EyeIcon className="w-4 h-4 text-white" />
-                          )}
-                          <span
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: tab.accentColor }}
-                          />
-                          <span className={`text-sm ${isHidden ? 'text-gray-500' : 'text-white'}`}>
-                            {tab.name}
-                          </span>
-                          <span className="text-xs text-gray-500 ml-auto">({tab.stocks.length})</span>
-                        </button>
-                      );
-                    })}
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
         </div>
 
         {/* Row 2: User-created tabs (filtered by visibility) */}
-        {visibleUserTabs.length > 0 && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-[#3d3d3d] scrollbar-track-transparent">
           {visibleUserTabs.map(renderTabButton)}
 
@@ -341,20 +234,6 @@ export function TabBar({
             <span className="text-sm">New Tab</span>
           </button>
         </div>
-        )}
-
-        {/* Show New Tab button alone if no user tabs visible */}
-        {visibleUserTabs.length === 0 && (
-        <div className="flex items-center gap-2 pb-1">
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1 px-3 py-2.5 text-gray-400 hover:text-white hover:bg-[#2d2d2d] rounded-lg transition-colors"
-          >
-            <PlusIcon className="w-4 h-4" />
-            <span className="text-sm">New Tab</span>
-          </button>
-        </div>
-        )}
 
         {/* Row 3: Scanner tabs (filtered by visibility) */}
         {visibleScannerTabs.length > 0 && (
