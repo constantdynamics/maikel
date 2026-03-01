@@ -21,7 +21,7 @@ import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
-type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining';
+type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
 
 interface ScanSession {
   id: string;
@@ -113,6 +113,44 @@ export default function DashboardPage() {
     refreshStocks: mnRefreshStocks,
   } = useSectorStocks('mining');
 
+  // Hydrogen state
+  const {
+    stocks: h2Stocks,
+    loading: h2Loading,
+    filters: h2Filters,
+    setFilters: setH2Filters,
+    sort: h2Sort,
+    handleSort: h2HandleSort,
+    sectors: h2Sectors,
+    markets: h2Markets,
+    scanSessions: h2ScanSessions,
+    toggleFavorite: h2ToggleFavorite,
+    deleteStock: h2DeleteStock,
+    bulkFavorite: h2BulkFavorite,
+    bulkDelete: h2BulkDelete,
+    bulkArchive: h2BulkArchive,
+    refreshStocks: h2RefreshStocks,
+  } = useSectorStocks('hydrogen');
+
+  // Shipping state
+  const {
+    stocks: shpStocks,
+    loading: shpLoading,
+    filters: shpFilters,
+    setFilters: setShpFilters,
+    sort: shpSort,
+    handleSort: shpHandleSort,
+    sectors: shpSectors,
+    markets: shpMarkets,
+    scanSessions: shpScanSessions,
+    toggleFavorite: shpToggleFavorite,
+    deleteStock: shpDeleteStock,
+    bulkFavorite: shpBulkFavorite,
+    bulkDelete: shpBulkDelete,
+    bulkArchive: shpBulkArchive,
+    refreshStocks: shpRefreshStocks,
+  } = useSectorStocks('shipping');
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [underwaterMode, setUnderwaterMode] = useState(false);
 
@@ -143,6 +181,20 @@ export default function DashboardPage() {
   const [mnAutoScan, setMnAutoScan] = useState(false);
   const [mnAutoNext, setMnAutoNext] = useState<Date | null>(null);
   const mnAutoLastRun = useRef<number>(0);
+
+  // Hydrogen scan state
+  const [h2ScanRunning, setH2ScanRunning] = useState(false);
+  const [h2ScanTriggered, setH2ScanTriggered] = useState(false);
+  const [h2AutoScan, setH2AutoScan] = useState(false);
+  const [h2AutoNext, setH2AutoNext] = useState<Date | null>(null);
+  const h2AutoLastRun = useRef<number>(0);
+
+  // Shipping scan state
+  const [shpScanRunning, setShpScanRunning] = useState(false);
+  const [shpScanTriggered, setShpScanTriggered] = useState(false);
+  const [shpAutoScan, setShpAutoScan] = useState(false);
+  const [shpAutoNext, setShpAutoNext] = useState<Date | null>(null);
+  const shpAutoLastRun = useRef<number>(0);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
@@ -182,7 +234,7 @@ export default function DashboardPage() {
         }
       }
       if (e.key === 'a' || e.key === 'A') {
-        if (selectedIds.size > 0 && (activeTab === 'kuifje' || activeTab === 'biopharma' || activeTab === 'mining')) {
+        if (selectedIds.size > 0 && (activeTab === 'kuifje' || activeTab === 'biopharma' || activeTab === 'mining' || activeTab === 'hydrogen' || activeTab === 'shipping')) {
           handleBulkArchive();
         }
       }
@@ -200,13 +252,15 @@ export default function DashboardPage() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds(new Set());
-  }, [filters, sort, zbFilters, zbSort, bpFilters, bpSort, mnFilters, mnSort, activeTab]);
+  }, [filters, sort, zbFilters, zbSort, bpFilters, bpSort, mnFilters, mnSort, h2Filters, h2Sort, shpFilters, shpSort, activeTab]);
 
   // Pagination for active tab
   const activeStocks = activeTab === 'kuifje' ? stocks
     : activeTab === 'zonnebloem' ? zbStocks
     : activeTab === 'biopharma' ? bpStocks
-    : mnStocks;
+    : activeTab === 'mining' ? mnStocks
+    : activeTab === 'hydrogen' ? h2Stocks
+    : shpStocks;
   const totalPages = Math.ceil(activeStocks.length / ITEMS_PER_PAGE);
   const paginatedStocks = activeStocks.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -278,10 +332,11 @@ export default function DashboardPage() {
   }
 
   async function handleRunSectorScan(type: SectorScannerType) {
-    const setRunning = type === 'biopharma' ? setBpScanRunning : setMnScanRunning;
-    const setTriggered = type === 'biopharma' ? setBpScanTriggered : setMnScanTriggered;
-    const refresh = type === 'biopharma' ? bpRefreshStocks : mnRefreshStocks;
-    const label = type === 'biopharma' ? 'BioPharma' : 'Mining';
+    const setRunning = type === 'biopharma' ? setBpScanRunning : type === 'mining' ? setMnScanRunning : type === 'hydrogen' ? setH2ScanRunning : setShpScanRunning;
+    const setTriggered = type === 'biopharma' ? setBpScanTriggered : type === 'mining' ? setMnScanTriggered : type === 'hydrogen' ? setH2ScanTriggered : setShpScanTriggered;
+    const refresh = type === 'biopharma' ? bpRefreshStocks : type === 'mining' ? mnRefreshStocks : type === 'hydrogen' ? h2RefreshStocks : shpRefreshStocks;
+    const labelMap: Record<SectorScannerType, string> = { biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' };
+    const label = labelMap[type];
 
     setRunning(true);
     setTriggered(true);
@@ -334,12 +389,12 @@ export default function DashboardPage() {
   }
 
   function handleSectorScanComplete(type: SectorScannerType) {
-    const setRunning = type === 'biopharma' ? setBpScanRunning : setMnScanRunning;
-    const setTriggered = type === 'biopharma' ? setBpScanTriggered : setMnScanTriggered;
-    const refresh = type === 'biopharma' ? bpRefreshStocks : mnRefreshStocks;
-    const autoScan = type === 'biopharma' ? bpAutoScan : mnAutoScan;
-    const setAutoNext = type === 'biopharma' ? setBpAutoNext : setMnAutoNext;
-    const autoLastRun = type === 'biopharma' ? bpAutoLastRun : mnAutoLastRun;
+    const setRunning = type === 'biopharma' ? setBpScanRunning : type === 'mining' ? setMnScanRunning : type === 'hydrogen' ? setH2ScanRunning : setShpScanRunning;
+    const setTriggered = type === 'biopharma' ? setBpScanTriggered : type === 'mining' ? setMnScanTriggered : type === 'hydrogen' ? setH2ScanTriggered : setShpScanTriggered;
+    const refresh = type === 'biopharma' ? bpRefreshStocks : type === 'mining' ? mnRefreshStocks : type === 'hydrogen' ? h2RefreshStocks : shpRefreshStocks;
+    const autoScan = type === 'biopharma' ? bpAutoScan : type === 'mining' ? mnAutoScan : type === 'hydrogen' ? h2AutoScan : shpAutoScan;
+    const setAutoNext = type === 'biopharma' ? setBpAutoNext : type === 'mining' ? setMnAutoNext : type === 'hydrogen' ? setH2AutoNext : setShpAutoNext;
+    const autoLastRun = type === 'biopharma' ? bpAutoLastRun : type === 'mining' ? mnAutoLastRun : type === 'hydrogen' ? h2AutoLastRun : shpAutoLastRun;
 
     setRunning(false);
     setTriggered(false);
@@ -381,6 +436,18 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mnAutoScan, mnScanRunning]);
 
+  const h2AutoCheck = useCallback(() => {
+    if (!h2AutoScan || h2ScanRunning) return;
+    if (Date.now() - h2AutoLastRun.current >= AUTO_INTERVAL) handleRunSectorScan('hydrogen');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [h2AutoScan, h2ScanRunning]);
+
+  const shpAutoCheck = useCallback(() => {
+    if (!shpAutoScan || shpScanRunning) return;
+    if (Date.now() - shpAutoLastRun.current >= AUTO_INTERVAL) handleRunSectorScan('shipping');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shpAutoScan, shpScanRunning]);
+
   // Start first scan when auto-scan toggles on
   useEffect(() => {
     if (kuifjeAutoScan && !scanRunning) {
@@ -418,32 +485,54 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mnAutoScan]);
 
+  useEffect(() => {
+    if (h2AutoScan && !h2ScanRunning) {
+      h2AutoLastRun.current = Date.now();
+      handleRunSectorScan('hydrogen');
+      setH2AutoNext(new Date(Date.now() + AUTO_INTERVAL));
+    } else if (!h2AutoScan) setH2AutoNext(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [h2AutoScan]);
+
+  useEffect(() => {
+    if (shpAutoScan && !shpScanRunning) {
+      shpAutoLastRun.current = Date.now();
+      handleRunSectorScan('shipping');
+      setShpAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+    } else if (!shpAutoScan) setShpAutoNext(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shpAutoScan]);
+
   // Polling timer
   useEffect(() => {
-    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan) return;
     const timer = setInterval(() => {
       kuifjeAutoCheck();
       zbAutoCheck();
       bpAutoCheck();
       mnAutoCheck();
+      h2AutoCheck();
+      shpAutoCheck();
     }, 30_000);
     return () => clearInterval(timer);
-  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck]);
 
   // Visibility change catch-up
   useEffect(() => {
-    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan) return;
     function onVisible() {
       if (document.visibilityState === 'visible') {
         kuifjeAutoCheck();
         zbAutoCheck();
         bpAutoCheck();
         mnAutoCheck();
+        h2AutoCheck();
+        shpAutoCheck();
       }
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck]);
 
   // ===== BULK ACTIONS =====
 
@@ -451,7 +540,9 @@ export default function DashboardPage() {
     if (activeTab === 'kuifje') bulkFavorite(selectedIds);
     else if (activeTab === 'zonnebloem') zbBulkFavorite(selectedIds);
     else if (activeTab === 'biopharma') bpBulkFavorite(selectedIds);
-    else mnBulkFavorite(selectedIds);
+    else if (activeTab === 'mining') mnBulkFavorite(selectedIds);
+    else if (activeTab === 'hydrogen') h2BulkFavorite(selectedIds);
+    else shpBulkFavorite(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -459,7 +550,9 @@ export default function DashboardPage() {
     if (activeTab === 'kuifje') bulkArchive(selectedIds);
     else if (activeTab === 'zonnebloem') zbBulkArchive(selectedIds);
     else if (activeTab === 'biopharma') bpBulkArchive(selectedIds);
-    else mnBulkArchive(selectedIds);
+    else if (activeTab === 'mining') mnBulkArchive(selectedIds);
+    else if (activeTab === 'hydrogen') h2BulkArchive(selectedIds);
+    else shpBulkArchive(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -473,7 +566,9 @@ export default function DashboardPage() {
         if (activeTab === 'kuifje') bulkDelete(selectedIds);
         else if (activeTab === 'zonnebloem') zbBulkDelete(selectedIds);
         else if (activeTab === 'biopharma') bpBulkDelete(selectedIds);
-        else mnBulkDelete(selectedIds);
+        else if (activeTab === 'mining') mnBulkDelete(selectedIds);
+        else if (activeTab === 'hydrogen') h2BulkDelete(selectedIds);
+        else shpBulkDelete(selectedIds);
         setSelectedIds(new Set());
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
@@ -481,7 +576,7 @@ export default function DashboardPage() {
   }
 
   function requestDelete(id: string) {
-    const allStocks = activeTab === 'kuifje' ? stocks : activeTab === 'zonnebloem' ? zbStocks : activeTab === 'biopharma' ? bpStocks : mnStocks;
+    const allStocks = activeTab === 'kuifje' ? stocks : activeTab === 'zonnebloem' ? zbStocks : activeTab === 'biopharma' ? bpStocks : activeTab === 'mining' ? mnStocks : activeTab === 'hydrogen' ? h2Stocks : shpStocks;
     const stock = allStocks.find((s) => s.id === id);
     setConfirmDialog({
       open: true,
@@ -491,7 +586,9 @@ export default function DashboardPage() {
         if (activeTab === 'kuifje') deleteStock(id);
         else if (activeTab === 'zonnebloem') zbDeleteStock(id);
         else if (activeTab === 'biopharma') bpDeleteStock(id);
-        else mnDeleteStock(id);
+        else if (activeTab === 'mining') mnDeleteStock(id);
+        else if (activeTab === 'hydrogen') h2DeleteStock(id);
+        else shpDeleteStock(id);
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
     });
@@ -518,9 +615,9 @@ export default function DashboardPage() {
   }
 
   // Count how many auto-scans are active
-  const allAutoActive = kuifjeAutoScan && zbAutoScan && bpAutoScan && mnAutoScan;
-  const anyAutoActive = kuifjeAutoScan || zbAutoScan || bpAutoScan || mnAutoScan;
-  const autoCount = [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan].filter(Boolean).length;
+  const allAutoActive = kuifjeAutoScan && zbAutoScan && bpAutoScan && mnAutoScan && h2AutoScan && shpAutoScan;
+  const anyAutoActive = kuifjeAutoScan || zbAutoScan || bpAutoScan || mnAutoScan || h2AutoScan || shpAutoScan;
+  const autoCount = [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan].filter(Boolean).length;
 
   // ===== RENDER SECTOR TAB (shared for BioPharma & Mining) =====
   function renderSectorTab(
@@ -776,6 +873,28 @@ export default function DashboardPage() {
               Mining
               <span className="ml-2 text-xs text-[var(--text-muted)]">({mnStocks.length})</span>
             </button>
+            <button
+              onClick={() => setActiveTab('hydrogen')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'hydrogen'
+                  ? 'border-cyan-500 text-cyan-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Hydrogen
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({h2Stocks.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('shipping')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'shipping'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Shipping
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({shpStocks.length})</span>
+            </button>
           </div>
 
           <div className="ml-auto flex items-center gap-2 py-1">
@@ -786,6 +905,8 @@ export default function DashboardPage() {
                 setZbAutoScan(newState);
                 setBpAutoScan(newState);
                 setMnAutoScan(newState);
+                setH2AutoScan(newState);
+                setShpAutoScan(newState);
               }}
               className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
                 allAutoActive
@@ -794,7 +915,7 @@ export default function DashboardPage() {
               }`}
             >
               <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
-              {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/4)` : 'Auto-scan All'}
+              {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/6)` : 'Auto-scan All'}
             </button>
 
             {/* Export moved to Defog Settings > Data tab */}
@@ -1010,12 +1131,30 @@ export default function DashboardPage() {
           mnScanRunning, mnScanTriggered, mnAutoScan, setMnAutoScan, mnAutoNext,
         )}
 
+        {/* Hydrogen Tab */}
+        {activeTab === 'hydrogen' && renderSectorTab(
+          'hydrogen', 'Hydrogen', 'cyan', 'bg-cyan-600 hover:bg-cyan-700',
+          h2Stocks, h2Loading, h2Filters, setH2Filters, h2Sort, h2HandleSort,
+          h2Sectors, h2Markets, h2ScanSessions, h2ToggleFavorite,
+          h2ScanRunning, h2ScanTriggered, h2AutoScan, setH2AutoScan, h2AutoNext,
+        )}
+
+        {/* Shipping Tab */}
+        {activeTab === 'shipping' && renderSectorTab(
+          'shipping', 'Shipping', 'blue', 'bg-blue-600 hover:bg-blue-700',
+          shpStocks, shpLoading, shpFilters, setShpFilters, shpSort, shpHandleSort,
+          shpSectors, shpMarkets, shpScanSessions, shpToggleFavorite,
+          shpScanRunning, shpScanTriggered, shpAutoScan, setShpAutoScan, shpAutoNext,
+        )}
+
         {underwaterMode && (
           <UnderwaterMode
             zbStocks={zbStocks}
             kuifjeStocks={stocks}
             biopharmaStocks={bpStocks}
             miningStocks={mnStocks}
+            hydrogenStocks={h2Stocks}
+            shippingStocks={shpStocks}
             onExit={() => setUnderwaterMode(false)}
             autoScanActive={zbAutoScan}
             autoScanNext={zbAutoNext}
@@ -1033,6 +1172,14 @@ export default function DashboardPage() {
             mnAutoScanNext={mnAutoNext}
             mnScanRunning={mnScanRunning}
             onRefreshMnStocks={mnRefreshStocks}
+            h2AutoScanActive={h2AutoScan}
+            h2AutoScanNext={h2AutoNext}
+            h2ScanRunning={h2ScanRunning}
+            onRefreshH2Stocks={h2RefreshStocks}
+            shpAutoScanActive={shpAutoScan}
+            shpAutoScanNext={shpAutoNext}
+            shpScanRunning={shpScanRunning}
+            onRefreshShpStocks={shpRefreshStocks}
           />
         )}
 
