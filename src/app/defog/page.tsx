@@ -92,7 +92,10 @@ export default function DefogPage() {
   const [showRefreshPanel, setShowRefreshPanel] = useState(false);
   const engineRef = useRef<SmartRefreshEngine | null>(null);
 
-  // ── 1. Initialize: load persisted data (cloud always checked, most-recent wins) ──
+  // ── 1. Initialize: load persisted data ──
+  // Rule: LOCAL ALWAYS WINS when it has data. Cloud is only used when local is
+  // completely empty (e.g. first time on a new Vercel URL). Never downgrade
+  // stock count by preferring cloud over a richer local state.
   useEffect(() => {
     async function init() {
       if (typeof window !== 'undefined') {
@@ -103,66 +106,66 @@ export default function DefogPage() {
 
       const password = getSessionPassword() || SESSION_PASSWORD;
 
-      // Load local candidates in parallel with cloud
-      const [localResult, cloudResult] = await Promise.allSettled([
-        (async () => {
-          // Primary: IndexedDB
-          let local = await loadFromLocalStorage(password);
-          let src = 'IndexedDB';
-          if (!local) {
-            try {
-              const b = localStorage.getItem('defog-state-backup');
-              if (b) { local = JSON.parse(b); src = 'localStorage backup'; }
-            } catch { /* ignore */ }
-          }
-          if (!local) {
-            try {
-              const pb = localStorage.getItem('defog-state-backup-prev');
-              if (pb) { local = JSON.parse(pb); src = 'localStorage prev backup'; }
-            } catch { /* ignore */ }
-          }
-          return { data: local, source: src };
-        })(),
-        loadDefogStateFromCloud(),
-      ]);
+      // --- Try all local sources first (IndexedDB → localStorage backups) ---
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let localData: any = null;
+      let localSource = 'none';
 
-      const localData = localResult.status === 'fulfilled' ? localResult.value.data : null;
-      const localSource = localResult.status === 'fulfilled' ? localResult.value.source : 'none';
-      const cloudData = cloudResult.status === 'fulfilled' ? cloudResult.value.data : null;
-
-      // Pick the most recently saved version (compare lastSyncTime)
-      let saved = null;
-      let source = 'none';
-
-      if (localData && cloudData) {
-        const localTime = new Date(localData.lastSyncTime || 0).getTime();
-        const cloudTime = new Date(cloudData.lastSyncTime || 0).getTime();
-        if (cloudTime > localTime) {
-          saved = cloudData;
-          source = 'cloud (newer)';
-          console.log(`[Defog] Cloud data is newer (${cloudData.lastSyncTime} vs ${localData.lastSyncTime}), using cloud`);
-        } else {
-          saved = localData;
-          source = localSource;
-          console.log(`[Defog] Local data is newer or equal, using ${localSource}`);
-        }
-      } else if (cloudData) {
-        saved = cloudData;
-        source = 'cloud';
-        console.log('[Defog] No local data, restored from cloud');
-      } else if (localData) {
-        saved = localData;
-        source = localSource;
-        console.log('[Defog] No cloud data, using local:', localSource);
+      localData = await loadFromLocalStorage(password);
+      if (localData) {
+        localSource = 'IndexedDB';
+      } else {
+        try {
+          const b = localStorage.getItem('defog-state-backup');
+          if (b) { localData = JSON.parse(b); localSource = 'localStorage backup'; }
+        } catch { /* ignore */ }
+      }
+      if (!localData) {
+        try {
+          const pb = localStorage.getItem('defog-state-backup-prev');
+          if (pb) { localData = JSON.parse(pb); localSource = 'localStorage prev backup'; }
+        } catch { /* ignore */ }
       }
 
-      if (saved) {
-        useStore.getState().loadState(saved);
-        console.log(`[Defog] Loaded from ${source}:`, saved.tabs?.length, 'tabs,',
-          saved.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0), 'stocks');
+      // Count stocks in local data (safety metric)
+      const countStocks = (state: { tabs?: { stocks?: unknown[] }[] } | null) =>
+        state?.tabs?.reduce((n, t) => n + (t.stocks?.length || 0), 0) ?? 0;
+
+      const localCount = countStocks(localData);
+
+      // --- If local has data, use it — no cloud needed ---
+      if (localData && localCount > 0) {
+        useStore.getState().loadState(localData);
+        console.log(`[Defog] Loaded from ${localSource}: ${localData.tabs?.length} tabs, ${localCount} stocks`);
         deduplicateAllTabs();
-      } else {
-        console.log('[Defog] No persisted state found anywhere');
+        // Kick off a cloud save so future new-URL opens can restore this data
+        const state = useStore.getState();
+        scheduleCloudSave({
+          tabs: state.tabs, archive: state.archive, purchasedStocks: state.purchasedStocks,
+          notifications: state.notifications, limitHistory: state.limitHistory,
+          settings: state.settings, lastSyncTime: new Date().toISOString(),
+          encryptionKeyHash: state.encryptionKeyHash,
+        });
+        setAuthenticated(true);
+        setLoading(false);
+        setReady(true);
+        return;
+      }
+
+      // --- Local is empty → try cloud as fallback ---
+      console.log('[Defog] No local data found — trying cloud...');
+      try {
+        const { data: cloudData } = await loadDefogStateFromCloud();
+        const cloudCount = countStocks(cloudData);
+        if (cloudData && cloudCount > 0) {
+          useStore.getState().loadState(cloudData);
+          console.log(`[Defog] Restored from cloud: ${cloudData.tabs?.length} tabs, ${cloudCount} stocks`);
+          deduplicateAllTabs();
+        } else {
+          console.log('[Defog] No data found anywhere — starting fresh');
+        }
+      } catch (e) {
+        console.error('[Defog] Cloud restore failed:', e);
       }
 
       setAuthenticated(true);
