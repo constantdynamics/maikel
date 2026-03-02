@@ -68,6 +68,8 @@ const RANGE_PERIODS: { value: RangePeriod; label: string }[] = [
 ];
 
 import { TabBar } from './TabBar';
+import { ZoneTabBar, type ZoneViewState } from './ZoneTabBar';
+import { getStockCountryCode, getZoneForCountryCode, type ZoneId } from '@/lib/defog/countryZones';
 import { StockCard } from './StockCard';
 import { MobileStockCard } from './MobileStockCard';
 import { BuySignals } from './BuySignals';
@@ -122,6 +124,27 @@ export function Dashboard() {
   // Scan date filter — filter stocks by the date they were added (addedAt)
   // Only relevant for scanner tabs (Kuifje, Prof. Zonnebloem)
   const [scanDateFilter, setScanDateFilter] = useState<string | null>(null); // null = "Alle", or ISO date string "2026-02-18"
+
+  // Tab view mode: 'custom' (default) = user/scanner tabs, 'zone' = geographic zone tabs
+  const [tabViewMode, setTabViewMode] = useState<'custom' | 'zone'>(() => {
+    try { return (localStorage.getItem('defog-tab-view-mode') as 'custom' | 'zone') || 'custom'; } catch { return 'custom'; }
+  });
+
+  // Zone view state: which zone + country is selected
+  const [zoneViewState, setZoneViewState] = useState<ZoneViewState>({ zone: '__all__', country: '__all__' });
+
+  const handleTabViewModeChange = useCallback((mode: 'custom' | 'zone') => {
+    setTabViewMode(mode);
+    try { localStorage.setItem('defog-tab-view-mode', mode); } catch { /* ignore */ }
+  }, []);
+
+  const handleZoneSelect = useCallback((zone: ZoneId | '__all__') => {
+    setZoneViewState({ zone, country: '__all__' });
+  }, []);
+
+  const handleCountrySelect = useCallback((country: string) => {
+    setZoneViewState((prev: ZoneViewState) => ({ ...prev, country }));
+  }, []);
 
   const handleDashboardViewChange = useCallback((view: 'list' | 'tiles') => {
     setDashboardView(view);
@@ -1350,6 +1373,9 @@ export function Dashboard() {
   const isTopMoversView = store.activeTabId === '__topmovers__';
   const isPurchasedView = store.activeTabId === '__purchased__';
 
+  // In zone view mode (and not a fixed special tab), treat display like "all view"
+  const isZoneViewActive = tabViewMode === 'zone' && !isTopMoversView && !isPurchasedView;
+
   // Get all stocks from all tabs (for "All" view), deduplicated cross-tab AND within-tab
   const allStocksWithTabs = useMemo(() => {
     const result: Array<{ stock: Stock; tabId: string; tabName: string; tabColor: string }> = [];
@@ -1426,8 +1452,8 @@ export function Dashboard() {
       return normalCompare();
     };
 
-    // For "All" view, combine all stocks and sort by distance to limit
-    if (isAllView) {
+    // For "All" view or zone view, combine all stocks and sort by distance to limit
+    if (isAllView || isZoneViewActive) {
       const stocks = allStocksWithTabs.map(s => s.stock);
       return stocks.sort((a, b) => priceZeroSort(a, b, () => {
         const distA = a.buyLimit !== null ? ((a.currentPrice - a.buyLimit) / a.buyLimit) * 100 : Infinity;
@@ -1470,7 +1496,7 @@ export function Dashboard() {
     }));
 
     return stocks;
-  }, [activeTab, isAllView, allStocksWithTabs]);
+  }, [activeTab, isAllView, isZoneViewActive, allStocksWithTabs]);
 
   // Is current tab a scanner tab? (show scan date filter)
   const isScannerTab = activeTab && (activeTab.name === 'Kuifje' || activeTab.name === 'Prof. Zonnebloem');
@@ -1496,14 +1522,34 @@ export function Dashboard() {
     setScanDateFilter(null);
   }, [store.activeTabId]);
 
-  // Apply scan date filter to sortedStocks
+  // Apply scan date filter and (in zone mode) zone/country filter to sortedStocks
   const displayStocks = useMemo(() => {
-    if (!scanDateFilter || !isScannerTab) return sortedStocks;
-    return sortedStocks.filter(stock => {
-      if (!stock.addedAt) return false;
-      return stock.addedAt.split('T')[0] === scanDateFilter;
-    });
-  }, [sortedStocks, scanDateFilter, isScannerTab]);
+    let stocks = sortedStocks;
+
+    // Scan date filter (custom mode only, scanner tabs)
+    if (scanDateFilter && isScannerTab && tabViewMode === 'custom') {
+      stocks = stocks.filter(stock => {
+        if (!stock.addedAt) return false;
+        return stock.addedAt.split('T')[0] === scanDateFilter;
+      });
+    }
+
+    // Zone/country filter (zone mode only, not top-movers or purchased)
+    if (isZoneViewActive) {
+      stocks = stocks.filter(stock => {
+        const cc = getStockCountryCode(stock);
+        if (zoneViewState.zone !== '__all__') {
+          if (getZoneForCountryCode(cc) !== zoneViewState.zone) return false;
+        }
+        if (zoneViewState.country !== '__all__') {
+          if (cc !== zoneViewState.country) return false;
+        }
+        return true;
+      });
+    }
+
+    return stocks;
+  }, [sortedStocks, scanDateFilter, isScannerTab, tabViewMode, isZoneViewActive, zoneViewState]);
 
   const handleSort = (field: SortField) => {
     if (!activeTab) return;
@@ -2100,19 +2146,60 @@ export function Dashboard() {
         )}
 
         {/* Tabs + Columns row */}
-        <div className="flex items-center justify-between mb-4 mt-4">
-          <TabBar
-            tabs={store.tabs}
-            activeTabId={store.activeTabId}
-            onTabSelect={store.setActiveTab}
-            onAddTab={store.addTab}
-            onEditTab={(tabId, name, color) => store.updateTab(tabId, { name, accentColor: color })}
-            onDeleteTab={store.deleteTab}
-            fixedTabColors={store.settings.fixedTabColors}
-            allStockCount={allStocksWithTabs.length}
-            purchasedStockCount={store.purchasedStocks.length}
-            hiddenTabIds={store.settings.hiddenTabIds ?? []}
-          />
+        <div className="flex items-start justify-between mb-4 mt-4 gap-3">
+          {/* Tab view mode toggle + tabs */}
+          <div className="flex-1 min-w-0">
+            {/* Toggle button between custom tabs and zone tabs */}
+            <div className="flex items-center gap-1 mb-2">
+              <button
+                onClick={() => handleTabViewModeChange('custom')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  tabViewMode === 'custom'
+                    ? 'bg-[#3d3d3d] text-white'
+                    : 'text-gray-500 hover:text-gray-300 hover:bg-[#2d2d2d]'
+                }`}
+              >
+                📋 Eigen tabs
+              </button>
+              <button
+                onClick={() => handleTabViewModeChange('zone')}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  tabViewMode === 'zone'
+                    ? 'bg-[#3d3d3d] text-white'
+                    : 'text-gray-500 hover:text-gray-300 hover:bg-[#2d2d2d]'
+                }`}
+              >
+                🌍 Zones & landen
+              </button>
+            </div>
+
+            {tabViewMode === 'custom' ? (
+              <TabBar
+                tabs={store.tabs}
+                activeTabId={store.activeTabId}
+                onTabSelect={store.setActiveTab}
+                onAddTab={store.addTab}
+                onEditTab={(tabId, name, color) => store.updateTab(tabId, { name, accentColor: color })}
+                onDeleteTab={store.deleteTab}
+                fixedTabColors={store.settings.fixedTabColors}
+                allStockCount={allStocksWithTabs.length}
+                purchasedStockCount={store.purchasedStocks.length}
+                hiddenTabIds={store.settings.hiddenTabIds ?? []}
+              />
+            ) : (
+              <ZoneTabBar
+                allStocks={allStocksWithTabs.map(s => s.stock)}
+                activeTabId={store.activeTabId}
+                zoneViewState={zoneViewState}
+                onFixedTabSelect={store.setActiveTab}
+                onZoneSelect={handleZoneSelect}
+                onCountrySelect={handleCountrySelect}
+                fixedTabColors={store.settings.fixedTabColors}
+                allStockCount={allStocksWithTabs.length}
+                purchasedStockCount={store.purchasedStocks.length}
+              />
+            )}
+          </div>
 
           {/* Column Settings Toggle - only show on desktop view */}
           {!isMobileView && (
@@ -2564,7 +2651,7 @@ export function Dashboard() {
                   sortMode={tileSortMode}
                   onRefreshStocks={(selectedStocksList) => {
                     for (const stock of selectedStocksList) {
-                      const stockTabInfo = isAllView
+                      const stockTabInfo = (isAllView || isZoneViewActive)
                         ? allStocksWithTabs.find(s => s.stock.id === stock.id)
                         : null;
                       const tabId = stockTabInfo?.tabId || activeTab?.id;
@@ -2579,8 +2666,8 @@ export function Dashboard() {
               // Mobile view - use MobileStockCard
               <div className="space-y-2">
                 {displayStocks.map((stock) => {
-                  // Find tab info for "All" view
-                  const stockTabInfo = isAllView
+                  // Find tab info for "All" view and zone view
+                  const stockTabInfo = (isAllView || isZoneViewActive)
                     ? allStocksWithTabs.find(s => s.stock.id === stock.id)
                     : null;
                   const accentColor = stockTabInfo?.tabColor || activeTab?.accentColor || '#00ff88';
@@ -2595,13 +2682,13 @@ export function Dashboard() {
                       columnVisibility={columnVisibility}
                       onSelect={(selected) => handleStockToggle(stock.id, selected)}
                       onEdit={() => {
-                        if (isAllView && stockTabInfo) {
+                        if ((isAllView || isZoneViewActive) && stockTabInfo) {
                           store.setActiveTab(stockTabInfo.tabId);
                         }
                         setEditingStock(stock);
                       }}
                       onTimeframeChange={(tf) => handleTimeframeChange(stock.id, tf)}
-                      tabName={isAllView ? stockTabInfo?.tabName : undefined}
+                      tabName={(isAllView || isZoneViewActive) ? stockTabInfo?.tabName : undefined}
                       onCustomToggle={(checked) => {
                         const tabId = stockTabInfo?.tabId || activeTab?.id;
                         if (tabId) {
@@ -2615,8 +2702,8 @@ export function Dashboard() {
             ) : (
               // Desktop view - use StockCard
               displayStocks.map((stock) => {
-                // Find tab info for "All" view
-                const stockTabInfo = isAllView
+                // Find tab info for "All" view and zone view
+                const stockTabInfo = (isAllView || isZoneViewActive)
                   ? allStocksWithTabs.find(s => s.stock.id === stock.id)
                   : null;
                 const accentColor = stockTabInfo?.tabColor || activeTab?.accentColor || '#00ff88';
@@ -2632,13 +2719,13 @@ export function Dashboard() {
                     columnStyles={columnStyles}
                     onSelect={(selected) => handleStockToggle(stock.id, selected)}
                     onEdit={() => {
-                      if (isAllView && stockTabInfo) {
+                      if ((isAllView || isZoneViewActive) && stockTabInfo) {
                         store.setActiveTab(stockTabInfo.tabId);
                       }
                       setEditingStock(stock);
                     }}
                     onTimeframeChange={(tf) => handleTimeframeChange(stock.id, tf)}
-                    tabName={isAllView ? stockTabInfo?.tabName : undefined}
+                    tabName={(isAllView || isZoneViewActive) ? stockTabInfo?.tabName : undefined}
                     onCustomToggle={(checked) => {
                       const tabId = stockTabInfo?.tabId || activeTab?.id;
                       if (tabId) {
