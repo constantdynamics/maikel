@@ -84,6 +84,7 @@ import { Archive } from './Archive';
 import { DebugPanel } from './DebugPanel';
 import { TopMovers } from './TopMovers';
 import { PurchasedStocks } from './PurchasedStocks';
+import { DeduplicateModal } from './DeduplicateModal';
 import { useViewMode } from '@/lib/defog/useViewMode';
 
 export function Dashboard() {
@@ -106,6 +107,7 @@ export function Dashboard() {
   const [showScanLogModal, setShowScanLogModal] = useState(false);
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [showRangeLogModal, setShowRangeLogModal] = useState(false);
+  const [showDeduplicateModal, setShowDeduplicateModal] = useState(false);
   const [currentlyScanning, setCurrentlyScanning] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [isRefreshingArchive, setIsRefreshingArchive] = useState(false);
@@ -2059,6 +2061,19 @@ export function Dashboard() {
                 </button>
               )}
 
+              {/* Deduplicate button */}
+              <button
+                onClick={() => setShowDeduplicateModal(true)}
+                className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                title="Dubbele aandelen opsporen"
+              >
+                {/* Two overlapping squares icon */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4" style={{ color: 'var(--text-secondary)' }}>
+                  <rect x="3" y="3" width="13" height="13" rx="1.5" />
+                  <rect x="8" y="8" width="13" height="13" rx="1.5" />
+                </svg>
+              </button>
+
               {/* Tiles / List Toggle */}
               <button
                 onClick={() => handleDashboardViewChange(dashboardView === 'list' ? 'tiles' : 'list')}
@@ -3024,6 +3039,17 @@ export function Dashboard() {
         rangeLog={store.rangeLog}
         onClear={store.clearRangeLog}
       />
+
+      {showDeduplicateModal && (
+        <DeduplicateModal
+          tabs={store.tabs}
+          onSave={(removals) => {
+            store.removeStocks(removals);
+            setShowDeduplicateModal(false);
+          }}
+          onClose={() => setShowDeduplicateModal(false)}
+        />
+      )}
 
       {/* Floating buttons bottom-right: scroll-to-top, add stock, version */}
       {!(selectedStocks.size > 0 && !isAllView && activeTab) && (
