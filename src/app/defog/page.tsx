@@ -7,7 +7,7 @@ import { syncScannerToDefog, shouldRunWeeklyRefresh, refreshDefogTop250 } from '
 import { SmartRefreshEngine } from '@/lib/defog/services/smartRefresh';
 import { fetchRangesForNewStocks, recalculateAllBuyLimits } from '@/lib/defog/services/postSyncRangeFetch';
 import { saveToLocalStorage, loadFromLocalStorage, getSessionPassword } from '@/lib/defog/utils/storage';
-import { loadDefogStateFromCloud, scheduleCloudSave } from '@/lib/defog/services/maikelCloudSync';
+import { loadDefogStateFromCloud, scheduleCloudSave, saveDefogStateBeacon } from '@/lib/defog/services/maikelCloudSync';
 
 const SESSION_PASSWORD = 'maikel-integrated';
 
@@ -92,7 +92,7 @@ export default function DefogPage() {
   const [showRefreshPanel, setShowRefreshPanel] = useState(false);
   const engineRef = useRef<SmartRefreshEngine | null>(null);
 
-  // ── 1. Initialize: set auth + load persisted data from IndexedDB ──
+  // ── 1. Initialize: load persisted data (cloud always checked, most-recent wins) ──
   useEffect(() => {
     async function init() {
       if (typeof window !== 'undefined') {
@@ -101,58 +101,68 @@ export default function DefogPage() {
         }
       }
 
-      // Load persisted state from IndexedDB
       const password = getSessionPassword() || SESSION_PASSWORD;
-      let saved = await loadFromLocalStorage(password);
-      let source = 'IndexedDB';
 
-      // Fallback: try localStorage backup (saved on beforeunload)
-      if (!saved) {
-        try {
-          const backup = localStorage.getItem('defog-state-backup');
-          if (backup) {
-            saved = JSON.parse(backup);
-            source = 'localStorage backup';
-            console.log('[Defog] Loaded from localStorage backup');
+      // Load local candidates in parallel with cloud
+      const [localResult, cloudResult] = await Promise.allSettled([
+        (async () => {
+          // Primary: IndexedDB
+          let local = await loadFromLocalStorage(password);
+          let src = 'IndexedDB';
+          if (!local) {
+            try {
+              const b = localStorage.getItem('defog-state-backup');
+              if (b) { local = JSON.parse(b); src = 'localStorage backup'; }
+            } catch { /* ignore */ }
           }
-        } catch { /* ignore parse errors */ }
-      }
+          if (!local) {
+            try {
+              const pb = localStorage.getItem('defog-state-backup-prev');
+              if (pb) { local = JSON.parse(pb); src = 'localStorage prev backup'; }
+            } catch { /* ignore */ }
+          }
+          return { data: local, source: src };
+        })(),
+        loadDefogStateFromCloud(),
+      ]);
 
-      // Fallback: try previous localStorage backup
-      if (!saved) {
-        try {
-          const prevBackup = localStorage.getItem('defog-state-backup-prev');
-          if (prevBackup) {
-            saved = JSON.parse(prevBackup);
-            source = 'localStorage previous backup';
-            console.log('[Defog] Loaded from localStorage previous backup');
-          }
-        } catch { /* ignore parse errors */ }
-      }
+      const localData = localResult.status === 'fulfilled' ? localResult.value.data : null;
+      const localSource = localResult.status === 'fulfilled' ? localResult.value.source : 'none';
+      const cloudData = cloudResult.status === 'fulfilled' ? cloudResult.value.data : null;
 
-      // Fallback: try Maikel Supabase cloud backup
-      if (!saved) {
-        try {
-          console.log('[Defog] No local data found, trying cloud...');
-          const { data: cloudData } = await loadDefogStateFromCloud();
-          if (cloudData) {
-            saved = cloudData;
-            source = 'Maikel cloud';
-            console.log('[Defog] Restored from Maikel cloud backup!');
-          }
-        } catch (e) {
-          console.error('[Defog] Cloud restore failed:', e);
+      // Pick the most recently saved version (compare lastSyncTime)
+      let saved = null;
+      let source = 'none';
+
+      if (localData && cloudData) {
+        const localTime = new Date(localData.lastSyncTime || 0).getTime();
+        const cloudTime = new Date(cloudData.lastSyncTime || 0).getTime();
+        if (cloudTime > localTime) {
+          saved = cloudData;
+          source = 'cloud (newer)';
+          console.log(`[Defog] Cloud data is newer (${cloudData.lastSyncTime} vs ${localData.lastSyncTime}), using cloud`);
+        } else {
+          saved = localData;
+          source = localSource;
+          console.log(`[Defog] Local data is newer or equal, using ${localSource}`);
         }
+      } else if (cloudData) {
+        saved = cloudData;
+        source = 'cloud';
+        console.log('[Defog] No local data, restored from cloud');
+      } else if (localData) {
+        saved = localData;
+        source = localSource;
+        console.log('[Defog] No cloud data, using local:', localSource);
       }
 
       if (saved) {
         useStore.getState().loadState(saved);
-        console.log(`[Defog] Loaded persisted state from ${source}:`, saved.tabs?.length, 'tabs');
-
-        // Deduplicate all tabs on load (clean up historical duplicates)
+        console.log(`[Defog] Loaded from ${source}:`, saved.tabs?.length, 'tabs,',
+          saved.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0), 'stocks');
         deduplicateAllTabs();
       } else {
-        console.log('[Defog] No persisted state found (local or cloud)');
+        console.log('[Defog] No persisted state found anywhere');
       }
 
       setAuthenticated(true);
@@ -238,15 +248,21 @@ export default function DefogPage() {
         lastSyncTime: new Date().toISOString(),
         encryptionKeyHash: state.encryptionKeyHash,
       };
-      // Use synchronous localStorage as fallback (IndexedDB is async and may not complete)
+
+      // 1. Synchronous localStorage backup (per-origin, instant)
       try {
-        // Rotate backup: keep one previous backup version
         const prevBackup = localStorage.getItem('defog-state-backup');
         if (prevBackup) {
           localStorage.setItem('defog-state-backup-prev', prevBackup);
         }
         localStorage.setItem('defog-state-backup', JSON.stringify(dataToSave));
       } catch { /* quota exceeded - ignore */ }
+
+      // 2. Cloud save via sendBeacon (survives tab/window close, cross-origin)
+      saveDefogStateBeacon(dataToSave);
+
+      // Suppress unused var warning
+      void password;
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
