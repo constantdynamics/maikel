@@ -69,7 +69,8 @@ const RANGE_PERIODS: { value: RangePeriod; label: string }[] = [
 
 import { TabBar } from './TabBar';
 import { ZoneTabBar, type ZoneViewState } from './ZoneTabBar';
-import { getStockCountryCode, getZoneForCountryCode, type ZoneId } from '@/lib/defog/countryZones';
+import { ZONES, getStockCountryCode, getZoneForCountryCode, getCountryDisplayName, type ZoneId } from '@/lib/defog/countryZones';
+import { CountryFlag } from './CountryFlag';
 import { StockCard } from './StockCard';
 import { MobileStockCard } from './MobileStockCard';
 import { BuySignals } from './BuySignals';
@@ -83,6 +84,7 @@ import { Archive } from './Archive';
 import { DebugPanel } from './DebugPanel';
 import { TopMovers } from './TopMovers';
 import { PurchasedStocks } from './PurchasedStocks';
+import { DeduplicateModal } from './DeduplicateModal';
 import { useViewMode } from '@/lib/defog/useViewMode';
 
 export function Dashboard() {
@@ -105,6 +107,7 @@ export function Dashboard() {
   const [showScanLogModal, setShowScanLogModal] = useState(false);
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [showRangeLogModal, setShowRangeLogModal] = useState(false);
+  const [showDeduplicateModal, setShowDeduplicateModal] = useState(false);
   const [currentlyScanning, setCurrentlyScanning] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [isRefreshingArchive, setIsRefreshingArchive] = useState(false);
@@ -1373,8 +1376,12 @@ export function Dashboard() {
   const isTopMoversView = store.activeTabId === '__topmovers__';
   const isPurchasedView = store.activeTabId === '__purchased__';
 
-  // In zone view mode (and not a fixed special tab), treat display like "all view"
-  const isZoneViewActive = tabViewMode === 'zone' && !isTopMoversView && !isPurchasedView;
+  // Zone browse mode: "Zones & landen" tab is active — shows ALL stocks merged, filtered by zone
+  const isZoneBrowseMode = tabViewMode === 'zone' && !isTopMoversView && !isPurchasedView;
+  // Zone filter active: a specific zone/country is selected (works in BOTH custom + zone mode)
+  const hasActiveZoneFilter = zoneViewState.zone !== '__all__' && !isTopMoversView && !isPurchasedView;
+  // Keep alias so existing references below continue to work unchanged
+  const isZoneViewActive = isZoneBrowseMode;
 
   // Get all stocks from all tabs (for "All" view), deduplicated cross-tab AND within-tab
   const allStocksWithTabs = useMemo(() => {
@@ -1415,6 +1422,38 @@ export function Dashboard() {
     }
     return result;
   }, [store.tabs]);
+
+  // Zone counts for the CURRENT context:
+  // — in zone browse mode: counts across all stocks (for ZoneTabBar)
+  // — in custom mode: counts within the active tab only (for the compact zone filter bar)
+  const currentTabZoneCounts = useMemo(() => {
+    const stocks = isZoneBrowseMode
+      ? allStocksWithTabs.map(s => s.stock)
+      : (activeTab?.stocks ?? []);
+    const counts: Partial<Record<ZoneId | '__all__', number>> = { __all__: stocks.length };
+    for (const stock of stocks) {
+      const zone = getZoneForCountryCode(getStockCountryCode(stock));
+      counts[zone] = (counts[zone] ?? 0) + 1;
+    }
+    return counts;
+  }, [isZoneBrowseMode, allStocksWithTabs, activeTab]);
+
+  const currentTabCountriesInZone = useMemo(() => {
+    if (zoneViewState.zone === '__all__') return [];
+    const stocks = isZoneBrowseMode
+      ? allStocksWithTabs.map(s => s.stock)
+      : (activeTab?.stocks ?? []);
+    const counts: Record<string, number> = {};
+    for (const stock of stocks) {
+      const cc = getStockCountryCode(stock);
+      if (getZoneForCountryCode(cc) === zoneViewState.zone) {
+        counts[cc] = (counts[cc] ?? 0) + 1;
+      }
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([cc, count]) => ({ cc, count }));
+  }, [isZoneBrowseMode, allStocksWithTabs, activeTab, zoneViewState.zone]);
 
   // Top movers: top 10 gainers and top 10 losers
   const topMovers = useMemo(() => {
@@ -1534,8 +1573,8 @@ export function Dashboard() {
       });
     }
 
-    // Zone/country filter (zone mode only, not top-movers or purchased)
-    if (isZoneViewActive) {
+    // Zone/country filter — works in BOTH zone browse mode and custom tab mode
+    if (hasActiveZoneFilter) {
       stocks = stocks.filter(stock => {
         const cc = getStockCountryCode(stock);
         if (zoneViewState.zone !== '__all__') {
@@ -1549,7 +1588,7 @@ export function Dashboard() {
     }
 
     return stocks;
-  }, [sortedStocks, scanDateFilter, isScannerTab, tabViewMode, isZoneViewActive, zoneViewState]);
+  }, [sortedStocks, scanDateFilter, isScannerTab, tabViewMode, hasActiveZoneFilter, zoneViewState]);
 
   const handleSort = (field: SortField) => {
     if (!activeTab) return;
@@ -2022,6 +2061,19 @@ export function Dashboard() {
                 </button>
               )}
 
+              {/* Deduplicate button */}
+              <button
+                onClick={() => setShowDeduplicateModal(true)}
+                className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                title="Dubbele aandelen opsporen"
+              >
+                {/* Two overlapping squares icon */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4" style={{ color: 'var(--text-secondary)' }}>
+                  <rect x="3" y="3" width="13" height="13" rx="1.5" />
+                  <rect x="8" y="8" width="13" height="13" rx="1.5" />
+                </svg>
+              </button>
+
               {/* Tiles / List Toggle */}
               <button
                 onClick={() => handleDashboardViewChange(dashboardView === 'list' ? 'tiles' : 'list')}
@@ -2174,18 +2226,87 @@ export function Dashboard() {
             </div>
 
             {tabViewMode === 'custom' ? (
-              <TabBar
-                tabs={store.tabs}
-                activeTabId={store.activeTabId}
-                onTabSelect={store.setActiveTab}
-                onAddTab={store.addTab}
-                onEditTab={(tabId, name, color) => store.updateTab(tabId, { name, accentColor: color })}
-                onDeleteTab={store.deleteTab}
-                fixedTabColors={store.settings.fixedTabColors}
-                allStockCount={allStocksWithTabs.length}
-                purchasedStockCount={store.purchasedStocks.length}
-                hiddenTabIds={store.settings.hiddenTabIds ?? []}
-              />
+              <>
+                <TabBar
+                  tabs={store.tabs}
+                  activeTabId={store.activeTabId}
+                  onTabSelect={store.setActiveTab}
+                  onAddTab={store.addTab}
+                  onEditTab={(tabId, name, color) => store.updateTab(tabId, { name, accentColor: color })}
+                  onDeleteTab={store.deleteTab}
+                  fixedTabColors={store.settings.fixedTabColors}
+                  allStockCount={allStocksWithTabs.length}
+                  purchasedStockCount={store.purchasedStocks.length}
+                  hiddenTabIds={store.settings.hiddenTabIds ?? []}
+                />
+                {/* Compact zone/country filter — combineer je tab met een regio of land */}
+                {!isTopMoversView && !isPurchasedView && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] text-gray-600 shrink-0">Zone:</span>
+                      <button
+                        onClick={() => handleZoneSelect('__all__')}
+                        className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                          zoneViewState.zone === '__all__'
+                            ? 'bg-[#3d3d3d] text-white'
+                            : 'text-gray-500 hover:text-gray-300 hover:bg-[#2d2d2d]'
+                        }`}
+                      >
+                        🌍 Alle ({currentTabZoneCounts.__all__ ?? 0})
+                      </button>
+                      {ZONES.filter(z => (currentTabZoneCounts[z.id] ?? 0) > 0).map(zone => (
+                        <button
+                          key={zone.id}
+                          onClick={() => handleZoneSelect(zone.id as ZoneId)}
+                          className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                            zoneViewState.zone === zone.id
+                              ? 'text-white'
+                              : 'text-gray-500 hover:text-gray-300 hover:bg-[#2d2d2d]'
+                          }`}
+                          style={{
+                            backgroundColor: zoneViewState.zone === zone.id ? zone.color : undefined,
+                          }}
+                        >
+                          {zone.name} ({currentTabZoneCounts[zone.id] ?? 0})
+                        </button>
+                      ))}
+                    </div>
+                    {zoneViewState.zone !== '__all__' && currentTabCountriesInZone.length > 0 && (() => {
+                      const zoneColor = ZONES.find(z => z.id === zoneViewState.zone)?.color ?? '#6b7280';
+                      return (
+                        <div className="flex items-center gap-1.5 flex-wrap pl-8">
+                          <button
+                            onClick={() => handleCountrySelect('__all__')}
+                            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                              zoneViewState.country === '__all__'
+                                ? 'text-white'
+                                : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                            style={{ backgroundColor: zoneViewState.country === '__all__' ? zoneColor : undefined }}
+                          >
+                            Alle
+                          </button>
+                          {currentTabCountriesInZone.map(({ cc, count }: { cc: string; count: number }) => (
+                            <button
+                              key={cc}
+                              onClick={() => handleCountrySelect(cc)}
+                              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
+                                zoneViewState.country === cc
+                                  ? 'text-white'
+                                  : 'text-gray-500 hover:text-gray-300'
+                              }`}
+                              style={{ backgroundColor: zoneViewState.country === cc ? zoneColor : undefined }}
+                            >
+                              <CountryFlag countryCode={cc} size={11} />
+                              {getCountryDisplayName(cc)} ({count})
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </>
             ) : (
               <ZoneTabBar
                 allStocks={allStocksWithTabs.map(s => s.stock)}
@@ -2918,6 +3039,17 @@ export function Dashboard() {
         rangeLog={store.rangeLog}
         onClear={store.clearRangeLog}
       />
+
+      {showDeduplicateModal && (
+        <DeduplicateModal
+          tabs={store.tabs}
+          onSave={(removals) => {
+            store.removeStocks(removals);
+            setShowDeduplicateModal(false);
+          }}
+          onClose={() => setShowDeduplicateModal(false)}
+        />
+      )}
 
       {/* Floating buttons bottom-right: scroll-to-top, add stock, version */}
       {!(selectedStocks.size > 0 && !isAllView && activeTab) && (
