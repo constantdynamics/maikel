@@ -16,6 +16,7 @@ interface StockEntry {
 interface DuplicateGroup {
   ticker: string;
   entries: StockEntry[];
+  /** IDs of stocks to keep */
   keepIds: Set<string>;
 }
 
@@ -26,6 +27,7 @@ interface DeduplicateModalProps {
 }
 
 type Mode = 'dubbelen' | 'handmatig';
+type DupFilter = 'alle' | 'kruiselings' | 'intern';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -61,6 +63,7 @@ function buildGroups(tabs: Tab[]): DuplicateGroup[] {
   const groups: DuplicateGroup[] = [];
   for (const [ticker, entries] of byTicker) {
     if (entries.length < 2) continue;
+    // Pre-select the entry with the lowest buyLimit (null = Infinity → last priority)
     let bestIdx = 0;
     let bestLimit = entries[0].stock.buyLimit ?? Infinity;
     for (let i = 1; i < entries.length; i++) {
@@ -72,16 +75,24 @@ function buildGroups(tabs: Tab[]): DuplicateGroup[] {
   return groups;
 }
 
-// ── Stock card (shared) ────────────────────────────────────────────────────
+/** True if all entries in the group share the same tab */
+function isIntraTab(group: DuplicateGroup): boolean {
+  const first = group.entries[0].tabId;
+  return group.entries.every((e) => e.tabId === first);
+}
+
+// ── Stock selection card ───────────────────────────────────────────────────
 
 function StockSelectionCard({
   entry,
   kept,
   onToggle,
+  showTab = true,
 }: {
   entry: StockEntry;
   kept: boolean;
   onToggle: () => void;
+  showTab?: boolean;
 }) {
   return (
     <button
@@ -100,13 +111,15 @@ function StockSelectionCard({
       </div>
 
       {/* Tab badge */}
-      <div className="flex items-center gap-1.5 mb-1.5 pr-6">
-        <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.tabColor || '#888' }} />
-        <span className="text-xs text-gray-400 truncate">{entry.tabName}</span>
-      </div>
+      {showTab && (
+        <div className="flex items-center gap-1.5 mb-1.5 pr-6">
+          <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.tabColor || '#888' }} />
+          <span className="text-xs text-gray-400 truncate">{entry.tabName}</span>
+        </div>
+      )}
 
       {/* Name */}
-      <div className="text-sm text-white font-medium truncate mb-2" title={entry.stock.name}>
+      <div className={`text-sm text-white font-medium truncate mb-2 ${showTab ? '' : 'mt-1 pr-6'}`} title={entry.stock.name}>
         {entry.stock.displayName || entry.stock.name}
       </div>
 
@@ -127,48 +140,41 @@ function StockSelectionCard({
   );
 }
 
-// ── Tab filter pills ───────────────────────────────────────────────────────
+// ── Duplicate group card ───────────────────────────────────────────────────
 
-function TabFilterBar({
-  tabs,
-  selectedTabId,
-  getCount,
-  onSelect,
+function DuplicateGroupCard({
+  group,
+  groupIndex,
+  onToggle,
 }: {
-  tabs: Tab[];
-  selectedTabId: string | null;
-  getCount: (tabId: string) => number;
-  onSelect: (tabId: string | null) => void;
+  group: DuplicateGroup;
+  groupIndex: number;
+  onToggle: (gi: number, stockId: string) => void;
 }) {
+  const intra = isIntraTab(group);
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      <button
-        onClick={() => onSelect(null)}
-        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-          selectedTabId === null ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'
-        }`}
-      >
-        Alle tabs
-      </button>
-      {tabs.map((tab) => {
-        const count = getCount(tab.id);
-        if (count === 0) return null;
-        const active = selectedTabId === tab.id;
-        return (
-          <button
-            key={tab.id}
-            onClick={() => onSelect(active ? null : tab.id)}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-              active ? 'text-white' : 'text-gray-400 hover:text-gray-200'
-            }`}
-            style={active ? { backgroundColor: tab.accentColor + '33', border: `1px solid ${tab.accentColor}66` } : { border: '1px solid #3d3d3d' }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: tab.accentColor || '#888' }} />
-            {tab.name}
-            <span className={`${active ? 'text-white' : 'text-gray-500'}`}>({count})</span>
-          </button>
-        );
-      })}
+    <div className="bg-[#252525] rounded-lg p-3 border border-[#3d3d3d]">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="font-mono text-sm font-semibold text-[#00ff88]">{group.ticker}</span>
+        <span className="text-xs text-gray-500">{group.entries.length}×</span>
+        {intra && (
+          <span className="text-xs text-orange-400 bg-orange-400/10 px-1.5 py-0.5 rounded-full">intern</span>
+        )}
+        {group.keepIds.size === 0 && (
+          <span className="text-xs text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded-full">alles weg</span>
+        )}
+      </div>
+      <div className={`grid gap-2 ${group.entries.length === 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
+        {group.entries.map((entry) => (
+          <StockSelectionCard
+            key={entry.stock.id}
+            entry={entry}
+            kept={group.keepIds.has(entry.stock.id)}
+            onToggle={() => onToggle(groupIndex, entry.stock.id)}
+            showTab={!intra}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -178,14 +184,17 @@ function TabFilterBar({
 export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProps) {
   const [mode, setMode] = useState<Mode>('dubbelen');
 
-  // ── Dubbelen mode state ──
+  // ── Dubbelen state ──
   const initialGroups = useMemo(() => buildGroups(tabs), [tabs]);
   const [groups, setGroups] = useState<DuplicateGroup[]>(initialGroups);
-  const [filterTabId, setFilterTabId] = useState<string | null>(null);
 
-  // ── Handmatig mode state ──
+  // Filter state
+  const [dupFilter, setDupFilter] = useState<DupFilter>('alle');
+  // For 'intern' filter: which tab to show intra-tab dups for
+  const [internTabId, setInternTabId] = useState<string | null>(null);
+
+  // ── Handmatig state ──
   const [manualTabId, setManualTabId] = useState<string>(tabs[0]?.id ?? '');
-  // keepSet: stock IDs to keep (default = all in tab)
   const [manualKeep, setManualKeep] = useState<Record<string, Set<string>>>(() => {
     const init: Record<string, Set<string>> = {};
     for (const tab of tabs) init[tab.id] = new Set(tab.stocks.map((s) => s.id));
@@ -193,26 +202,54 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
   });
 
   // ── Dubbelen helpers ──
-  function dupCountForTab(tabId: string) {
-    return groups.filter((g) => g.entries.some((e) => e.tabId === tabId)).length;
-  }
 
-  const visibleGroups = filterTabId
-    ? groups.filter((g) => g.entries.some((e) => e.tabId === filterTabId))
-    : groups;
-
-  function toggleDupKeep(groupIdx: number, stockId: string) {
-    // groupIdx is index in visibleGroups, not groups — need to map back
-    const targetTicker = visibleGroups[groupIdx].ticker;
+  /** Apply keepIds bulk: for each group containing an entry from tabId, keep only that tab's entries */
+  function bulkKeepTab(tabId: string) {
     setGroups((prev) =>
       prev.map((g) => {
-        if (g.ticker !== targetTicker) return g;
+        const tabEntries = g.entries.filter((e) => e.tabId === tabId);
+        if (tabEntries.length === 0) return g; // tab not in this group → don't touch
+        return { ...g, keepIds: new Set(tabEntries.map((e) => e.stock.id)) };
+      })
+    );
+  }
+
+  function toggleDupKeep(groupIndex: number, stockId: string) {
+    // groupIndex refers to visibleGroups; map back to ticker
+    const ticker = visibleGroups[groupIndex].ticker;
+    setGroups((prev) =>
+      prev.map((g) => {
+        if (g.ticker !== ticker) return g;
         const next = new Set(g.keepIds);
         if (next.has(stockId)) next.delete(stockId); else next.add(stockId);
         return { ...g, keepIds: next };
       })
     );
   }
+
+  // Counts for filter buttons
+  const crossGroups = groups.filter((g) => !isIntraTab(g));
+  const intraGroups = groups.filter((g) => isIntraTab(g));
+
+  // How many intra-tab groups per tab
+  function intraCountForTab(tabId: string) {
+    return intraGroups.filter((g) => g.entries[0].tabId === tabId).length;
+  }
+
+  // How many groups involve a tab (for the bulk-keep section)
+  function groupsForTab(tabId: string) {
+    return groups.filter((g) => g.entries.some((e) => e.tabId === tabId)).length;
+  }
+
+  // Visible groups based on filter
+  const visibleGroups = (() => {
+    if (dupFilter === 'kruiselings') return crossGroups;
+    if (dupFilter === 'intern') {
+      if (internTabId) return intraGroups.filter((g) => g.entries[0].tabId === internTabId);
+      return intraGroups;
+    }
+    return groups;
+  })();
 
   const dupRemovals = groups.flatMap((g) =>
     g.entries.filter((e) => !g.keepIds.has(e.stock.id)).map((e) => ({ tabId: e.tabId, stockId: e.stock.id }))
@@ -230,18 +267,8 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
     });
   }
 
-  function selectAll() {
-    setManualKeep((prev) => ({ ...prev, [manualTabId]: new Set(manualTab?.stocks.map((s) => s.id) ?? []) }));
-  }
-
-  function deselectAll() {
-    setManualKeep((prev) => ({ ...prev, [manualTabId]: new Set() }));
-  }
-
   const manualRemovals = manualTab
-    ? manualTab.stocks
-        .filter((s) => !keepSet.has(s.id))
-        .map((s) => ({ tabId: manualTabId, stockId: s.id }))
+    ? manualTab.stocks.filter((s) => !keepSet.has(s.id)).map((s) => ({ tabId: manualTabId, stockId: s.id }))
     : [];
 
   // ── Render ──
@@ -261,12 +288,10 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
         </div>
 
         {/* Mode toggle */}
-        <div className="flex gap-1 p-3 border-b border-[#3d3d3d] flex-shrink-0">
+        <div className="flex gap-1 px-3 pt-3 pb-2 border-b border-[#3d3d3d] flex-shrink-0">
           <button
             onClick={() => setMode('dubbelen')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              mode === 'dubbelen' ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${mode === 'dubbelen' ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
           >
             Dubbelen
             {initialGroups.length > 0 && (
@@ -277,15 +302,13 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
           </button>
           <button
             onClick={() => setMode('handmatig')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              mode === 'handmatig' ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${mode === 'handmatig' ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
           >
             Handmatig per tab
           </button>
         </div>
 
-        {/* ── DUBBELEN mode ── */}
+        {/* ══════════════════ DUBBELEN MODE ══════════════════ */}
         {mode === 'dubbelen' && (
           <>
             {initialGroups.length === 0 ? (
@@ -296,44 +319,105 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
               </div>
             ) : (
               <>
-                {/* Tab filter */}
-                <div className="p-3 border-b border-[#2d2d2d] flex-shrink-0">
-                  <div className="text-xs text-gray-500 mb-2">Filter op tabblad:</div>
-                  <TabFilterBar
-                    tabs={tabs}
-                    selectedTabId={filterTabId}
-                    getCount={dupCountForTab}
-                    onSelect={setFilterTabId}
-                  />
+                {/* ── Bulk-keep section ── */}
+                <div className="px-4 pt-3 pb-3 border-b border-[#2d2d2d] flex-shrink-0">
+                  <div className="text-xs text-gray-500 mb-2">
+                    Snel instellen — bewaar versie van tabblad:
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {tabs.map((tab) => {
+                      const count = groupsForTab(tab.id);
+                      if (count === 0) return null;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => bulkKeepTab(tab.id)}
+                          title={`Bewaar de kopie uit "${tab.name}" in alle ${count} groepen`}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-gray-300 hover:text-white transition-colors border border-[#3d3d3d] hover:border-[#666]"
+                          style={{ '--tab-color': tab.accentColor } as React.CSSProperties}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = tab.accentColor + '22'; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ''; }}
+                        >
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: tab.accentColor || '#888' }} />
+                          {tab.name}
+                          <span className="text-gray-500 text-[10px]">{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[11px] text-gray-600 mt-1.5">
+                    Klik een tabblad → alle groepen worden ingesteld op die tab als winnaar
+                  </div>
                 </div>
 
-                {/* Groups */}
-                <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                {/* ── Filter bar ── */}
+                <div className="px-4 pt-3 pb-2 border-b border-[#2d2d2d] flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-500">Toon:</span>
+                    {(
+                      [
+                        { id: 'alle', label: 'Alle', count: groups.length },
+                        { id: 'kruiselings', label: 'Kruiselings', count: crossGroups.length, title: 'Zelfde aandeel in meerdere tabbladen' },
+                        { id: 'intern', label: 'Intern', count: intraGroups.length, title: 'Zelfde aandeel meerdere keren in hetzelfde tabblad' },
+                      ] as { id: DupFilter; label: string; count: number; title?: string }[]
+                    ).map(({ id, label, count, title }) => (
+                      <button
+                        key={id}
+                        onClick={() => { setDupFilter(id); if (id !== 'intern') setInternTabId(null); }}
+                        title={title}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                          dupFilter === id ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'
+                        }`}
+                      >
+                        {label}
+                        <span className={`ml-1 ${dupFilter === id ? 'text-[#00ff88]' : 'text-gray-600'}`}>{count}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Intern sub-filter: pick which tab */}
+                  {dupFilter === 'intern' && intraGroups.length > 0 && (
+                    <div className="flex gap-1.5 flex-wrap mt-2">
+                      <button
+                        onClick={() => setInternTabId(null)}
+                        className={`px-2.5 py-0.5 rounded-full text-xs transition-colors ${internTabId === null ? 'bg-[#3d3d3d] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                      >
+                        Alle tabbladen
+                      </button>
+                      {tabs.map((tab) => {
+                        const count = intraCountForTab(tab.id);
+                        if (count === 0) return null;
+                        const active = internTabId === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            onClick={() => setInternTabId(active ? null : tab.id)}
+                            className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${active ? 'text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                            style={active ? { backgroundColor: tab.accentColor + '33', border: `1px solid ${tab.accentColor}66` } : { border: '1px solid #3d3d3d' }}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tab.accentColor }} />
+                            {tab.name} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Group list */}
+                <div className="overflow-y-auto flex-1 p-4 space-y-3">
                   {visibleGroups.length === 0 ? (
                     <div className="text-center text-gray-500 text-sm py-8">
-                      Geen dubbelen in dit tabblad.
+                      {dupFilter === 'intern' ? 'Geen interne dubbelen gevonden.' : 'Geen dubbelen in deze filter.'}
                     </div>
                   ) : (
                     visibleGroups.map((group, gi) => (
-                      <div key={group.ticker} className="bg-[#252525] rounded-lg p-3 border border-[#3d3d3d]">
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="font-mono text-sm font-semibold text-[#00ff88]">{group.ticker}</span>
-                          <span className="text-xs text-gray-500">{group.entries.length}× aanwezig</span>
-                          {group.keepIds.size === 0 && (
-                            <span className="text-xs text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">Alles wordt verwijderd</span>
-                          )}
-                        </div>
-                        <div className={`grid gap-2 ${group.entries.length === 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
-                          {group.entries.map((entry) => (
-                            <StockSelectionCard
-                              key={entry.stock.id}
-                              entry={entry}
-                              kept={group.keepIds.has(entry.stock.id)}
-                              onToggle={() => toggleDupKeep(gi, entry.stock.id)}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                      <DuplicateGroupCard
+                        key={group.ticker}
+                        group={group}
+                        groupIndex={gi}
+                        onToggle={toggleDupKeep}
+                      />
                     ))
                   )}
                 </div>
@@ -363,7 +447,7 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
           </>
         )}
 
-        {/* ── HANDMATIG mode ── */}
+        {/* ══════════════════ HANDMATIG MODE ══════════════════ */}
         {mode === 'handmatig' && (
           <>
             {/* Tab picker */}
@@ -372,75 +456,60 @@ export function DeduplicateModal({ tabs, onSave, onClose }: DeduplicateModalProp
               <div className="flex gap-1.5 flex-wrap">
                 {tabs.map((tab) => {
                   const active = tab.id === manualTabId;
-                  const removedCount = (manualKeep[tab.id]
-                    ? tab.stocks.filter((s) => !manualKeep[tab.id].has(s.id)).length
-                    : 0);
+                  const removedCount = tab.stocks.filter((s) => !(manualKeep[tab.id]?.has(s.id) ?? true)).length;
                   return (
                     <button
                       key={tab.id}
                       onClick={() => setManualTabId(tab.id)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                        active ? 'text-white' : 'text-gray-400 hover:text-gray-200'
-                      }`}
-                      style={active
-                        ? { backgroundColor: tab.accentColor + '33', border: `1px solid ${tab.accentColor}88` }
-                        : { border: '1px solid #3d3d3d' }
-                      }
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                      style={active ? { backgroundColor: tab.accentColor + '33', border: `1px solid ${tab.accentColor}88` } : { border: '1px solid #3d3d3d' }}
                     >
                       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tab.accentColor || '#888' }} />
-                      {tab.name}
-                      <span className="text-gray-500">({tab.stocks.length})</span>
-                      {removedCount > 0 && (
-                        <span className="text-red-400 font-semibold">−{removedCount}</span>
-                      )}
+                      {tab.name} ({tab.stocks.length})
+                      {removedCount > 0 && <span className="text-red-400 font-semibold">−{removedCount}</span>}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Controls row */}
             {manualTab && (
               <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] flex-shrink-0">
                 <span className="text-xs text-gray-400">
                   <span className="text-white font-medium">{keepSet.size}</span> van {manualTab.stocks.length} bewaard
-                  {manualRemovals.length > 0 && (
-                    <> · <span className="text-red-400 font-medium">{manualRemovals.length}</span> worden verwijderd</>
-                  )}
+                  {manualRemovals.length > 0 && <> · <span className="text-red-400 font-medium">{manualRemovals.length}</span> worden verwijderd</>}
                 </span>
                 <div className="flex gap-2">
-                  <button onClick={selectAll} className="text-xs text-gray-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/5">
-                    Alles aan
-                  </button>
-                  <button onClick={deselectAll} className="text-xs text-gray-400 hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-white/5">
-                    Alles uit
-                  </button>
+                  <button
+                    onClick={() => setManualKeep((p) => ({ ...p, [manualTabId]: new Set(manualTab.stocks.map((s) => s.id)) }))}
+                    className="text-xs text-gray-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/5"
+                  >Alles aan</button>
+                  <button
+                    onClick={() => setManualKeep((p) => ({ ...p, [manualTabId]: new Set() }))}
+                    className="text-xs text-gray-400 hover:text-red-400 transition-colors px-2 py-1 rounded hover:bg-white/5"
+                  >Alles uit</button>
                 </div>
               </div>
             )}
 
-            {/* Stock list */}
             <div className="overflow-y-auto flex-1 p-4">
               {!manualTab || manualTab.stocks.length === 0 ? (
                 <div className="text-center text-gray-500 text-sm py-8">Geen aandelen in dit tabblad.</div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {manualTab.stocks.map((stock) => {
-                    const entry: StockEntry = { stock, tabId: manualTab.id, tabName: manualTab.name, tabColor: manualTab.accentColor };
-                    return (
-                      <StockSelectionCard
-                        key={stock.id}
-                        entry={entry}
-                        kept={keepSet.has(stock.id)}
-                        onToggle={() => toggleManualKeep(stock.id)}
-                      />
-                    );
-                  })}
+                  {manualTab.stocks.map((stock) => (
+                    <StockSelectionCard
+                      key={stock.id}
+                      entry={{ stock, tabId: manualTab.id, tabName: manualTab.name, tabColor: manualTab.accentColor }}
+                      kept={keepSet.has(stock.id)}
+                      onToggle={() => toggleManualKeep(stock.id)}
+                      showTab={false}
+                    />
+                  ))}
                 </div>
               )}
             </div>
 
-            {/* Manual footer */}
             <div className="flex items-center justify-between p-4 border-t border-[#3d3d3d] flex-shrink-0 gap-3">
               <div className="text-xs text-gray-400">
                 {manualRemovals.length > 0
