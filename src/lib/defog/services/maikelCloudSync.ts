@@ -1,11 +1,8 @@
-// Cloud sync for Defog state using the MAIKEL Supabase instance
-// This ensures data persists even when IndexedDB is cleared
-// Uses the 'settings' table with key 'defog_state'
+// Cloud sync for Defog state via /api/defog/state (server-side, service role)
+// This bypasses Supabase RLS and ensures data persists across any Vercel URL.
 
-import { getSupabase } from '@/lib/supabase';
 import type { AppState } from '../types';
 
-const DEFOG_STATE_KEY = 'defog_state';
 const SYNC_DEBOUNCE_MS = 3000;
 
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -27,8 +24,6 @@ export async function saveDefogStateToCloud(
   state: Partial<AppState>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = getSupabase();
-
     const dataToSave = {
       tabs: state.tabs,
       archive: state.archive,
@@ -48,18 +43,19 @@ export async function saveDefogStateToCloud(
       return { success: true };
     }
 
-    console.log('[Defog CloudSync] Saving', Math.round(json.length / 1024), 'KB to Maikel Supabase...');
+    console.log('[Defog CloudSync] Saving', Math.round(json.length / 1024), 'KB via API...');
 
-    const { error } = await supabase
-      .from('settings')
-      .upsert(
-        { key: DEFOG_STATE_KEY, value: json, updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
-      );
+    const response = await fetch('/api/defog/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json,
+    });
 
-    if (error) {
-      console.error('[Defog CloudSync] Save failed:', error.message);
-      return { success: false, error: error.message };
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const msg = errBody.error || `HTTP ${response.status}`;
+      console.error('[Defog CloudSync] Save failed:', msg);
+      return { success: false, error: msg };
     }
 
     lastSavedHash = hash;
@@ -74,43 +70,36 @@ export async function saveDefogStateToCloud(
 
 export async function loadDefogStateFromCloud(): Promise<{
   data: Partial<AppState> | null;
+  updatedAt?: string;
   error?: string;
 }> {
   try {
-    const supabase = getSupabase();
+    const response = await fetch('/api/defog/state', { cache: 'no-store' });
 
-    const { data, error } = await supabase
-      .from('settings')
-      .select('value')
-      .eq('key', DEFOG_STATE_KEY)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No data found - that's OK
-        console.log('[Defog CloudSync] No cloud data found');
-        return { data: null };
-      }
-      console.error('[Defog CloudSync] Load failed:', error.message);
-      return { data: null, error: error.message };
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const msg = errBody.error || `HTTP ${response.status}`;
+      console.error('[Defog CloudSync] Load failed:', msg);
+      return { data: null, error: msg };
     }
 
-    if (!data?.value) {
+    const { data, updatedAt } = await response.json();
+
+    if (!data) {
+      console.log('[Defog CloudSync] No cloud data found');
       return { data: null };
     }
 
-    const parsed = JSON.parse(data.value);
     console.log(
       '[Defog CloudSync] Loaded from cloud:',
-      parsed.tabs?.length, 'tabs,',
-      parsed.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0), 'stocks,',
-      parsed.settings?.apiKey ? 'API key present' : 'no API key'
+      data.tabs?.length, 'tabs,',
+      data.tabs?.reduce((n: number, t: { stocks?: unknown[] }) => n + (t.stocks?.length || 0), 0), 'stocks'
     );
 
-    // Update the hash so we don't immediately re-save what we just loaded
-    lastSavedHash = simpleHash(data.value);
+    // Update hash so we don't immediately re-save what we just loaded
+    lastSavedHash = simpleHash(JSON.stringify(data));
 
-    return { data: parsed };
+    return { data, updatedAt };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[Defog CloudSync] Load error:', msg);
@@ -118,7 +107,7 @@ export async function loadDefogStateFromCloud(): Promise<{
   }
 }
 
-// Debounced cloud save - call this on every state change
+// Debounced cloud save — call this on every state change
 export function scheduleCloudSave(state: Partial<AppState>): void {
   if (syncTimeout) {
     clearTimeout(syncTimeout);
@@ -133,4 +122,46 @@ export function scheduleCloudSave(state: Partial<AppState>): void {
       isSyncing = false;
     }
   }, SYNC_DEBOUNCE_MS);
+}
+
+// Immediate save via navigator.sendBeacon (works even as page is closing)
+// Falls back to regular fetch if sendBeacon is unavailable.
+export function saveDefogStateBeacon(state: Partial<AppState>): void {
+  try {
+    const dataToSave = {
+      tabs: state.tabs,
+      archive: state.archive,
+      purchasedStocks: state.purchasedStocks,
+      notifications: state.notifications,
+      limitHistory: state.limitHistory,
+      settings: state.settings,
+      lastSyncTime: new Date().toISOString(),
+      encryptionKeyHash: state.encryptionKeyHash,
+    };
+
+    const json = JSON.stringify(dataToSave);
+    const hash = simpleHash(json);
+    if (hash === lastSavedHash) return; // Nothing changed
+
+    const blob = new Blob([json], { type: 'application/json' });
+
+    if (navigator.sendBeacon) {
+      const sent = navigator.sendBeacon('/api/defog/state', blob);
+      if (sent) {
+        lastSavedHash = hash;
+        console.log('[Defog CloudSync] Beacon sent on unload');
+        return;
+      }
+    }
+
+    // Fallback: keepalive fetch (also works during unload)
+    fetch('/api/defog/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json,
+      keepalive: true,
+    }).then(() => { lastSavedHash = hash; }).catch(() => {});
+  } catch (err) {
+    console.error('[Defog CloudSync] Beacon save failed:', err);
+  }
 }
