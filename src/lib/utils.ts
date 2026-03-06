@@ -158,12 +158,37 @@ const SECTOR_CSV_COLUMNS = [
   { header: 'Review Reason', key: 'review_reason' },
 ];
 
-type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
+const MORIA_CSV_COLUMNS = [
+  { header: 'Ticker', key: 'ticker' },
+  { header: 'Yahoo Ticker', key: 'yahoo_ticker' },
+  { header: 'Company Name', key: 'company_name' },
+  { header: 'Sector', key: 'sector' },
+  { header: 'Exchange', key: 'exchange' },
+  { header: 'Market', key: 'market' },
+  { header: 'Country', key: 'country' },
+  { header: 'Current Price', key: 'current_price' },
+  { header: 'ATH', key: 'all_time_high' },
+  { header: 'ATH Decline %', key: 'ath_decline_pct' },
+  { header: '3Y High', key: 'high_3y' },
+  { header: '3Y Decline %', key: 'decline_from_3y_pct' },
+  { header: '1Y High', key: 'high_1y' },
+  { header: '1Y Decline %', key: 'decline_from_1y_pct' },
+  { header: '6M High', key: 'high_6m' },
+  { header: '6M Decline %', key: 'decline_from_6m_pct' },
+  { header: 'Avg Volume 30d', key: 'avg_volume_30d' },
+  { header: 'Market Cap', key: 'market_cap' },
+  { header: 'Detection Date', key: 'detection_date' },
+  { header: 'Last Updated', key: 'last_updated' },
+  { header: 'Favorite', key: 'is_favorite' },
+];
+
+type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
 
 /** Convert scanner stocks to CSV based on tab type. */
 export function scannerStocksToCSV(stocks: Record<string, unknown>[], tab: ExportTab): string {
   const columns = tab === 'kuifje' ? KUIFJE_CSV_COLUMNS
     : tab === 'zonnebloem' ? ZONNEBLOEM_CSV_COLUMNS
+    : tab === 'moria' ? MORIA_CSV_COLUMNS
     : SECTOR_CSV_COLUMNS;
   return objectsToCsv(stocks, columns);
 }
@@ -184,7 +209,7 @@ export function allScannerTabsToJSON(data: Record<ExportTab, Record<string, unkn
     exportedAt: new Date().toISOString(),
     tabs: {} as Record<string, unknown>,
   };
-  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining', 'hydrogen', 'shipping'] as ExportTab[]) {
+  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining', 'hydrogen', 'shipping', 'moria'] as ExportTab[]) {
     const stocks = (data[tab] || []).map((s) => {
       const { is_deleted, deleted_at, is_archived, archived_at, ...rest } = s;
       return rest;
