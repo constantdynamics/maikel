@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Navbar from './Navbar';
 import VersionBadge from './VersionBadge';
@@ -10,7 +10,6 @@ const PUBLIC_ROUTES = ['/login'];
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
 
@@ -22,28 +21,32 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       return;
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.push('/login');
-      } else {
-        setAuthenticated(true);
-      }
-      setLoading(false);
-    });
-
+    // Use onAuthStateChange as the primary auth mechanism.
+    // INITIAL_SESSION fires AFTER Supabase has fully restored the session
+    // from localStorage (including token refresh), so it won't give false
+    // negatives during page reload — which was causing the re-login bug
+    // when using <a> tag navigation.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          router.push('/login');
+        if (event === 'INITIAL_SESSION') {
+          if (session) {
+            setAuthenticated(true);
+          } else {
+            window.location.href = '/login';
+          }
+          setLoading(false);
+        } else if (event === 'SIGNED_OUT') {
+          window.location.href = '/login';
           setAuthenticated(false);
-        } else if (session) {
+        } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
           setAuthenticated(true);
+          setLoading(false);
         }
       },
     );
 
     return () => subscription.unsubscribe();
-  }, [router, isPublicRoute]);
+  }, [isPublicRoute]);
 
   // Public routes render without auth wrapper
   if (isPublicRoute) {

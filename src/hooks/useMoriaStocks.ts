@@ -41,7 +41,11 @@ export function useMoriaStocks() {
     );
 
     if (error) {
-      console.error('Error fetching Moria stocks:', error);
+      // Table might not exist yet — don't spam console
+      const msg = typeof error === 'object' && error !== null && 'message' in error ? (error as { message: string }).message : '';
+      if (!msg.includes('moria_stocks')) {
+        console.error('Error fetching Moria stocks:', error);
+      }
     } else if (data) {
       setStocks(data);
       const uniqueMarkets = Array.from(

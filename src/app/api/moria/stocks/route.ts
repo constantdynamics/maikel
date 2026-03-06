@@ -22,8 +22,12 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
 
   if (error) {
+    // Table might not exist yet — return empty array instead of 500
+    if (error.code === 'PGRST205' || error.message?.includes('moria_stocks')) {
+      return NextResponse.json([]);
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json(data || []);
 }

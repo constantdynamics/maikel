@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 const THEMES = [
@@ -47,11 +46,9 @@ export default function Navbar() {
     setThemeMenuOpen(false);
   }
 
-  const router = useRouter();
-
   async function handleLogout() {
     await supabase.auth.signOut();
-    router.push('/login');
+    window.location.href = '/login';
   }
 
   const currentTheme = THEMES.find(t => t.id === theme) || THEMES[0];
@@ -60,7 +57,7 @@ export default function Navbar() {
     <nav className="navbar-bg border-b border-[var(--border-color)] px-4 py-3 relative z-50 shrink-0">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="flex items-center">
+          <a href="/dashboard" className="flex items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
@@ -69,20 +66,20 @@ export default function Navbar() {
               height={40}
               className="rounded-lg"
             />
-          </Link>
+          </a>
           <div className="flex items-center gap-1">
             {navItems.map((item) => (
-              <Link
+              <a
                 key={item.href}
                 href={item.href}
                 className={`px-3 py-1.5 rounded text-sm transition-colors ${
-                  pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+                  pathname === item.href
                     ? 'bg-[var(--accent-primary)] text-white'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
                 }`}
               >
                 {item.label}
-              </Link>
+              </a>
             ))}
           </div>
         </div>
