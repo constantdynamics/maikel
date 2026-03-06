@@ -14,14 +14,17 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
 import ExportReminder from '@/components/ExportReminder';
+import MoriaStockTable from '@/components/MoriaStockTable';
 import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
+import { useMoriaStocks } from '@/hooks/useMoriaStocks';
+import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
-type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
+type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
 
 interface ScanSession {
   id: string;
@@ -151,6 +154,23 @@ export default function DashboardPage() {
     refreshStocks: shpRefreshStocks,
   } = useSectorStocks('shipping');
 
+  // Moria state
+  const {
+    stocks: moriaStocks,
+    loading: moriaLoading,
+    filters: moriaFilters,
+    setFilters: setMoriaFilters,
+    sort: moriaSort,
+    handleSort: moriaHandleSort,
+    markets: moriaMarkets,
+    toggleFavorite: moriaToggleFavorite,
+    deleteStock: moriaDeleteStock,
+    bulkFavorite: moriaBulkFavorite,
+    bulkDelete: moriaBulkDelete,
+    bulkArchive: moriaBulkArchive,
+    refreshStocks: moriaRefreshStocks,
+  } = useMoriaStocks();
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [underwaterMode, setUnderwaterMode] = useState(false);
 
@@ -196,6 +216,12 @@ export default function DashboardPage() {
   const [shpAutoNext, setShpAutoNext] = useState<Date | null>(null);
   const shpAutoLastRun = useRef<number>(0);
 
+  // Moria scan state
+  const [moriaScanRunning, setMoriaScanRunning] = useState(false);
+  const [moriaAutoScan, setMoriaAutoScan] = useState(false);
+  const [moriaAutoNext, setMoriaAutoNext] = useState<Date | null>(null);
+  const moriaAutoLastRun = useRef<number>(0);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
@@ -236,7 +262,7 @@ export default function DashboardPage() {
         }
       }
       if (e.key === 'a' || e.key === 'A') {
-        if (selectedIds.size > 0 && (activeTab === 'kuifje' || activeTab === 'biopharma' || activeTab === 'mining' || activeTab === 'hydrogen' || activeTab === 'shipping')) {
+        if (selectedIds.size > 0 && (activeTab === 'kuifje' || activeTab === 'biopharma' || activeTab === 'mining' || activeTab === 'hydrogen' || activeTab === 'shipping' || activeTab === 'moria')) {
           handleBulkArchive();
         }
       }
@@ -254,7 +280,7 @@ export default function DashboardPage() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds(new Set());
-  }, [filters, sort, zbFilters, zbSort, bpFilters, bpSort, mnFilters, mnSort, h2Filters, h2Sort, shpFilters, shpSort, activeTab]);
+  }, [filters, sort, zbFilters, zbSort, bpFilters, bpSort, mnFilters, mnSort, h2Filters, h2Sort, shpFilters, shpSort, moriaFilters, moriaSort, activeTab]);
 
   // Pagination for active tab
   const activeStocks = activeTab === 'kuifje' ? stocks
@@ -262,7 +288,8 @@ export default function DashboardPage() {
     : activeTab === 'biopharma' ? bpStocks
     : activeTab === 'mining' ? mnStocks
     : activeTab === 'hydrogen' ? h2Stocks
-    : shpStocks;
+    : activeTab === 'shipping' ? shpStocks
+    : moriaStocks;
   const totalPages = Math.ceil(activeStocks.length / ITEMS_PER_PAGE);
   const paginatedStocks = activeStocks.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -410,6 +437,23 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleRunMoriaScan() {
+    setMoriaScanRunning(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/moria/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      });
+      if (res.ok) { const result = await res.json(); console.log(`[Moria] Scan: ${result.candidatesFound} candidates, ${result.newStocksFound} new`); }
+      moriaRefreshStocks();
+    } catch (err) {
+      console.error('[Moria] Scan error:', err);
+    } finally {
+      setMoriaScanRunning(false);
+    }
+  }
+
   // ===== SCAN COMPLETE HANDLERS =====
 
   function handleScanComplete() {
@@ -502,6 +546,12 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shpAutoScan, shpScanRunning]);
 
+  const moriaAutoCheck = useCallback(() => {
+    if (!moriaAutoScan || moriaScanRunning) return;
+    if (Date.now() - moriaAutoLastRun.current >= AUTO_INTERVAL) handleRunMoriaScan();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moriaAutoScan, moriaScanRunning]);
+
   // Start first scan when auto-scan toggles on
   useEffect(() => {
     if (kuifjeAutoScan && !scanRunning) {
@@ -557,9 +607,18 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shpAutoScan]);
 
+  useEffect(() => {
+    if (moriaAutoScan && !moriaScanRunning) {
+      moriaAutoLastRun.current = Date.now();
+      handleRunMoriaScan();
+      setMoriaAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+    } else if (!moriaAutoScan) setMoriaAutoNext(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moriaAutoScan]);
+
   // Polling timer
   useEffect(() => {
-    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan && !moriaAutoScan) return;
     const timer = setInterval(() => {
       kuifjeAutoCheck();
       zbAutoCheck();
@@ -567,13 +626,14 @@ export default function DashboardPage() {
       mnAutoCheck();
       h2AutoCheck();
       shpAutoCheck();
+      moriaAutoCheck();
     }, 30_000);
     return () => clearInterval(timer);
-  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck, moriaAutoCheck]);
 
   // Visibility change catch-up
   useEffect(() => {
-    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan && !moriaAutoScan) return;
     function onVisible() {
       if (document.visibilityState === 'visible') {
         kuifjeAutoCheck();
@@ -582,11 +642,12 @@ export default function DashboardPage() {
         mnAutoCheck();
         h2AutoCheck();
         shpAutoCheck();
+        moriaAutoCheck();
       }
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck, moriaAutoCheck]);
 
   // ===== BULK ACTIONS =====
 
@@ -596,7 +657,8 @@ export default function DashboardPage() {
     else if (activeTab === 'biopharma') bpBulkFavorite(selectedIds);
     else if (activeTab === 'mining') mnBulkFavorite(selectedIds);
     else if (activeTab === 'hydrogen') h2BulkFavorite(selectedIds);
-    else shpBulkFavorite(selectedIds);
+    else if (activeTab === 'shipping') shpBulkFavorite(selectedIds);
+    else moriaBulkFavorite(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -606,7 +668,8 @@ export default function DashboardPage() {
     else if (activeTab === 'biopharma') bpBulkArchive(selectedIds);
     else if (activeTab === 'mining') mnBulkArchive(selectedIds);
     else if (activeTab === 'hydrogen') h2BulkArchive(selectedIds);
-    else shpBulkArchive(selectedIds);
+    else if (activeTab === 'shipping') shpBulkArchive(selectedIds);
+    else moriaBulkArchive(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -622,7 +685,8 @@ export default function DashboardPage() {
         else if (activeTab === 'biopharma') bpBulkDelete(selectedIds);
         else if (activeTab === 'mining') mnBulkDelete(selectedIds);
         else if (activeTab === 'hydrogen') h2BulkDelete(selectedIds);
-        else shpBulkDelete(selectedIds);
+        else if (activeTab === 'shipping') shpBulkDelete(selectedIds);
+        else moriaBulkDelete(selectedIds);
         setSelectedIds(new Set());
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
@@ -630,7 +694,7 @@ export default function DashboardPage() {
   }
 
   function requestDelete(id: string) {
-    const allStocks = activeTab === 'kuifje' ? stocks : activeTab === 'zonnebloem' ? zbStocks : activeTab === 'biopharma' ? bpStocks : activeTab === 'mining' ? mnStocks : activeTab === 'hydrogen' ? h2Stocks : shpStocks;
+    const allStocks = activeTab === 'kuifje' ? stocks : activeTab === 'zonnebloem' ? zbStocks : activeTab === 'biopharma' ? bpStocks : activeTab === 'mining' ? mnStocks : activeTab === 'hydrogen' ? h2Stocks : activeTab === 'shipping' ? shpStocks : moriaStocks;
     const stock = allStocks.find((s) => s.id === id);
     setConfirmDialog({
       open: true,
@@ -642,7 +706,8 @@ export default function DashboardPage() {
         else if (activeTab === 'biopharma') bpDeleteStock(id);
         else if (activeTab === 'mining') mnDeleteStock(id);
         else if (activeTab === 'hydrogen') h2DeleteStock(id);
-        else shpDeleteStock(id);
+        else if (activeTab === 'shipping') shpDeleteStock(id);
+        else moriaDeleteStock(id);
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
     });
@@ -669,9 +734,9 @@ export default function DashboardPage() {
   }
 
   // Count how many auto-scans are active
-  const allAutoActive = kuifjeAutoScan && zbAutoScan && bpAutoScan && mnAutoScan && h2AutoScan && shpAutoScan;
-  const anyAutoActive = kuifjeAutoScan || zbAutoScan || bpAutoScan || mnAutoScan || h2AutoScan || shpAutoScan;
-  const autoCount = [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan].filter(Boolean).length;
+  const allAutoActive = kuifjeAutoScan && zbAutoScan && bpAutoScan && mnAutoScan && h2AutoScan && shpAutoScan && moriaAutoScan;
+  const anyAutoActive = kuifjeAutoScan || zbAutoScan || bpAutoScan || mnAutoScan || h2AutoScan || shpAutoScan || moriaAutoScan;
+  const autoCount = [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan].filter(Boolean).length;
 
   // ===== RENDER SECTOR TAB (shared for BioPharma & Mining) =====
   function renderSectorTab(
@@ -949,6 +1014,17 @@ export default function DashboardPage() {
               Shipping
               <span className="ml-2 text-xs text-[var(--text-muted)]">({shpStocks.length})</span>
             </button>
+            <button
+              onClick={() => setActiveTab('moria')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'moria'
+                  ? 'border-rose-500 text-rose-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Moria
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({moriaStocks.length})</span>
+            </button>
           </div>
 
           <div className="ml-auto flex items-center gap-2 py-1">
@@ -961,6 +1037,7 @@ export default function DashboardPage() {
                 setMnAutoScan(newState);
                 setH2AutoScan(newState);
                 setShpAutoScan(newState);
+                setMoriaAutoScan(newState);
               }}
               className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
                 allAutoActive
@@ -969,7 +1046,7 @@ export default function DashboardPage() {
               }`}
             >
               <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
-              {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/6)` : 'Auto-scan All'}
+              {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/7)` : 'Auto-scan All'}
             </button>
 
             <div className="relative">
@@ -1231,6 +1308,87 @@ export default function DashboardPage() {
           shpStocks, shpLoading, shpFilters, setShpFilters, shpSort, shpHandleSort,
           shpSectors, shpMarkets, shpScanSessions, shpToggleFavorite,
           shpScanRunning, shpScanTriggered, shpAutoScan, setShpAutoScan, shpAutoNext,
+        )}
+
+        {/* Moria Tab */}
+        {activeTab === 'moria' && (
+          <>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                Moria
+                <span className="ml-3 text-sm font-normal text-[var(--text-muted)]">
+                  {moriaStocks.length} ultra-cheap mining stocks
+                </span>
+              </h1>
+
+              <div className="flex items-center gap-3">
+                <button onClick={handleRunMoriaScan} disabled={moriaScanRunning}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded text-sm font-medium text-white transition-colors">
+                  {moriaScanRunning ? 'Scanning...' : 'Run Moria Scan'}
+                </button>
+                <button onClick={() => setMoriaAutoScan(!moriaAutoScan)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded transition-colors ${
+                    moriaAutoScan ? 'bg-green-600 text-white' : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}>
+                  <span className={`inline-block w-2 h-2 rounded-full ${moriaAutoScan ? 'bg-white animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                  {moriaAutoScan ? `Auto ON${moriaAutoNext ? ` (${Math.ceil((moriaAutoNext.getTime() - Date.now()) / 60000)}m)` : ''}` : 'Auto'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-4 mb-4 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <input type="text" placeholder="Search ticker or company name..."
+                    value={moriaFilters.search} onChange={(e) => setMoriaFilters({ ...moriaFilters, search: e.target.value })}
+                    className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-rose-500 text-sm" />
+                </div>
+                <select value={moriaFilters.marketFilter} onChange={(e) => setMoriaFilters({ ...moriaFilters, marketFilter: e.target.value })}
+                  className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none cursor-pointer [&>option]:bg-[#1a1a2e] [&>option]:text-white">
+                  <option value="">All Markets</option>
+                  {moriaMarkets.map((m) => (<option key={m} value={m}>{m}</option>))}
+                </select>
+                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+                  <input type="checkbox" checked={moriaFilters.showFavorites} onChange={(e) => setMoriaFilters({ ...moriaFilters, showFavorites: e.target.checked })} className="rounded" />
+                  Favorites
+                </label>
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
+                    <button onClick={() => { const selected = moriaStocks.filter((s) => selectedIds.has(s.id)); for (const s of selected) window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock mining')}`, '_blank'); }}
+                      className="px-3 py-2 text-sm bg-rose-600 text-white hover:opacity-90 rounded transition-colors">Open in Google</button>
+                    <button onClick={handleBulkFavorite} className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors">Favorite</button>
+                    <button onClick={handleBulkArchive} className="px-3 py-2 text-sm bg-blue-600 text-white hover:opacity-90 rounded transition-colors">Archive</button>
+                    <button onClick={requestBulkDelete} className="px-3 py-2 text-sm bg-[var(--accent-red)] text-white hover:opacity-90 rounded transition-colors">Delete</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {moriaLoading ? (
+              <div className="flex items-center justify-center py-20"><div className="text-[var(--text-muted)]">Loading Moria stocks...</div></div>
+            ) : moriaStocks.length === 0 ? (
+              <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
+                <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Moria Stocks Yet</h2>
+                <p className="text-[var(--text-secondary)] mb-4">Click &ldquo;Run Moria Scan&rdquo; to find ultra-cheap mining stocks that have declined 99%+ from all-time highs.</p>
+                <button onClick={handleRunMoriaScan} disabled={moriaScanRunning}
+                  className="px-6 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg font-medium text-white transition-colors">
+                  {moriaScanRunning ? 'Scanning...' : 'Run First Moria Scan'}
+                </button>
+              </div>
+            ) : (
+              <>
+                <MoriaStockTable stocks={paginatedStocks as Parameters<typeof MoriaStockTable>[0]['stocks']}
+                  sort={moriaSort} onSort={moriaHandleSort} selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect} onToggleSelectAll={toggleSelectAll}
+                  onToggleFavorite={moriaToggleFavorite} onDelete={requestDelete} />
+                {totalPages > 1 && (
+                  <Pagination currentPage={currentPage} totalPages={totalPages}
+                    onPageChange={handlePageChange} totalItems={moriaStocks.length} itemsPerPage={ITEMS_PER_PAGE} />
+                )}
+              </>
+            )}
+          </>
         )}
 
         {underwaterMode && (
