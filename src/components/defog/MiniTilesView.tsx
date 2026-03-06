@@ -241,16 +241,7 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, onRefreshSto
           const freshnessDots = getFreshnessDots(stock.lastUpdated);
           const distPct = getDistancePercent(stock.currentPrice, stock.buyLimit);
           const isBelow = distPct !== null && distPct <= 0;
-          const absDayChange = Math.abs(stock.dayChangePercent);
-          const isBigMover = absDayChange > 3;
-          const isCrashing = stock.dayChangePercent <= -5;
           const isSelected = selectedIds.has(stock.id);
-
-          // Resolve 'auto' colors to WCAG contrast
-          const labelClr = settings.labelColor === 'auto' ? autoColor : settings.labelColor;
-          const distClr = settings.distanceColor === 'auto' ? autoColor : settings.distanceColor;
-          const dayClr = settings.dayChangeColor;
-          const dotsClr = settings.dotsColor === 'auto' ? autoColor : settings.dotsColor;
 
           // Determine label
           let label = stock.ticker;
@@ -260,15 +251,8 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, onRefreshSto
             label = stock.displayName || stock.name || stock.ticker;
           }
 
-          // Glow/border for big movers (>3%)
-          const glowStyle: React.CSSProperties = isBigMover ? {
-            boxShadow: stock.dayChangePercent > 0
-              ? '0 0 8px 2px rgba(0,255,136,0.4), inset 0 0 4px rgba(0,255,136,0.1)'
-              : '0 0 8px 2px rgba(255,51,102,0.4), inset 0 0 4px rgba(255,51,102,0.1)',
-            border: stock.dayChangePercent > 0
-              ? '1.5px solid rgba(0,255,136,0.5)'
-              : '1.5px solid rgba(255,51,102,0.5)',
-          } : {};
+          // Day change color: green for positive, red for negative
+          const dayChangeDisplayColor = stock.dayChangePercent >= 0 ? '#00cc66' : '#dd2255';
 
           // Selection highlight
           const selectionStyle: React.CSSProperties = isSelected ? {
@@ -305,66 +289,67 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, onRefreshSto
 
               <button
                 onClick={() => handleTileClick(stock)}
-                className={`w-full rounded-md transition-transform hover:scale-105 active:scale-95 focus:outline-none cursor-pointer select-none ${
-                  isCrashing ? 'animate-pulse' : ''
-                }`}
+                className="w-full rounded-md transition-transform hover:scale-105 active:scale-95 focus:outline-none cursor-pointer select-none overflow-hidden"
                 style={{
                   backgroundColor: bgColor,
                   aspectRatio: '1',
                   minHeight: `${minSize}px`,
-                  ...glowStyle,
                   ...selectionStyle,
                 }}
                 title={`${stock.ticker} - ${stock.name}\nPrijs: ${stock.currency} ${stock.currentPrice.toFixed(2)}\nLimiet: ${stock.buyLimit ? `${stock.currency} ${stock.buyLimit.toFixed(2)}` : 'Niet ingesteld'}\nAfstand: ${distPct !== null ? `${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%` : 'N/A'}\nDag: ${stock.dayChangePercent >= 0 ? '+' : ''}${stock.dayChangePercent.toFixed(2)}%\nUpdate: ${stock.lastUpdated ? new Date(stock.lastUpdated).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : 'Nooit'}\nKlik om te zoeken in Google`}
               >
-                <div className="flex flex-col items-center justify-center h-full p-1 overflow-hidden">
-                  {/* Freshness dots */}
-                  {settings.showFreshness && freshnessDots > 0 && (
-                    <div className="flex gap-0.5 mb-0.5">
-                      {[1, 2, 3, 4, 5].map((dot) => (
-                        <div key={dot} className="rounded-full" style={{
-                          width: 'clamp(3px, 0.6vw, 5px)', height: 'clamp(3px, 0.6vw, 5px)',
-                          backgroundColor: dot <= freshnessDots ? dotsClr : (autoColor === '#ffffff' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'),
-                        }} />
-                      ))}
-                    </div>
-                  )}
-                  {settings.showFreshness && freshnessDots === 0 && (
-                    <div className="rounded-full mb-0.5" style={{ width: 'clamp(4px, 0.8vw, 6px)', height: 'clamp(4px, 0.8vw, 6px)', backgroundColor: '#ff3366', opacity: 0.7 }} />
-                  )}
+                <div className="flex flex-col h-full">
+                  {/* Top 80%: colored area with label, dots, distance */}
+                  <div className="flex flex-col items-center justify-center p-1 overflow-hidden" style={{ flex: '4 1 0%' }}>
+                    {/* Freshness dots */}
+                    {settings.showFreshness && freshnessDots > 0 && (
+                      <div className="flex gap-0.5 mb-0.5">
+                        {[1, 2, 3, 4, 5].map((dot) => (
+                          <div key={dot} className="rounded-full" style={{
+                            width: 'clamp(3px, 0.6vw, 5px)', height: 'clamp(3px, 0.6vw, 5px)',
+                            backgroundColor: dot <= freshnessDots ? autoColor : (autoColor === '#ffffff' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'),
+                          }} />
+                        ))}
+                      </div>
+                    )}
+                    {settings.showFreshness && freshnessDots === 0 && (
+                      <div className="rounded-full mb-0.5" style={{ width: 'clamp(4px, 0.8vw, 6px)', height: 'clamp(4px, 0.8vw, 6px)', backgroundColor: '#ff3366' }} />
+                    )}
 
-                  {/* Label */}
-                  <span className="leading-tight truncate w-full text-center" style={{
-                    fontSize: FONT_SIZES.label[settings.labelFontSize] || FONT_SIZES.label.sm,
-                    fontWeight: settings.fontWeight === 'bold' ? 700 : 400,
-                    color: labelClr, opacity: 0.85,
-                  }}>
-                    {label}
-                  </span>
-
-                  {/* Distance % */}
-                  {settings.showDistance && (
-                    <span className="font-bold leading-tight" style={{
-                      fontSize: FONT_SIZES.distance[settings.distanceFontSize] || FONT_SIZES.distance.md,
-                      color: distClr,
+                    {/* Label — always black or white */}
+                    <span className="leading-tight truncate w-full text-center" style={{
+                      fontSize: FONT_SIZES.label[settings.labelFontSize] || FONT_SIZES.label.sm,
+                      fontWeight: settings.fontWeight === 'bold' ? 700 : 400,
+                      color: autoColor,
                     }}>
-                      {distPct !== null ? <>{isBelow ? '' : '+'}{distPct.toFixed(1)}%</> : '—'}
+                      {label}
                     </span>
-                  )}
 
-                  {/* Day change with arrow */}
-                  {settings.showDayChange && (
-                    <span className="leading-tight flex items-center gap-px" style={{
-                      fontSize: FONT_SIZES.dayChange[settings.dayChangeFontSize] || FONT_SIZES.dayChange.xs,
-                      color: isCrashing ? '#ff3366' : dayClr,
-                      opacity: isCrashing ? 1 : (autoColor === '#ffffff' ? 0.7 : 0.9),
-                      textShadow: autoColor === '#000000' ? '0 0 2px rgba(255,255,255,0.5)' : 'none',
-                    }}>
-                      <span style={{ fontSize: '0.7em', lineHeight: 1 }}>
-                        {stock.dayChangePercent >= 0 ? '▲' : '▼'}
+                    {/* Distance % — always black or white */}
+                    {settings.showDistance && (
+                      <span className="font-bold leading-tight" style={{
+                        fontSize: FONT_SIZES.distance[settings.distanceFontSize] || FONT_SIZES.distance.md,
+                        color: autoColor,
+                      }}>
+                        {distPct !== null ? <>{isBelow ? '' : '+'}{distPct.toFixed(1)}%</> : '—'}
                       </span>
-                      {stock.dayChangePercent >= 0 ? '+' : ''}{stock.dayChangePercent.toFixed(2)}%
-                    </span>
+                    )}
+                  </div>
+
+                  {/* Bottom 20%: white strip with day change in color */}
+                  {settings.showDayChange && (
+                    <div className="flex items-center justify-center rounded-b-md" style={{ flex: '1 1 0%', backgroundColor: '#ffffff' }}>
+                      <span className="font-bold flex items-center gap-px" style={{
+                        fontSize: FONT_SIZES.dayChange[settings.dayChangeFontSize] || FONT_SIZES.dayChange.xs,
+                        color: dayChangeDisplayColor,
+                        lineHeight: 1,
+                      }}>
+                        <span style={{ fontSize: '0.75em' }}>
+                          {stock.dayChangePercent >= 0 ? '▲' : '▼'}
+                        </span>
+                        {stock.dayChangePercent >= 0 ? '+' : ''}{stock.dayChangePercent.toFixed(2)}%
+                      </span>
+                    </div>
                   )}
                 </div>
               </button>

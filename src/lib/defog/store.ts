@@ -128,6 +128,8 @@ const DEFAULT_SETTINGS: UserSettings = {
     rainbowPreset: 'classic',
   },
   hiddenTabIds: [],
+  weekendTaskEnabled: true,
+  autoScanDefault: false,  // Auto-scan off by default when page loads
 };
 
 const DEFAULT_TAB: Tab = {
@@ -159,6 +161,7 @@ interface StoreActions {
   addStock: (tabId: string, stock: Omit<Stock, 'id' | 'historicalData' | 'lastUpdated' | 'alertSettings'>) => void;
   updateStock: (tabId: string, stockId: string, updates: Partial<Stock>) => void;
   removeStock: (tabId: string, stockId: string) => void;
+  removeStocks: (removals: { tabId: string; stockId: string }[]) => void;
   updateStockPrice: (tabId: string, stockId: string, price: number, dayChange: number, dayChangePercent: number) => void;
   setStockHistoricalData: (tabId: string, stockId: string, data: Stock['historicalData']) => void;
   setStockChartTimeframe: (tabId: string, stockId: string, timeframe: ChartTimeframe) => void;
@@ -347,6 +350,22 @@ export const useStore = create<AppState & StoreActions>((set, get) => ({
         tabId,
       });
     }
+  },
+
+  removeStocks: (removals) => {
+    const removalMap = new Map<string, Set<string>>();
+    for (const { tabId, stockId } of removals) {
+      if (!removalMap.has(tabId)) removalMap.set(tabId, new Set());
+      removalMap.get(tabId)!.add(stockId);
+    }
+    set((state) => ({
+      tabs: state.tabs.map((t) => {
+        const ids = removalMap.get(t.id);
+        if (!ids) return t;
+        return { ...t, stocks: t.stocks.filter((s) => !ids.has(s.id)) };
+      }),
+    }));
+    get().logAction('remove_stock', `${removals.length} dubbele aandelen verwijderd`, { stockId: removals[0]?.stockId, tabId: removals[0]?.tabId });
   },
 
   updateStockPrice: (tabId, stockId, price, dayChange, dayChangePercent) => {

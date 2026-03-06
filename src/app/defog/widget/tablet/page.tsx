@@ -346,7 +346,7 @@ export default function TabletWidget() {
       <div className="tb-status">
         <span className="tb-status-dot" />
         <span>
-          Tablet Dashboard
+          Tablet Scanner
           {lastRefresh && <> &middot; {lastRefresh.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</>}
         </span>
         <a href="/defog" className="tb-open-app">Open App</a>

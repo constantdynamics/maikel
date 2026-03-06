@@ -20,6 +20,7 @@ import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
 import { useMoriaStocks } from '@/hooks/useMoriaStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
+import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
@@ -223,6 +224,8 @@ export default function DashboardPage() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -314,6 +317,58 @@ export default function DashboardPage() {
     const csv = stocksToCSV(stocks as unknown as Record<string, unknown>[]);
     if (csv) downloadCSV(csv, generateCsvFilename());
   }, [stocks]);
+
+  // ===== SCANNER EXPORT =====
+  async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
+    const url = tab === 'kuifje' ? '/api/stocks'
+      : tab === 'zonnebloem' ? '/api/zonnebloem/stocks'
+      : `/api/sector/stocks?type=${tab}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (Array.isArray(json) ? json : (json.stocks || json.data || [])) as Record<string, unknown>[];
+  }
+
+  async function handleScannerExportTab(tab: ScannerTab, fmt: 'csv' | 'json') {
+    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' };
+    setExportStatus(`Ophalen ${labelMap[tab]}...`);
+    try {
+      const data = await fetchScannerData(tab);
+      if (data.length === 0) { setExportStatus('Geen data'); setTimeout(() => setExportStatus(null), 2000); return; }
+      const label = labelMap[tab];
+      if (fmt === 'csv') {
+        downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
+      } else {
+        downloadFile(scannerStocksToJSON(data, tab), generateExportFilename(label, 'json'), 'application/json');
+      }
+      setExportStatus(null);
+      setExportOpen(false);
+    } catch { setExportStatus('Fout bij ophalen'); setTimeout(() => setExportStatus(null), 3000); }
+  }
+
+  async function handleScannerExportAll(fmt: 'csv' | 'json') {
+    setExportStatus('Alle tabs ophalen...');
+    try {
+      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping] = await Promise.all([
+        fetchScannerData('kuifje'), fetchScannerData('zonnebloem'),
+        fetchScannerData('biopharma'), fetchScannerData('mining'),
+        fetchScannerData('hydrogen'), fetchScannerData('shipping'),
+      ]);
+      if (fmt === 'json') {
+        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping }), generateExportFilename('AllScanners', 'json'), 'application/json');
+      } else {
+        for (const [tab, data, label] of [
+          ['kuifje', kuifje, 'Kuifje'], ['zonnebloem', zonnebloem, 'Zonnebloem'],
+          ['biopharma', biopharma, 'BioPharma'], ['mining', mining, 'Mining'],
+          ['hydrogen', hydrogen, 'Hydrogen'], ['shipping', shipping, 'Shipping'],
+        ] as [ScannerTab, Record<string, unknown>[], string][]) {
+          if (data.length > 0) downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
+        }
+      }
+      setExportStatus(null);
+      setExportOpen(false);
+    } catch { setExportStatus('Fout bij ophalen'); setTimeout(() => setExportStatus(null), 3000); }
+  }
 
   // ===== SCAN HANDLERS =====
 
@@ -994,7 +1049,39 @@ export default function DashboardPage() {
               {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/7)` : 'Auto-scan All'}
             </button>
 
-            {/* Export moved to Defog Settings > Data tab */}
+            <div className="relative">
+              <button
+                onClick={() => setExportOpen(!exportOpen)}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]"
+              >
+                Export
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              {exportOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setExportOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-64 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-lg z-20 p-3 space-y-3">
+                    {exportStatus && <div className="text-xs text-blue-400">{exportStatus}</div>}
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Huidige tab ({
+                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' }[activeTab]
+                      })</div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleScannerExportTab(activeTab, 'csv')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">CSV</button>
+                        <button onClick={() => handleScannerExportTab(activeTab, 'json')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">JSON</button>
+                      </div>
+                    </div>
+                    <div className="border-t border-[var(--border-color)] pt-3">
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Alle 6 tabs</div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleScannerExportAll('json')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">JSON</button>
+                        <button onClick={() => handleScannerExportAll('csv')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">CSV</button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1003,7 +1090,7 @@ export default function DashboardPage() {
           <>
             <div className="flex items-center justify-between flex-wrap gap-4">
               <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                Dashboard
+                Scanner
                 <span className="ml-3 text-sm font-normal text-[var(--text-muted)]">
                   {stocks.length} stocks total
                 </span>

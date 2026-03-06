@@ -17,7 +17,7 @@ const THEMES = [
 ] as const;
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard', label: 'Scanner' },
   { href: '/defog', label: 'Defog' },
   { href: '/analytics', label: 'Analytics' },
   { href: '/kz-report', label: 'K&Z Report' },

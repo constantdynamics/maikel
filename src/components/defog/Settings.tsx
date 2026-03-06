@@ -118,6 +118,12 @@ export function Settings({
   const [hiddenTabIds, setHiddenTabIds] = useState<string[]>(
     settings.hiddenTabIds || []
   );
+  const [weekendTaskEnabled, setWeekendTaskEnabled] = useState(
+    settings.weekendTaskEnabled !== false
+  );
+  const [autoScanDefault, setAutoScanDefault] = useState(
+    settings.autoScanDefault === true
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -148,6 +154,8 @@ export function Settings({
     setFixedTabColors(settings.fixedTabColors || { all: 'rainbow', topGainers: '#00ff88', topLosers: '#ff3366', purchased: '#00ff88' });
     setScanWeights(settings.scanPriorityWeights || DEFAULT_SCAN_WEIGHTS);
     setHiddenTabIds(settings.hiddenTabIds || []);
+    setWeekendTaskEnabled(settings.weekendTaskEnabled !== false);
+    setAutoScanDefault(settings.autoScanDefault === true);
   }, [settings]);
 
   // Collect all current local state into a settings update
@@ -157,9 +165,9 @@ export function Settings({
     return {
       apiKey, apiProvider, apiKeys: apiKeys.filter(k => k.apiKey),
       notifications: { enabled: notificationsEnabled, audioEnabled, pushEnabled, thresholds: parsedThresholds, quietHours: { enabled: quietHoursEnabled, start: quietHoursStart, end: quietHoursEnd }, dailyDropAlert: parsedDailyDrop && !isNaN(parsedDailyDrop) ? parsedDailyDrop : null },
-      globalChartTimeframe: globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanPriorityWeights: scanWeights, hiddenTabIds,
+      globalChartTimeframe: globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanPriorityWeights: scanWeights, hiddenTabIds, weekendTaskEnabled, autoScanDefault,
     };
-  }, [apiKey, apiProvider, apiKeys, notificationsEnabled, audioEnabled, pushEnabled, thresholds, quietHoursEnabled, quietHoursStart, quietHoursEnd, dailyDropAlert, globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanWeights, hiddenTabIds]);
+  }, [apiKey, apiProvider, apiKeys, notificationsEnabled, audioEnabled, pushEnabled, thresholds, quietHoursEnabled, quietHoursStart, quietHoursEnd, dailyDropAlert, globalTimeframe, fontSize, colorScheme, viewMode, mobileColumnVisibility, headerButtonVisibility, buySignalDisplay, fixedTabColors, scanWeights, hiddenTabIds, weekendTaskEnabled, autoScanDefault]);
 
   // ALWAYS save when closing — whether via Save button or X/overlay close
   const handleClose = useCallback(() => {
@@ -238,6 +246,27 @@ export function Settings({
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
+  const [pasteJsonValue, setPasteJsonValue] = useState('');
+  const [pasteJsonError, setPasteJsonError] = useState<string | null>(null);
+
+  const handlePasteJsonRestore = () => {
+    setPasteJsonError(null);
+    try {
+      const raw = pasteJsonValue.trim();
+      if (!raw) { setPasteJsonError('Plak eerst je JSON data'); return; }
+      const importData = JSON.parse(raw);
+      if (!importData.tabs || !Array.isArray(importData.tabs)) { setPasteJsonError('Ongeldig formaat: geen tabs gevonden'); return; }
+      const stockCount = importData.tabs.reduce((sum: number, tab: Tab) => sum + (tab.stocks?.length || 0), 0);
+      if (!window.confirm(`Herstel uit geplakte data?\n\n• ${importData.tabs.length} tabbladen\n• ${stockCount} aandelen\n\nDit vervangt je huidige data!`)) return;
+      onCloudDataLoaded({ tabs: importData.tabs, archive: importData.archive || [], purchasedStocks: importData.purchasedStocks || [], settings: importData.settings || settings, limitHistory: importData.limitHistory || [] });
+      setPasteJsonValue('');
+      alert(`Hersteld: ${stockCount} aandelen over ${importData.tabs.length} tabs`);
+      onClose();
+    } catch {
+      setPasteJsonError('Ongeldig JSON — controleer de data');
+    }
+  };
+
   const handleImportJSON = () => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = '.json';
@@ -269,7 +298,7 @@ export function Settings({
     const res = await fetch(url);
     if (!res.ok) return [];
     const json = await res.json();
-    return (json.stocks || json.data || []) as Record<string, unknown>[];
+    return (Array.isArray(json) ? json : (json.stocks || json.data || [])) as Record<string, unknown>[];
   }
 
   async function handleScannerExportTab(tab: ScannerTab, fmt: 'csv' | 'json') {
@@ -627,12 +656,40 @@ export function Settings({
             <div className="p-3 bg-[#2d2d2d] rounded-lg">
               <div className="mb-2">
                 <div className="text-sm text-gray-300">Browser Migratie</div>
-                <div className="text-xs text-gray-500">Volledige backup voor overzetten naar andere browser</div>
+                <div className="text-xs text-gray-500">Volledige backup voor overzetten naar andere browser of URL</div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-2">
                 <button onClick={handleExportJSON} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#00ff88] hover:bg-[#00dd77] text-black text-sm font-medium rounded-lg transition-colors"><ArrowDownTrayIcon className="w-4 h-4" />Export Backup</button>
                 <button onClick={handleImportJSON} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-[#3d3d3d] hover:bg-[#4d4d4d] text-white text-sm font-medium rounded-lg transition-colors"><ArrowUpTrayIcon className="w-4 h-4" />Import Backup</button>
               </div>
+              <button
+                onClick={() => { window.location.href = window.location.pathname + '?restore-from-cloud=1'; }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#1a3a4a] hover:bg-[#1f4a5a] text-[#00ccff] text-sm font-medium rounded-lg transition-colors border border-[#00ccff33]"
+              >
+                ☁️ Herstel vanuit cloud
+              </button>
+            </div>
+
+            <div className="p-3 bg-[#2d2d2d] rounded-lg border border-[#ff336633]">
+              <div className="mb-2">
+                <div className="text-sm text-[#ff6666]">Noodherstel — Plak JSON</div>
+                <div className="text-xs text-gray-500">Heb je data gekopieerd vanuit de browser console of een oud tabblad? Plak het hier.</div>
+              </div>
+              <textarea
+                value={pasteJsonValue}
+                onChange={e => { setPasteJsonValue(e.target.value); setPasteJsonError(null); }}
+                placeholder='Plak hier je JSON data (localStorage backup of export bestand inhoud)...'
+                rows={3}
+                className="w-full bg-[#1a1a1a] border border-[#3d3d3d] rounded px-2 py-1.5 text-xs text-gray-300 font-mono resize-none focus:outline-none focus:border-[#ff6666] mb-2"
+              />
+              {pasteJsonError && <div className="text-xs text-red-400 mb-2">{pasteJsonError}</div>}
+              <button
+                onClick={handlePasteJsonRestore}
+                disabled={!pasteJsonValue.trim()}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#ff3366] hover:bg-[#dd2255] disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <ArrowUpTrayIcon className="w-4 h-4" /> Herstel uit geplakte data
+              </button>
             </div>
 
             <div className="p-3 bg-[#2d2d2d] rounded-lg">
@@ -712,6 +769,26 @@ export function Settings({
               </div>
               <button onClick={() => setScanWeights(w => ({ ...w, skipErrorStocks: !w.skipErrorStocks }))} className={`w-12 h-6 rounded-full transition-colors ${scanWeights.skipErrorStocks ? 'bg-[#00ff88]' : 'bg-[#3d3d3d]'}`}>
                 <div className={`w-5 h-5 bg-white rounded-full transition-transform ${scanWeights.skipErrorStocks ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between py-2 border-t border-[#3d3d3d]">
+              <div>
+                <label className="text-sm text-gray-300">Auto-scan bij openen</label>
+                <p className="text-[10px] text-gray-600">Automatisch scannen starten wanneer je Defog opent</p>
+              </div>
+              <button onClick={() => setAutoScanDefault(!autoScanDefault)} className={`w-12 h-6 rounded-full transition-colors ${autoScanDefault ? 'bg-[#00ff88]' : 'bg-[#3d3d3d]'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${autoScanDefault ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between py-2 border-t border-[#3d3d3d]">
+              <div>
+                <label className="text-sm text-gray-300">Weekend background fetch</label>
+                <p className="text-[10px] text-gray-600">Automatisch 5-jaar range data ophalen in het weekend</p>
+              </div>
+              <button onClick={() => setWeekendTaskEnabled(!weekendTaskEnabled)} className={`w-12 h-6 rounded-full transition-colors ${weekendTaskEnabled ? 'bg-[#00ff88]' : 'bg-[#3d3d3d]'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${weekendTaskEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
