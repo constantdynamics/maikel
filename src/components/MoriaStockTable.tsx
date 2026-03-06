@@ -37,13 +37,91 @@ function declineColor(pct: number | null): string {
   return 'text-[var(--text-secondary)]';
 }
 
+/**
+ * Get dot colors for growth events (Kuifje-style).
+ * Green = 500%+, Yellow = 300-500%, White = <300%
+ */
+function getGrowthDotColors(eventCount: number, highestGrowthPct: number | null): string[] {
+  const count = Math.min(eventCount, 10);
+  if (count === 0) return [];
+  const avg = highestGrowthPct ? highestGrowthPct / Math.max(eventCount, 1) : 200;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestGrowthPct || 200) : avg * (1 - i * 0.1);
+    dots.push(est >= 500 ? '#22c55e' : est >= 300 ? '#facc15' : '#ffffff');
+  }
+  return dots;
+}
+
+/**
+ * Get dot colors for spike events (Zonnebloem-style).
+ * Green = 200%+, Yellow = 100-200%, White = <100%
+ */
+function getSpikeDotColors(spikeCount: number, highestSpikePct: number | null): string[] {
+  const count = Math.min(spikeCount, 10);
+  if (count === 0) return [];
+  const avg = highestSpikePct ? highestSpikePct / Math.max(spikeCount, 1) : 100;
+  const dots: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const est = i === 0 ? (highestSpikePct || 100) : avg * (1 - i * 0.1);
+    dots.push(est >= 200 ? '#22c55e' : est >= 100 ? '#facc15' : '#ffffff');
+  }
+  return dots;
+}
+
+/**
+ * Medal ranking sort value for dots (medaillespiegel).
+ * Green × 1,000,000 + Yellow × 10,000 + White × 100
+ */
+export function dotsSortValue(dots: string[]): number {
+  let green = 0, yellow = 0, white = 0;
+  for (const c of dots) {
+    if (c === '#22c55e') green++;
+    else if (c === '#facc15') yellow++;
+    else white++;
+  }
+  return green * 1_000_000 + yellow * 10_000 + white * 100;
+}
+
+function DotDisplay({ dots, tooltip }: { dots: string[]; tooltip: string }) {
+  if (dots.length === 0) return <span className="text-[var(--text-muted)]">-</span>;
+
+  const topRow = dots.slice(0, 5);
+  const bottomRow = dots.slice(5, 10);
+
+  return (
+    <div className="flex flex-col gap-0.5" title={tooltip}>
+      <div className="flex items-center gap-0.5">
+        {topRow.map((color, idx) => (
+          <span
+            key={idx}
+            className="inline-block w-2 h-2 rounded-full border border-gray-600"
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+      {bottomRow.length > 0 && (
+        <div className="flex items-center gap-0.5">
+          {bottomRow.map((color, idx) => (
+            <span
+              key={idx + 5}
+              className="inline-block w-2 h-2 rounded-full border border-gray-600"
+              style={{ backgroundColor: color }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MoriaStockTable({
   stocks, sort, onSort, selectedIds, onToggleSelect, onToggleSelectAll,
   onToggleFavorite, onDelete,
 }: Props) {
   const allSelected = stocks.length > 0 && selectedIds.size === stocks.length;
 
-  const columns: { key: keyof MoriaStock; label: string; align?: string }[] = [
+  const columns: { key: keyof MoriaStock; label: string; align?: string; tooltip?: string }[] = [
     { key: 'ticker', label: 'Ticker' },
     { key: 'company_name', label: 'Company' },
     { key: 'exchange', label: 'Exchange' },
@@ -52,6 +130,8 @@ export default function MoriaStockTable({
     { key: 'decline_from_3y_pct', label: '3Y Drop', align: 'right' },
     { key: 'decline_from_1y_pct', label: '1Y Drop', align: 'right' },
     { key: 'decline_from_6m_pct', label: '6M Drop', align: 'right' },
+    { key: 'growth_event_count', label: 'Growth', tooltip: 'Growth events (Kuifje). Groen=500%+, Geel=300-500%, Wit=<300%' },
+    { key: 'spike_count', label: 'Spikes', tooltip: 'Spike events (Zonnebloem). Groen=200%+, Geel=100-200%, Wit=<100%' },
     { key: 'market_cap', label: 'Mkt Cap', align: 'right' },
     { key: 'detection_date', label: 'Found' },
   ];
@@ -73,7 +153,8 @@ export default function MoriaStockTable({
               {columns.map((col) => (
                 <th key={col.key}
                   className={`p-3 text-[var(--text-muted)] cursor-pointer hover:text-[var(--text-primary)] whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                  onClick={() => onSort(col.key)}>
+                  onClick={() => onSort(col.key)}
+                  title={col.tooltip}>
                   {col.label}<SortIcon column={col.key} sort={sort} />
                 </th>
               ))}
@@ -84,6 +165,8 @@ export default function MoriaStockTable({
             {stocks.map((stock) => {
               const flag = getExchangeFlag(stock.exchange || '');
               const yahooTicker = stock.yahoo_ticker || stock.ticker;
+              const growthDots = getGrowthDotColors(stock.growth_event_count, stock.highest_growth_pct);
+              const spikeDots = getSpikeDotColors(stock.spike_count, stock.highest_spike_pct);
               return (
                 <tr key={stock.id}
                   className={`border-b border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] transition-colors ${selectedIds.has(stock.id) ? 'bg-[var(--bg-tertiary)]' : ''}`}>
@@ -113,6 +196,12 @@ export default function MoriaStockTable({
                   <td className={`p-3 text-right font-mono ${declineColor(stock.decline_from_3y_pct)}`}>{formatPct(stock.decline_from_3y_pct)}</td>
                   <td className={`p-3 text-right font-mono ${declineColor(stock.decline_from_1y_pct)}`}>{formatPct(stock.decline_from_1y_pct)}</td>
                   <td className={`p-3 text-right font-mono ${declineColor(stock.decline_from_6m_pct)}`}>{formatPct(stock.decline_from_6m_pct)}</td>
+                  <td className="p-3">
+                    <DotDisplay dots={growthDots} tooltip={`${stock.growth_event_count} growth events, highest: ${stock.highest_growth_pct?.toFixed(0) ?? '-'}%`} />
+                  </td>
+                  <td className="p-3">
+                    <DotDisplay dots={spikeDots} tooltip={`${stock.spike_count} spikes, highest: ${stock.highest_spike_pct?.toFixed(0) ?? '-'}%`} />
+                  </td>
                   <td className="p-3 text-right font-mono text-[var(--text-muted)] text-xs">
                     {stock.market_cap ? (stock.market_cap >= 1e9 ? `$${(stock.market_cap / 1e9).toFixed(1)}B` : stock.market_cap >= 1e6 ? `$${(stock.market_cap / 1e6).toFixed(0)}M` : `$${(stock.market_cap / 1e3).toFixed(0)}K`) : '-'}
                   </td>

@@ -12,7 +12,11 @@
  */
 
 import { createServiceClient } from '@/lib/supabase';
-import { retryWithBackoff } from '@/lib/utils';
+import { retryWithBackoff, sleep } from '@/lib/utils';
+import * as yahoo from '@/lib/scanner/yahoo';
+import { analyzeGrowthEvents } from '@/lib/scanner/scorer';
+import { analyzeSpikeEvents } from '@/lib/zonnebloem/scorer';
+import { validatePriceHistory } from '@/lib/scanner/validator';
 
 // Mining keywords for sector matching
 const MINING_KEYWORDS = [
@@ -233,12 +237,55 @@ async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCand
   return candidates;
 }
 
+/**
+ * Deep scan a single Moria stock via Yahoo Finance to detect growth events and spike events.
+ */
+async function deepScanMoriaStock(
+  yahooTicker: string,
+): Promise<{
+  growthEventCount: number;
+  highestGrowthPct: number | null;
+  highestGrowthDate: string | null;
+  spikeCount: number;
+  highestSpikePct: number | null;
+  highestSpikeDate: string | null;
+  spikeScore: number;
+} | null> {
+  try {
+    const history = await yahoo.getHistoricalData(yahooTicker, 5);
+    if (history.length < 100) return null;
+
+    const validation = validatePriceHistory(history);
+    if (!validation.isValid) return null;
+
+    // Kuifje-style growth event analysis
+    const growthAnalysis = analyzeGrowthEvents(history, 30, 2, 5);
+
+    // Zonnebloem-style spike event analysis
+    const spikeAnalysis = analyzeSpikeEvents(history, 75, 3, 24);
+
+    return {
+      growthEventCount: growthAnalysis.events.length,
+      highestGrowthPct: growthAnalysis.highestGrowthPct || null,
+      highestGrowthDate: growthAnalysis.highestGrowthDate,
+      spikeCount: spikeAnalysis.events.length,
+      highestSpikePct: spikeAnalysis.highestSpikePct || null,
+      highestSpikeDate: spikeAnalysis.highestSpikeDate,
+      spikeScore: spikeAnalysis.spikeScore,
+    };
+  } catch (err) {
+    console.error(`[Moria] Deep scan failed for ${yahooTicker}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function runMoriaScan(): Promise<{
   status: string;
   marketsScanned: number;
   candidatesFound: number;
   stocksSaved: number;
   newStocksFound: number;
+  stocksDeepScanned: number;
   errors: string[];
 }> {
   const supabase = createServiceClient();
@@ -288,8 +335,9 @@ export async function runMoriaScan(): Promise<{
 
   let newStocksFound = 0;
   let stocksSaved = 0;
+  let stocksDeepScanned = 0;
 
-  // Upsert each candidate
+  // Upsert each candidate (basic TradingView data first)
   for (const c of allCandidates) {
     try {
       const { data: existing } = await supabase
@@ -364,7 +412,53 @@ export async function runMoriaScan(): Promise<{
     }
   }
 
-  console.log(`[Moria] Scan complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new`);
+  console.log(`[Moria] Phase 1 complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new`);
+  console.log(`[Moria] Phase 2: Deep scanning ${allCandidates.length} stocks via Yahoo Finance...`);
+
+  // Deep scan in batches of 5 to get growth events and spike events
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < allCandidates.length; i += BATCH_SIZE) {
+    const batch = allCandidates.slice(i, i + BATCH_SIZE);
+
+    const deepResults = await Promise.allSettled(
+      batch.map(c => deepScanMoriaStock(c.yahooTicker))
+    );
+
+    for (let j = 0; j < deepResults.length; j++) {
+      const c = batch[j];
+      const result = deepResults[j];
+      stocksDeepScanned++;
+
+      if (result.status !== 'fulfilled' || !result.value) continue;
+
+      const deep = result.value;
+      const clampNum = (v: number | null, max: number = 9_999_999): number | null =>
+        v == null || !isFinite(v) ? null : Math.min(Math.max(v, -max), max);
+
+      try {
+        await supabase
+          .from('moria_stocks')
+          .update({
+            growth_event_count: deep.growthEventCount,
+            highest_growth_pct: clampNum(deep.highestGrowthPct),
+            highest_growth_date: deep.highestGrowthDate,
+            spike_count: deep.spikeCount,
+            highest_spike_pct: clampNum(deep.highestSpikePct),
+            highest_spike_date: deep.highestSpikeDate,
+            spike_score: clampNum(deep.spikeScore),
+          })
+          .eq('ticker', c.ticker)
+          .eq('market', c.market)
+          .eq('is_deleted', false);
+      } catch (e) {
+        console.error(`[Moria] Error updating deep scan for ${c.ticker}:`, e);
+      }
+    }
+
+    if (i + BATCH_SIZE < allCandidates.length) await sleep(50);
+  }
+
+  console.log(`[Moria] Scan complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new, ${stocksDeepScanned} deep-scanned`);
 
   // Update scan log
   if (scanSessionId) {
@@ -391,6 +485,7 @@ export async function runMoriaScan(): Promise<{
     candidatesFound: allCandidates.length,
     stocksSaved,
     newStocksFound,
+    stocksDeepScanned,
     errors,
   };
 }

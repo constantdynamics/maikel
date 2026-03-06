@@ -74,12 +74,39 @@ export function useMoriaStocks() {
       result = result.filter((s) => s.is_favorite);
     }
 
+    // Medal sort for dot columns: green × 1M + yellow × 10K + white × 100
+    const medalKey = (count: number, highestPct: number | null, greenThreshold: number, yellowThreshold: number): number => {
+      if (count === 0) return 0;
+      const avg = highestPct ? highestPct / Math.max(count, 1) : yellowThreshold;
+      let green = 0, yellow = 0, white = 0;
+      for (let i = 0; i < Math.min(count, 10); i++) {
+        const est = i === 0 ? (highestPct || yellowThreshold) : avg * (1 - i * 0.1);
+        if (est >= greenThreshold) green++;
+        else if (est >= yellowThreshold) yellow++;
+        else white++;
+      }
+      return green * 1_000_000 + yellow * 10_000 + white * 100;
+    };
+
     result.sort((a, b) => {
-      const aVal = a[sort.column as keyof MoriaStock];
-      const bVal = b[sort.column as keyof MoriaStock];
-      if (aVal === null || aVal === undefined) return 1;
-      if (bVal === null || bVal === undefined) return -1;
-      const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      let comparison: number;
+      const col = sort.column as keyof MoriaStock;
+
+      if (col === 'growth_event_count') {
+        const aKey = medalKey(a.growth_event_count, a.highest_growth_pct, 500, 300);
+        const bKey = medalKey(b.growth_event_count, b.highest_growth_pct, 500, 300);
+        comparison = aKey - bKey;
+      } else if (col === 'spike_count') {
+        const aKey = medalKey(a.spike_count, a.highest_spike_pct, 200, 100);
+        const bKey = medalKey(b.spike_count, b.highest_spike_pct, 200, 100);
+        comparison = aKey - bKey;
+      } else {
+        const aVal = a[col];
+        const bVal = b[col];
+        if (aVal === null || aVal === undefined) return 1;
+        if (bVal === null || bVal === undefined) return -1;
+        comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      }
       return sort.direction === 'asc' ? comparison : -comparison;
     });
 

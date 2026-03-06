@@ -429,6 +429,15 @@ export interface MoriaStock {
   decline_from_1y_pct: number | null;
   high_6m: number | null;
   decline_from_6m_pct: number | null;
+  // Growth events (Kuifje-style)
+  growth_event_count: number;
+  highest_growth_pct: number | null;
+  highest_growth_date: string | null;
+  // Spike events (Zonnebloem-style)
+  spike_count: number;
+  highest_spike_pct: number | null;
+  highest_spike_date: string | null;
+  spike_score: number;
   avg_volume_30d: number | null;
   market_cap: number | null;
   detection_date: string;
