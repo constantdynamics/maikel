@@ -249,6 +249,7 @@ export default function DashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
+  const [autoScanDropdownOpen, setAutoScanDropdownOpen] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   // Confirm dialog state
@@ -1106,27 +1107,60 @@ export default function DashboardPage() {
           </div>
 
           <div className="ml-auto flex items-center gap-2 py-1">
-            <button
-              onClick={() => {
-                const newState = !allAutoActive;
-                setKuifjeAutoScan(newState);
-                setZbAutoScan(newState);
-                setBpAutoScan(newState);
-                setMnAutoScan(newState);
-                setH2AutoScan(newState);
-                setShpAutoScan(newState);
-                setMoriaAutoScan(newState);
-                setBluePillAutoScan(newState);
-              }}
-              className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
-                allAutoActive
-                  ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:opacity-90'
-                  : 'bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white hover:opacity-90'
-              }`}
-            >
-              <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
-              {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/8)` : 'Auto-scan All'}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setAutoScanDropdownOpen(!autoScanDropdownOpen)}
+                className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
+                  allAutoActive
+                    ? 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:opacity-90'
+                    : anyAutoActive
+                      ? 'bg-gradient-to-r from-green-600/80 to-emerald-700/80 text-white hover:opacity-90'
+                      : 'bg-gradient-to-r from-[var(--accent-primary)] to-purple-600 text-white hover:opacity-90'
+                }`}
+              >
+                <span className={`inline-block w-2 h-2 rounded-full ${anyAutoActive ? 'bg-white animate-pulse' : 'bg-white/50'}`} />
+                {allAutoActive ? 'Auto-scan All ON' : anyAutoActive ? `Auto-scan (${autoCount}/8)` : 'Auto-scan'}
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </button>
+              {autoScanDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setAutoScanDropdownOpen(false)} />
+                  <div className="absolute right-0 mt-2 w-56 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg shadow-lg z-20 p-2 space-y-1">
+                    <button
+                      onClick={() => {
+                        const newState = !allAutoActive;
+                        setKuifjeAutoScan(newState); setZbAutoScan(newState); setBpAutoScan(newState);
+                        setMnAutoScan(newState); setH2AutoScan(newState); setShpAutoScan(newState);
+                        setMoriaAutoScan(newState); setBluePillAutoScan(newState);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm rounded hover:bg-[var(--bg-tertiary)] transition-colors text-[var(--text-primary)] font-medium border-b border-[var(--border-color)] mb-1"
+                    >
+                      <span>{allAutoActive ? 'Stop All' : 'Start All'}</span>
+                      <span className={`inline-block w-2 h-2 rounded-full ${allAutoActive ? 'bg-green-400 animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                    </button>
+                    {([
+                      ['Kuifje', kuifjeAutoScan, setKuifjeAutoScan],
+                      ['Zonnebloem', zbAutoScan, setZbAutoScan],
+                      ['BioPharma', bpAutoScan, setBpAutoScan],
+                      ['Mining', mnAutoScan, setMnAutoScan],
+                      ['Hydrogen', h2AutoScan, setH2AutoScan],
+                      ['Shipping', shpAutoScan, setShpAutoScan],
+                      ['Moria', moriaAutoScan, setMoriaAutoScan],
+                      ['BluePill', bluepillAutoScan, setBluePillAutoScan],
+                    ] as [string, boolean, (v: boolean) => void][]).map(([label, active, setter]) => (
+                      <button
+                        key={label}
+                        onClick={() => setter(!active)}
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm rounded hover:bg-[var(--bg-tertiary)] transition-colors"
+                      >
+                        <span className={active ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}>{label}</span>
+                        <span className={`inline-block w-2 h-2 rounded-full ${active ? 'bg-green-400 animate-pulse' : 'bg-[var(--text-muted)] opacity-30'}`} />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
             <div className="relative">
               <button
