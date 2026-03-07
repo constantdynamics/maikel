@@ -272,6 +272,46 @@ export function getExchangeFlag(exchange: string | null, ticker?: string | null)
   return countryCode.toLowerCase();
 }
 
+// Google Finance exchange code mapping
+const GOOGLE_FINANCE_EXCHANGE: Record<string, string> = {
+  'NYSE': 'NYSE',
+  'NASDAQ': 'NASDAQ',
+  'AMEX': 'NYSEAMERICAN',
+  'NYSE ARCA': 'NYSEARCA',
+  'NYSE MKT': 'NYSEAMERICAN',
+  'OTC': 'OTCMKTS',
+  'BATS': 'BATS',
+  'TSX': 'TSE',
+  'TSXV': 'CVE',
+  'NEO': 'NEO',
+  'CSE': 'CNSX',
+  'ASX': 'ASX',
+  'LSE': 'LON',
+  'AIM': 'LON',
+  'XETRA': 'ETR',
+  'FWB': 'FRA',
+  'EURONEXT': 'EPA',
+  'AEX': 'AMS',
+  'TSE': 'TYO',
+  'HKEX': 'HKG',
+  'NSE': 'NSE',
+  'BSE': 'BOM',
+};
+
+export function getGoogleFinanceUrl(ticker: string, exchange: string | null): string {
+  // Strip any exchange prefix from ticker (e.g. "AMEX:ABML" -> "ABML")
+  const cleanTicker = ticker.includes(':') ? ticker.split(':')[1] : ticker;
+  // Strip Yahoo-style suffix (e.g. "ABC.TO" -> "ABC")
+  const baseTicker = cleanTicker.includes('.') ? cleanTicker.split('.')[0] : cleanTicker;
+
+  const googleExchange = exchange ? GOOGLE_FINANCE_EXCHANGE[exchange.toUpperCase()] : null;
+  if (googleExchange) {
+    return `https://www.google.com/finance/quote/${baseTicker}:${googleExchange}`;
+  }
+  // Fallback: search on Google Finance
+  return `https://www.google.com/finance/quote/${baseTicker}:NYSE`;
+}
+
 // TradingView scanner endpoints for different markets
 export const TRADINGVIEW_MARKETS = {
   america: {

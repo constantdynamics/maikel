@@ -1,7 +1,7 @@
 'use client';
 
 import type { MoriaStock, SortConfig } from '@/lib/types';
-import { getExchangeFlag } from '@/lib/exchanges';
+import { getExchangeFlag, getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface Props {
   stocks: MoriaStock[];
@@ -164,7 +164,7 @@ export default function MoriaStockTable({
           <tbody>
             {stocks.map((stock) => {
               const flag = getExchangeFlag(stock.exchange || '');
-              const yahooTicker = stock.yahoo_ticker || stock.ticker;
+              const googleUrl = getGoogleFinanceUrl(stock.ticker, stock.exchange);
               const growthDots = getGrowthDotColors(stock.growth_event_count, stock.highest_growth_pct);
               const spikeDots = getSpikeDotColors(stock.spike_count, stock.highest_spike_pct);
               return (
@@ -180,7 +180,7 @@ export default function MoriaStockTable({
                     </button>
                   </td>
                   <td className="p-3">
-                    <a href={`https://finance.yahoo.com/quote/${yahooTicker}`}
+                    <a href={googleUrl}
                       target="_blank" rel="noopener noreferrer"
                       className="font-mono font-medium text-rose-400 hover:underline">
                       {flag && <span className="mr-1">{flag}</span>}
