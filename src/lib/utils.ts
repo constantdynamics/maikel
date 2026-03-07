@@ -182,13 +182,14 @@ const MORIA_CSV_COLUMNS = [
   { header: 'Favorite', key: 'is_favorite' },
 ];
 
-type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
+type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria' | 'bluepill';
 
 /** Convert scanner stocks to CSV based on tab type. */
 export function scannerStocksToCSV(stocks: Record<string, unknown>[], tab: ExportTab): string {
   const columns = tab === 'kuifje' ? KUIFJE_CSV_COLUMNS
     : tab === 'zonnebloem' ? ZONNEBLOEM_CSV_COLUMNS
     : tab === 'moria' ? MORIA_CSV_COLUMNS
+    : tab === 'bluepill' ? MORIA_CSV_COLUMNS
     : SECTOR_CSV_COLUMNS;
   return objectsToCsv(stocks, columns);
 }
@@ -209,7 +210,7 @@ export function allScannerTabsToJSON(data: Record<ExportTab, Record<string, unkn
     exportedAt: new Date().toISOString(),
     tabs: {} as Record<string, unknown>,
   };
-  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining', 'hydrogen', 'shipping', 'moria'] as ExportTab[]) {
+  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining', 'hydrogen', 'shipping', 'moria', 'bluepill'] as ExportTab[]) {
     const stocks = (data[tab] || []).map((s) => {
       const { is_deleted, deleted_at, is_archived, archived_at, ...rest } = s;
       return rest;
