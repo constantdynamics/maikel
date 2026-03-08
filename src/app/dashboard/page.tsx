@@ -19,7 +19,6 @@ import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
 import { useMoriaStocks } from '@/hooks/useMoriaStocks';
-import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
