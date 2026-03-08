@@ -329,7 +329,7 @@ export default function DashboardPage() {
   }
 
   async function handleScannerExportTab(tab: ScannerTab, fmt: 'csv' | 'json') {
-    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' };
+    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' };
     setExportStatus(`Ophalen ${labelMap[tab]}...`);
     try {
       const data = await fetchScannerData(tab);
