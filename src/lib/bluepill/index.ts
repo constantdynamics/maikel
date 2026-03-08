@@ -1,14 +1,17 @@
 /**
- * Moria Scanner — finds ultra-cheap mining stocks deep in the mines.
+ * BluePill Scanner — finds ultra-cheap biopharma stocks deep below their highs.
  *
  * Criteria:
- * - Mining sector (Non-Energy Minerals, Process Industries, or keyword matching)
+ * - BioPharma sector (Health Technology, Health Services, or keyword matching)
  * - >= 90% below all-time high
  * - >= 80% below 3-year high (if data available)
  * - >= 50% below 1-year high (if data available)
- * - Listed on US (NYSE/NASDAQ/AMEX), Canada (TSX/TSXV), or Australia (ASX)
+ * - Listed on US (NYSE/NASDAQ/AMEX) or Canada (TSX/TSXV)
  * - No OTC / pink sheets
  * - Price > 0 (still alive)
+ *
+ * After initial TradingView screening, each stock gets a Yahoo Finance deep scan
+ * to detect Kuifje growth events and Zonnebloem spike events.
  */
 
 import { createServiceClient } from '@/lib/supabase';
@@ -18,16 +21,17 @@ import { analyzeGrowthEvents } from '@/lib/scanner/scorer';
 import { analyzeSpikeEvents } from '@/lib/zonnebloem/scorer';
 import { validatePriceHistory } from '@/lib/scanner/validator';
 
-// Mining keywords for sector matching
-const MINING_KEYWORDS = [
-  'mining', 'miner', 'mineral', 'gold', 'silver', 'copper', 'platinum',
-  'palladium', 'zinc', 'nickel', 'lithium', 'cobalt', 'iron ore', 'uranium',
-  'rare earth', 'metals', 'exploration', 'ore', 'quarry', 'resource',
-  'precious', 'base metal',
+// BioPharma keywords for sector matching
+const BIOPHARMA_KEYWORDS = [
+  'biotechnology', 'biotech', 'pharmaceutical', 'pharma', 'drug',
+  'biopharmaceutical', 'biopharma', 'therapeutics', 'oncology',
+  'genomics', 'gene therapy', 'clinical stage', 'life sciences',
+  'medical research', 'vaccines', 'immunology', 'clinical trial',
+  'fda', 'pipeline', 'antibody', 'rna', 'mrna', 'crispr',
 ];
 
-// TradingView sector names that map to mining
-const MINING_SECTOR_FILTERS = ['Non-Energy Minerals', 'Process Industries'];
+// TradingView sector names that map to biopharma
+const BIOPHARMA_SECTOR_FILTERS = ['Health Technology', 'Health Services'];
 
 interface MarketScanConfig {
   url: string;
@@ -37,7 +41,7 @@ interface MarketScanConfig {
   yahooSuffix: (exchange: string) => string;
 }
 
-const MORIA_MARKETS: MarketScanConfig[] = [
+const BLUEPILL_MARKETS: MarketScanConfig[] = [
   {
     url: 'https://scanner.tradingview.com/america/scan',
     marketCode: 'america',
@@ -51,13 +55,6 @@ const MORIA_MARKETS: MarketScanConfig[] = [
     marketId: 'canada',
     exchanges: ['TSX', 'TSXV'],
     yahooSuffix: (exchange: string) => exchange === 'TSXV' ? '.V' : '.TO',
-  },
-  {
-    url: 'https://scanner.tradingview.com/australia/scan',
-    marketCode: 'australia',
-    marketId: 'australia',
-    exchanges: ['ASX'],
-    yahooSuffix: () => '.AX',
   },
 ];
 
@@ -87,7 +84,7 @@ interface TradingViewResponse {
   data: TradingViewResult[];
 }
 
-interface MoriaCandidate {
+interface BluePillCandidate {
   ticker: string;
   yahooTicker: string;
   companyName: string;
@@ -108,10 +105,10 @@ interface MoriaCandidate {
   marketCap: number | null;
 }
 
-function matchesMining(sector: string | null, name: string): boolean {
-  if (sector && MINING_SECTOR_FILTERS.some(f => sector === f)) return true;
+function matchesBioPharma(sector: string | null, name: string): boolean {
+  if (sector && BIOPHARMA_SECTOR_FILTERS.some(f => sector === f)) return true;
   const lower = (sector || '').toLowerCase() + ' ' + name.toLowerCase();
-  return MINING_KEYWORDS.some(kw => lower.includes(kw));
+  return BIOPHARMA_KEYWORDS.some(kw => lower.includes(kw));
 }
 
 function calcDecline(price: number, high: number | null): number | null {
@@ -119,7 +116,7 @@ function calcDecline(price: number, high: number | null): number | null {
   return ((high - price) / high) * 100;
 }
 
-async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCandidate[]> {
+async function fetchBluePillCandidates(market: MarketScanConfig): Promise<BluePillCandidate[]> {
   const payload = {
     columns: COLUMNS,
     ignore_unknown_fields: true,
@@ -140,7 +137,7 @@ async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCand
     ],
   };
 
-  console.log(`[Moria] Fetching from ${market.marketId}...`);
+  console.log(`[BluePill] Fetching from ${market.marketId}...`);
 
   const response = await retryWithBackoff(async () => {
     const res = await fetch(market.url, {
@@ -156,14 +153,14 @@ async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCand
   });
 
   if (!response?.data) {
-    console.log(`[Moria] No data returned from ${market.marketId}`);
+    console.log(`[BluePill] No data returned from ${market.marketId}`);
     return [];
   }
 
-  console.log(`[Moria] ${market.marketId}: got ${response.data.length} raw results (total: ${response.totalCount})`);
+  console.log(`[BluePill] ${market.marketId}: got ${response.data.length} raw results (total: ${response.totalCount})`);
 
-  const candidates: MoriaCandidate[] = [];
-  let miningCount = 0;
+  const candidates: BluePillCandidate[] = [];
+  let sectorCount = 0;
   let declinePassCount = 0;
 
   for (const item of response.data) {
@@ -186,9 +183,9 @@ async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCand
     if (exchange === 'OTC' || exchange === 'OTCM') continue;
     if (ticker.match(/\.H$/i)) continue;
 
-    // Must be mining-related
-    if (!matchesMining(sector, name)) continue;
-    miningCount++;
+    // Must be biopharma-related
+    if (!matchesBioPharma(sector, name)) continue;
+    sectorCount++;
 
     // Primary criterion: >= 90% below all-time high
     const athDecline = calcDecline(close, ath);
@@ -233,14 +230,14 @@ async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCand
     });
   }
 
-  console.log(`[Moria] ${market.marketId}: ${miningCount} mining stocks, ${declinePassCount} pass ATH >=90%, ${candidates.length} final candidates`);
+  console.log(`[BluePill] ${market.marketId}: ${sectorCount} biopharma stocks, ${declinePassCount} pass ATH >=90%, ${candidates.length} final candidates`);
   return candidates;
 }
 
 /**
- * Deep scan a single Moria stock via Yahoo Finance to detect growth events and spike events.
+ * Deep scan a single BluePill stock via Yahoo Finance to detect growth events and spike events.
  */
-async function deepScanMoriaStock(
+async function deepScanBluePillStock(
   yahooTicker: string,
 ): Promise<{
   growthEventCount: number;
@@ -274,12 +271,12 @@ async function deepScanMoriaStock(
       spikeScore: spikeAnalysis.spikeScore,
     };
   } catch (err) {
-    console.error(`[Moria] Deep scan failed for ${yahooTicker}:`, err instanceof Error ? err.message : err);
+    console.error(`[BluePill] Deep scan failed for ${yahooTicker}:`, err instanceof Error ? err.message : err);
     return null;
   }
 }
 
-export async function runMoriaScan(): Promise<{
+export async function runBluePillScan(): Promise<{
   status: string;
   marketsScanned: number;
   candidatesFound: number;
@@ -291,15 +288,15 @@ export async function runMoriaScan(): Promise<{
   const supabase = createServiceClient();
   const errors: string[] = [];
 
-  // Try to create scan log (may fail if table doesn't exist yet)
+  // Try to create scan log
   let scanSessionId: string | null = null;
   try {
     const { data: scanLog, error: logError } = await supabase
-      .from('moria_scan_logs')
+      .from('bluepill_scan_logs')
       .insert({
         started_at: new Date().toISOString(),
         status: 'running',
-        markets_scanned: MORIA_MARKETS.map(m => m.marketId),
+        markets_scanned: BLUEPILL_MARKETS.map(m => m.marketId),
         candidates_found: 0,
         stocks_saved: 0,
         new_stocks_found: 0,
@@ -308,67 +305,30 @@ export async function runMoriaScan(): Promise<{
       .single();
 
     if (logError) {
-      console.error('[Moria] Could not create scan log:', logError.message);
+      console.error('[BluePill] Could not create scan log:', logError.message);
       errors.push(`Scan log: ${logError.message}`);
     } else {
       scanSessionId = scanLog?.id || null;
     }
   } catch (e) {
-    console.error('[Moria] Scan log creation failed:', e);
+    console.error('[BluePill] Scan log creation failed:', e);
   }
 
-  // Self-healing: remove duplicate (ticker, market) rows that may have built up from a previous bug.
-  // Keep the most recently updated row per (ticker, market) pair.
-  try {
-    const { data: dupes } = await supabase
-      .from('moria_stocks')
-      .select('id, ticker, market, last_updated');
-
-    if (dupes && dupes.length > 0) {
-      const seen = new Map<string, { id: string; last_updated: string }>();
-      const toDelete: string[] = [];
-
-      for (const row of dupes) {
-        const key = `${row.ticker}::${row.market}`;
-        const prev = seen.get(key);
-        if (!prev) {
-          seen.set(key, { id: row.id, last_updated: row.last_updated });
-        } else {
-          // Keep the more recently updated one, delete the other
-          const prevNewer = (prev.last_updated ?? '') >= (row.last_updated ?? '');
-          if (prevNewer) {
-            toDelete.push(row.id);
-          } else {
-            toDelete.push(prev.id);
-            seen.set(key, { id: row.id, last_updated: row.last_updated });
-          }
-        }
-      }
-
-      if (toDelete.length > 0) {
-        console.log(`[Moria] Cleaning up ${toDelete.length} duplicate stock row(s)...`);
-        await supabase.from('moria_stocks').delete().in('id', toDelete);
-      }
-    }
-  } catch (e) {
-    console.warn('[Moria] Duplicate cleanup skipped:', e);
-  }
-
-  // Fetch from all three markets in parallel
-  console.log('[Moria] Starting scan across', MORIA_MARKETS.length, 'markets...');
+  // Fetch from all markets in parallel
+  console.log('[BluePill] Starting scan across', BLUEPILL_MARKETS.length, 'markets...');
   const results = await Promise.all(
-    MORIA_MARKETS.map(market =>
-      fetchMoriaCandidates(market).catch(err => {
+    BLUEPILL_MARKETS.map(market =>
+      fetchBluePillCandidates(market).catch(err => {
         const msg = `Error scanning ${market.marketId}: ${err instanceof Error ? err.message : err}`;
-        console.error(`[Moria] ${msg}`);
+        console.error(`[BluePill] ${msg}`);
         errors.push(msg);
-        return [] as MoriaCandidate[];
+        return [] as BluePillCandidate[];
       })
     )
   );
 
   const allCandidates = results.flat();
-  console.log(`[Moria] Total candidates across all markets: ${allCandidates.length}`);
+  console.log(`[BluePill] Total candidates across all markets: ${allCandidates.length}`);
 
   let newStocksFound = 0;
   let stocksSaved = 0;
@@ -377,23 +337,17 @@ export async function runMoriaScan(): Promise<{
   // Upsert each candidate (basic TradingView data first)
   for (const c of allCandidates) {
     try {
-      // Look for ANY existing record for this ticker+market, regardless of is_deleted status.
-      // Using limit(1) with ascending is_deleted so non-deleted rows are preferred over deleted ones.
-      // This prevents duplicate rows from being created when a user deletes a stock.
-      const { data: existingRows } = await supabase
-        .from('moria_stocks')
-        .select('id, is_deleted')
+      const { data: existing } = await supabase
+        .from('bluepill_stocks')
+        .select('id')
         .eq('ticker', c.ticker)
         .eq('market', c.market)
-        .order('is_deleted', { ascending: true })
-        .limit(1);
-
-      const existing = existingRows?.[0] ?? null;
+        .eq('is_deleted', false)
+        .maybeSingle();
 
       if (existing) {
-        const wasDeleted = existing.is_deleted;
         const { error: updateError } = await supabase
-          .from('moria_stocks')
+          .from('bluepill_stocks')
           .update({
             current_price: c.currentPrice,
             all_time_high: c.allTimeHigh,
@@ -408,24 +362,17 @@ export async function runMoriaScan(): Promise<{
             market_cap: c.marketCap,
             last_updated: new Date().toISOString(),
             scan_session_id: scanSessionId,
-            // Resurrect deleted stocks so they reappear after a new scan finds them
-            is_deleted: false,
-            deleted_at: null,
           })
           .eq('id', existing.id);
 
         if (updateError) {
-          console.error(`[Moria] Error updating ${c.ticker}:`, updateError.message);
+          console.error(`[BluePill] Error updating ${c.ticker}:`, updateError.message);
         } else {
           stocksSaved++;
-          if (wasDeleted) {
-            newStocksFound++;
-            console.log(`[Moria] Resurrected deleted stock: ${c.ticker}`);
-          }
         }
       } else {
         const { error: insertError } = await supabase
-          .from('moria_stocks')
+          .from('bluepill_stocks')
           .insert({
             ticker: c.ticker,
             yahoo_ticker: c.yahooTicker,
@@ -450,7 +397,7 @@ export async function runMoriaScan(): Promise<{
           });
 
         if (insertError) {
-          console.error(`[Moria] Error inserting ${c.ticker}:`, insertError.message);
+          console.error(`[BluePill] Error inserting ${c.ticker}:`, insertError.message);
           if (errors.length < 5) errors.push(`Insert ${c.ticker}: ${insertError.message}`);
         } else {
           newStocksFound++;
@@ -458,12 +405,12 @@ export async function runMoriaScan(): Promise<{
         }
       }
     } catch (e) {
-      console.error(`[Moria] Error processing ${c.ticker}:`, e);
+      console.error(`[BluePill] Error processing ${c.ticker}:`, e);
     }
   }
 
-  console.log(`[Moria] Phase 1 complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new`);
-  console.log(`[Moria] Phase 2: Deep scanning ${allCandidates.length} stocks via Yahoo Finance...`);
+  console.log(`[BluePill] Phase 1 complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new`);
+  console.log(`[BluePill] Phase 2: Deep scanning ${allCandidates.length} stocks via Yahoo Finance...`);
 
   // Deep scan in batches of 5 to get growth events and spike events
   const BATCH_SIZE = 5;
@@ -471,7 +418,7 @@ export async function runMoriaScan(): Promise<{
     const batch = allCandidates.slice(i, i + BATCH_SIZE);
 
     const deepResults = await Promise.allSettled(
-      batch.map(c => deepScanMoriaStock(c.yahooTicker))
+      batch.map(c => deepScanBluePillStock(c.yahooTicker))
     );
 
     for (let j = 0; j < deepResults.length; j++) {
@@ -487,7 +434,7 @@ export async function runMoriaScan(): Promise<{
 
       try {
         await supabase
-          .from('moria_stocks')
+          .from('bluepill_stocks')
           .update({
             growth_event_count: deep.growthEventCount,
             highest_growth_pct: clampNum(deep.highestGrowthPct),
@@ -501,20 +448,20 @@ export async function runMoriaScan(): Promise<{
           .eq('market', c.market)
           .eq('is_deleted', false);
       } catch (e) {
-        console.error(`[Moria] Error updating deep scan for ${c.ticker}:`, e);
+        console.error(`[BluePill] Error updating deep scan for ${c.ticker}:`, e);
       }
     }
 
     if (i + BATCH_SIZE < allCandidates.length) await sleep(50);
   }
 
-  console.log(`[Moria] Scan complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new, ${stocksDeepScanned} deep-scanned`);
+  console.log(`[BluePill] Scan complete: ${allCandidates.length} candidates, ${stocksSaved} saved, ${newStocksFound} new, ${stocksDeepScanned} deep-scanned`);
 
   // Update scan log
   if (scanSessionId) {
     try {
       await supabase
-        .from('moria_scan_logs')
+        .from('bluepill_scan_logs')
         .update({
           completed_at: new Date().toISOString(),
           status: errors.length > 0 ? 'partial' : 'completed',
@@ -525,13 +472,13 @@ export async function runMoriaScan(): Promise<{
         })
         .eq('id', scanSessionId);
     } catch (e) {
-      console.error('[Moria] Could not update scan log:', e);
+      console.error('[BluePill] Could not update scan log:', e);
     }
   }
 
   return {
     status: errors.length > 0 ? 'partial' : 'completed',
-    marketsScanned: MORIA_MARKETS.length,
+    marketsScanned: BLUEPILL_MARKETS.length,
     candidatesFound: allCandidates.length,
     stocksSaved,
     newStocksFound,

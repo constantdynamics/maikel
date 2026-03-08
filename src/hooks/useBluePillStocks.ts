@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, fetchAllRows } from '@/lib/supabase';
-import type { MoriaStock, SortConfig } from '@/lib/types';
+import type { BluePillStock, SortConfig } from '@/lib/types';
 
-interface MoriaFilterConfig {
+interface BluePillFilterConfig {
   search: string;
   marketFilter: string;
   showFavorites: boolean;
 }
 
-const defaultFilters: MoriaFilterConfig = {
+const defaultFilters: BluePillFilterConfig = {
   search: '',
   marketFilter: '',
   showFavorites: false,
@@ -21,19 +21,19 @@ const defaultSort: SortConfig = {
   direction: 'desc',
 };
 
-export function useMoriaStocks() {
-  const [stocks, setStocks] = useState<MoriaStock[]>([]);
-  const [filteredStocks, setFilteredStocks] = useState<MoriaStock[]>([]);
+export function useBluePillStocks() {
+  const [stocks, setStocks] = useState<BluePillStock[]>([]);
+  const [filteredStocks, setFilteredStocks] = useState<BluePillStock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState<MoriaFilterConfig>(defaultFilters);
+  const [filters, setFilters] = useState<BluePillFilterConfig>(defaultFilters);
   const [sort, setSort] = useState<SortConfig>(defaultSort);
   const [markets, setMarkets] = useState<string[]>([]);
 
   const fetchStocks = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await fetchAllRows<MoriaStock>(() =>
+    const { data, error } = await fetchAllRows<BluePillStock>(() =>
       supabase
-        .from('moria_stocks')
+        .from('bluepill_stocks')
         .select('*')
         .eq('is_deleted', false)
         .eq('is_archived', false)
@@ -41,10 +41,9 @@ export function useMoriaStocks() {
     );
 
     if (error) {
-      // Table might not exist yet — don't spam console
       const msg = typeof error === 'object' && error !== null && 'message' in error ? (error as { message: string }).message : '';
-      if (!msg.includes('moria_stocks')) {
-        console.error('Error fetching Moria stocks:', error);
+      if (!msg.includes('bluepill_stocks')) {
+        console.error('Error fetching BluePill stocks:', error);
       }
     } else if (data) {
       setStocks(data);
@@ -90,7 +89,7 @@ export function useMoriaStocks() {
 
     result.sort((a, b) => {
       let comparison: number;
-      const col = sort.column as keyof MoriaStock;
+      const col = sort.column as keyof BluePillStock;
 
       if (col === 'growth_event_count') {
         const aKey = medalKey(a.growth_event_count, a.highest_growth_pct, 500, 300);
@@ -115,7 +114,7 @@ export function useMoriaStocks() {
 
   useEffect(() => { fetchStocks(); }, [fetchStocks]);
 
-  function handleSort(column: keyof MoriaStock) {
+  function handleSort(column: keyof BluePillStock) {
     setSort((prev) => ({
       column: column as never,
       direction: prev.column === (column as never) && prev.direction === 'desc' ? 'asc' : 'desc',
@@ -126,27 +125,27 @@ export function useMoriaStocks() {
     const stock = stocks.find((s) => s.id === id);
     if (!stock) return;
     const newValue = !stock.is_favorite;
-    const { error } = await supabase.from('moria_stocks').update({ is_favorite: newValue }).eq('id', id);
+    const { error } = await supabase.from('bluepill_stocks').update({ is_favorite: newValue }).eq('id', id);
     if (!error) setStocks((prev) => prev.map((s) => (s.id === id ? { ...s, is_favorite: newValue } : s)));
   }
 
   async function deleteStock(id: string) {
-    const { error } = await supabase.from('moria_stocks').update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase.from('bluepill_stocks').update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq('id', id);
     if (!error) setStocks((prev) => prev.filter((s) => s.id !== id));
   }
 
   async function bulkFavorite(ids: Set<string>) {
-    const { error } = await supabase.from('moria_stocks').update({ is_favorite: true }).in('id', Array.from(ids));
+    const { error } = await supabase.from('bluepill_stocks').update({ is_favorite: true }).in('id', Array.from(ids));
     if (!error) setStocks((prev) => prev.map((s) => (ids.has(s.id) ? { ...s, is_favorite: true } : s)));
   }
 
   async function bulkDelete(ids: Set<string>) {
-    const { error } = await supabase.from('moria_stocks').update({ is_deleted: true, deleted_at: new Date().toISOString() }).in('id', Array.from(ids));
+    const { error } = await supabase.from('bluepill_stocks').update({ is_deleted: true, deleted_at: new Date().toISOString() }).in('id', Array.from(ids));
     if (!error) setStocks((prev) => prev.filter((s) => !ids.has(s.id)));
   }
 
   async function bulkArchive(ids: Set<string>) {
-    const { error } = await supabase.from('moria_stocks').update({ is_archived: true, archived_at: new Date().toISOString() }).in('id', Array.from(ids));
+    const { error } = await supabase.from('bluepill_stocks').update({ is_archived: true, archived_at: new Date().toISOString() }).in('id', Array.from(ids));
     if (!error) setStocks((prev) => prev.filter((s) => !ids.has(s.id)));
   }
 

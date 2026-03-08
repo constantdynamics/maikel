@@ -429,6 +429,55 @@ export interface MoriaStock {
   decline_from_1y_pct: number | null;
   high_6m: number | null;
   decline_from_6m_pct: number | null;
+  // Growth events (Kuifje-style)
+  growth_event_count: number;
+  highest_growth_pct: number | null;
+  highest_growth_date: string | null;
+  // Spike events (Zonnebloem-style)
+  spike_count: number;
+  highest_spike_pct: number | null;
+  highest_spike_date: string | null;
+  spike_score: number;
+  avg_volume_30d: number | null;
+  market_cap: number | null;
+  detection_date: string;
+  last_updated: string;
+  scan_session_id: string | null;
+  is_favorite: boolean;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  is_archived: boolean;
+  archived_at: string | null;
+  created_at: string;
+}
+
+export interface BluePillStock {
+  id: string;
+  ticker: string;
+  yahoo_ticker: string | null;
+  company_name: string;
+  sector: string | null;
+  exchange: string | null;
+  market: string | null;
+  country: string | null;
+  current_price: number | null;
+  all_time_high: number | null;
+  ath_decline_pct: number | null;
+  high_3y: number | null;
+  decline_from_3y_pct: number | null;
+  high_1y: number | null;
+  decline_from_1y_pct: number | null;
+  high_6m: number | null;
+  decline_from_6m_pct: number | null;
+  // Growth events (Kuifje-style)
+  growth_event_count: number;
+  highest_growth_pct: number | null;
+  highest_growth_date: string | null;
+  // Spike events (Zonnebloem-style)
+  spike_count: number;
+  highest_spike_pct: number | null;
+  highest_spike_date: string | null;
+  spike_score: number;
   avg_volume_30d: number | null;
   market_cap: number | null;
   detection_date: string;

@@ -1,12 +1,12 @@
 'use client';
 
-import type { MoriaStock, SortConfig } from '@/lib/types';
+import type { BluePillStock, SortConfig } from '@/lib/types';
 import { getExchangeFlag, getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface Props {
-  stocks: MoriaStock[];
+  stocks: BluePillStock[];
   sort: SortConfig;
-  onSort: (column: keyof MoriaStock) => void;
+  onSort: (column: keyof BluePillStock) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
@@ -37,10 +37,6 @@ function declineColor(pct: number | null): string {
   return 'text-[var(--text-secondary)]';
 }
 
-/**
- * Get dot colors for growth events (Kuifje-style).
- * Green = 500%+, Yellow = 300-500%, White = <300%
- */
 function getGrowthDotColors(eventCount: number, highestGrowthPct: number | null): string[] {
   const count = Math.min(eventCount, 10);
   if (count === 0) return [];
@@ -53,10 +49,6 @@ function getGrowthDotColors(eventCount: number, highestGrowthPct: number | null)
   return dots;
 }
 
-/**
- * Get dot colors for spike events (Zonnebloem-style).
- * Green = 200%+, Yellow = 100-200%, White = <100%
- */
 function getSpikeDotColors(spikeCount: number, highestSpikePct: number | null): string[] {
   const count = Math.min(spikeCount, 10);
   if (count === 0) return [];
@@ -67,20 +59,6 @@ function getSpikeDotColors(spikeCount: number, highestSpikePct: number | null): 
     dots.push(est >= 200 ? '#22c55e' : est >= 100 ? '#facc15' : '#ffffff');
   }
   return dots;
-}
-
-/**
- * Medal ranking sort value for dots (medaillespiegel).
- * Green × 1,000,000 + Yellow × 10,000 + White × 100
- */
-export function dotsSortValue(dots: string[]): number {
-  let green = 0, yellow = 0, white = 0;
-  for (const c of dots) {
-    if (c === '#22c55e') green++;
-    else if (c === '#facc15') yellow++;
-    else white++;
-  }
-  return green * 1_000_000 + yellow * 10_000 + white * 100;
 }
 
 function DotDisplay({ dots, tooltip }: { dots: string[]; tooltip: string }) {
@@ -115,13 +93,13 @@ function DotDisplay({ dots, tooltip }: { dots: string[]; tooltip: string }) {
   );
 }
 
-export default function MoriaStockTable({
+export default function BluePillStockTable({
   stocks, sort, onSort, selectedIds, onToggleSelect, onToggleSelectAll,
   onToggleFavorite, onDelete,
 }: Props) {
   const allSelected = stocks.length > 0 && selectedIds.size === stocks.length;
 
-  const columns: { key: keyof MoriaStock; label: string; align?: string; tooltip?: string }[] = [
+  const columns: { key: keyof BluePillStock; label: string; align?: string; tooltip?: string }[] = [
     { key: 'ticker', label: 'Ticker' },
     { key: 'company_name', label: 'Company' },
     { key: 'exchange', label: 'Exchange' },
@@ -182,7 +160,7 @@ export default function MoriaStockTable({
                   <td className="p-3">
                     <a href={googleUrl}
                       target="_blank" rel="noopener noreferrer"
-                      className="font-mono font-medium text-rose-400 hover:underline">
+                      className="font-mono font-medium text-blue-400 hover:underline">
                       {flag && <span className="mr-1">{flag}</span>}
                       {stock.ticker}
                     </a>

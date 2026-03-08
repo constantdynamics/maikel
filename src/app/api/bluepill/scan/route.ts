@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase';
-import { runMoriaScan } from '@/lib/moria';
+import { runBluePillScan } from '@/lib/bluepill';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 /**
- * Auto-create Moria tables if they don't exist yet.
+ * Auto-create BluePill tables if they don't exist yet.
  */
-async function ensureMoriaTables() {
+async function ensureBluePillTables() {
   const supabase = createServiceClient();
 
-  // Test if table exists by trying a simple query
-  const { error } = await supabase.from('moria_stocks').select('id').limit(1);
+  const { error } = await supabase.from('bluepill_stocks').select('id').limit(1);
 
-  if (error?.code === 'PGRST205' || error?.message?.includes('moria_stocks')) {
-    // Table doesn't exist — create it via raw SQL using the service client
+  if (error?.code === 'PGRST205' || error?.message?.includes('bluepill_stocks')) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
     const sql = `
-      CREATE TABLE IF NOT EXISTS moria_stocks (
+      CREATE TABLE IF NOT EXISTS bluepill_stocks (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         ticker TEXT NOT NULL,
         yahoo_ticker TEXT,
@@ -58,11 +56,11 @@ async function ensureMoriaTables() {
         archived_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
-      CREATE INDEX IF NOT EXISTS idx_moria_stocks_ticker ON moria_stocks(ticker);
-      CREATE INDEX IF NOT EXISTS idx_moria_stocks_market ON moria_stocks(market);
-      CREATE INDEX IF NOT EXISTS idx_moria_stocks_deleted ON moria_stocks(is_deleted);
+      CREATE INDEX IF NOT EXISTS idx_bluepill_stocks_ticker ON bluepill_stocks(ticker);
+      CREATE INDEX IF NOT EXISTS idx_bluepill_stocks_market ON bluepill_stocks(market);
+      CREATE INDEX IF NOT EXISTS idx_bluepill_stocks_deleted ON bluepill_stocks(is_deleted);
 
-      CREATE TABLE IF NOT EXISTS moria_scan_logs (
+      CREATE TABLE IF NOT EXISTS bluepill_scan_logs (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         started_at TIMESTAMPTZ DEFAULT NOW(),
         completed_at TIMESTAMPTZ,
@@ -86,7 +84,6 @@ async function ensureMoriaTables() {
       body: JSON.stringify({ query: sql }),
     });
 
-    // If RPC doesn't work, try the SQL endpoint
     if (!res.ok) {
       const sqlRes = await fetch(`${supabaseUrl}/pg`, {
         method: 'POST',
@@ -99,21 +96,20 @@ async function ensureMoriaTables() {
       });
 
       if (!sqlRes.ok) {
-        console.error('[Moria] Could not auto-create tables. Please run the migration manually:');
-        console.error('[Moria] supabase/migrations/add_moria_tables.sql');
+        console.error('[BluePill] Could not auto-create tables. Please run the migration manually:');
+        console.error('[BluePill] supabase/migrations/add_bluepill_tables.sql');
         return false;
       }
     }
 
-    console.log('[Moria] Tables created successfully');
+    console.log('[BluePill] Tables created successfully');
     return true;
   }
 
-  return true; // Table exists
+  return true;
 }
 
 export async function POST(request: NextRequest) {
-  // Verify authentication
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -143,14 +139,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Ensure tables exist before scanning
-    await ensureMoriaTables();
-
-    const result = await runMoriaScan();
+    await ensureBluePillTables();
+    const result = await runBluePillScan();
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[Moria] Scan error:', error);
+    console.error('[BluePill] Scan error:', error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
