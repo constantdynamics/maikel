@@ -270,6 +270,43 @@ export async function runMoriaScan(): Promise<{
     console.error('[Moria] Scan log creation failed:', e);
   }
 
+  // Self-healing: remove duplicate (ticker, market) rows that may have built up from a previous bug.
+  // Keep the most recently updated row per (ticker, market) pair.
+  try {
+    const { data: dupes } = await supabase
+      .from('moria_stocks')
+      .select('id, ticker, market, last_updated');
+
+    if (dupes && dupes.length > 0) {
+      const seen = new Map<string, { id: string; last_updated: string }>();
+      const toDelete: string[] = [];
+
+      for (const row of dupes) {
+        const key = `${row.ticker}::${row.market}`;
+        const prev = seen.get(key);
+        if (!prev) {
+          seen.set(key, { id: row.id, last_updated: row.last_updated });
+        } else {
+          // Keep the more recently updated one, delete the other
+          const prevNewer = (prev.last_updated ?? '') >= (row.last_updated ?? '');
+          if (prevNewer) {
+            toDelete.push(row.id);
+          } else {
+            toDelete.push(prev.id);
+            seen.set(key, { id: row.id, last_updated: row.last_updated });
+          }
+        }
+      }
+
+      if (toDelete.length > 0) {
+        console.log(`[Moria] Cleaning up ${toDelete.length} duplicate stock row(s)...`);
+        await supabase.from('moria_stocks').delete().in('id', toDelete);
+      }
+    }
+  } catch (e) {
+    console.warn('[Moria] Duplicate cleanup skipped:', e);
+  }
+
   // Fetch from all three markets in parallel
   console.log('[Moria] Starting scan across', MORIA_MARKETS.length, 'markets...');
   const results = await Promise.all(
