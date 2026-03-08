@@ -270,6 +270,43 @@ export async function runMoriaScan(): Promise<{
     console.error('[Moria] Scan log creation failed:', e);
   }
 
+  // Self-healing: remove duplicate (ticker, market) rows that may have built up from a previous bug.
+  // Keep the most recently updated row per (ticker, market) pair.
+  try {
+    const { data: dupes } = await supabase
+      .from('moria_stocks')
+      .select('id, ticker, market, last_updated');
+
+    if (dupes && dupes.length > 0) {
+      const seen = new Map<string, { id: string; last_updated: string }>();
+      const toDelete: string[] = [];
+
+      for (const row of dupes) {
+        const key = `${row.ticker}::${row.market}`;
+        const prev = seen.get(key);
+        if (!prev) {
+          seen.set(key, { id: row.id, last_updated: row.last_updated });
+        } else {
+          // Keep the more recently updated one, delete the other
+          const prevNewer = (prev.last_updated ?? '') >= (row.last_updated ?? '');
+          if (prevNewer) {
+            toDelete.push(row.id);
+          } else {
+            toDelete.push(prev.id);
+            seen.set(key, { id: row.id, last_updated: row.last_updated });
+          }
+        }
+      }
+
+      if (toDelete.length > 0) {
+        console.log(`[Moria] Cleaning up ${toDelete.length} duplicate stock row(s)...`);
+        await supabase.from('moria_stocks').delete().in('id', toDelete);
+      }
+    }
+  } catch (e) {
+    console.warn('[Moria] Duplicate cleanup skipped:', e);
+  }
+
   // Fetch from all three markets in parallel
   console.log('[Moria] Starting scan across', MORIA_MARKETS.length, 'markets...');
   const results = await Promise.all(
@@ -292,15 +329,21 @@ export async function runMoriaScan(): Promise<{
   // Upsert each candidate
   for (const c of allCandidates) {
     try {
-      const { data: existing } = await supabase
+      // Look for ANY existing record for this ticker+market, regardless of is_deleted status.
+      // Using limit(1) with ascending is_deleted so non-deleted rows are preferred over deleted ones.
+      // This prevents duplicate rows from being created when a user deletes a stock.
+      const { data: existingRows } = await supabase
         .from('moria_stocks')
-        .select('id')
+        .select('id, is_deleted')
         .eq('ticker', c.ticker)
         .eq('market', c.market)
-        .eq('is_deleted', false)
-        .maybeSingle();
+        .order('is_deleted', { ascending: true })
+        .limit(1);
+
+      const existing = existingRows?.[0] ?? null;
 
       if (existing) {
+        const wasDeleted = existing.is_deleted;
         const { error: updateError } = await supabase
           .from('moria_stocks')
           .update({
@@ -317,6 +360,9 @@ export async function runMoriaScan(): Promise<{
             market_cap: c.marketCap,
             last_updated: new Date().toISOString(),
             scan_session_id: scanSessionId,
+            // Resurrect deleted stocks so they reappear after a new scan finds them
+            is_deleted: false,
+            deleted_at: null,
           })
           .eq('id', existing.id);
 
@@ -324,6 +370,10 @@ export async function runMoriaScan(): Promise<{
           console.error(`[Moria] Error updating ${c.ticker}:`, updateError.message);
         } else {
           stocksSaved++;
+          if (wasDeleted) {
+            newStocksFound++;
+            console.log(`[Moria] Resurrected deleted stock: ${c.ticker}`);
+          }
         }
       } else {
         const { error: insertError } = await supabase
