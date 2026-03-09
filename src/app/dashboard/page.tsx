@@ -1065,7 +1065,7 @@ export default function DashboardPage() {
                     {exportStatus && <div className="text-xs text-blue-400">{exportStatus}</div>}
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Huidige tab ({
-                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' }[activeTab]
+                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' }[activeTab]
                       })</div>
                       <div className="flex gap-2">
                         <button onClick={() => handleScannerExportTab(activeTab, 'csv')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">CSV</button>
