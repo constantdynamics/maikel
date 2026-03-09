@@ -19,7 +19,6 @@ import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
 import { useMoriaStocks } from '@/hooks/useMoriaStocks';
-import { stocksToCSV, downloadCSV, generateCsvFilename } from '@/lib/utils';
 import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
@@ -330,7 +329,7 @@ export default function DashboardPage() {
   }
 
   async function handleScannerExportTab(tab: ScannerTab, fmt: 'csv' | 'json') {
-    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' };
+    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' };
     setExportStatus(`Ophalen ${labelMap[tab]}...`);
     try {
       const data = await fetchScannerData(tab);
@@ -349,18 +348,20 @@ export default function DashboardPage() {
   async function handleScannerExportAll(fmt: 'csv' | 'json') {
     setExportStatus('Alle tabs ophalen...');
     try {
-      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping] = await Promise.all([
+      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria] = await Promise.all([
         fetchScannerData('kuifje'), fetchScannerData('zonnebloem'),
         fetchScannerData('biopharma'), fetchScannerData('mining'),
         fetchScannerData('hydrogen'), fetchScannerData('shipping'),
+        fetchScannerData('moria'),
       ]);
       if (fmt === 'json') {
-        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping }), generateExportFilename('AllScanners', 'json'), 'application/json');
+        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria }), generateExportFilename('AllScanners', 'json'), 'application/json');
       } else {
         for (const [tab, data, label] of [
           ['kuifje', kuifje, 'Kuifje'], ['zonnebloem', zonnebloem, 'Zonnebloem'],
           ['biopharma', biopharma, 'BioPharma'], ['mining', mining, 'Mining'],
           ['hydrogen', hydrogen, 'Hydrogen'], ['shipping', shipping, 'Shipping'],
+          ['moria', moria, 'Moria'],
         ] as [ScannerTab, Record<string, unknown>[], string][]) {
           if (data.length > 0) downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
         }
@@ -1064,7 +1065,7 @@ export default function DashboardPage() {
                     {exportStatus && <div className="text-xs text-blue-400">{exportStatus}</div>}
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Huidige tab ({
-                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' }[activeTab]
+                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' }[activeTab]
                       })</div>
                       <div className="flex gap-2">
                         <button onClick={() => handleScannerExportTab(activeTab, 'csv')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">CSV</button>
