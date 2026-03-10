@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { timingSafeEqual } from 'crypto';
 
 /**
  * Shared authentication utilities for API routes.
@@ -79,12 +80,23 @@ export async function requireAuth(
   }
 }
 
-/** Verify CRON_SECRET from the Authorization header. */
+/** Verify CRON_SECRET from the Authorization header using timing-safe comparison. */
 export function verifyCronSecret(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  return authHeader === `Bearer ${cronSecret}`;
+  if (!cronSecret || !authHeader) return false;
+
+  const expected = `Bearer ${cronSecret}`;
+  if (authHeader.length !== expected.length) return false;
+
+  try {
+    return timingSafeEqual(
+      Buffer.from(authHeader, 'utf8'),
+      Buffer.from(expected, 'utf8'),
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Parse a limit query parameter with min/max clamping. */

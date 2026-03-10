@@ -1,9 +1,14 @@
 import type { OHLCData, StockQuote } from '../types';
 import { retryWithBackoff, sleep } from '../utils';
+import { yahooCircuitBreaker, CircuitBreakerOpenError } from '../circuit-breaker';
+import { safeNumber } from '../input-sanitize';
 
 const RATE_LIMIT_DELAY = 200;
 const YAHOO_BASE = 'https://query1.finance.yahoo.com';
 const YAHOO_BASE2 = 'https://query2.finance.yahoo.com';
+
+/** How long a crumb is valid before proactive refresh (30 minutes) */
+const CRUMB_MAX_AGE_MS = 30 * 60 * 1000;
 
 // Rotate between user agents to reduce blocking
 const USER_AGENTS = [
@@ -29,6 +34,7 @@ let yahooCookies = '';
 let yahooCrumb = '';
 let crumbInitialized = false;
 let crumbInitPromise: Promise<void> | null = null;
+let crumbInitializedAt = 0;
 
 /**
  * Initialize Yahoo session: get cookies from fc.yahoo.com, then fetch crumb.
@@ -71,6 +77,7 @@ async function initYahooCrumb(): Promise<void> {
       if (crumbRes.ok) {
         yahooCrumb = await crumbRes.text();
         crumbInitialized = true;
+        crumbInitializedAt = Date.now();
         console.log(`[Yahoo] Crumb initialized successfully (crumb length: ${yahooCrumb.length})`);
       } else {
         console.warn(`[Yahoo] Crumb fetch failed: HTTP ${crumbRes.status}. Trying alternate method...`);
@@ -99,6 +106,7 @@ async function initYahooCrumb(): Promise<void> {
         if (crumbRetry.ok) {
           yahooCrumb = await crumbRetry.text();
           crumbInitialized = true;
+          crumbInitializedAt = Date.now();
           console.log(`[Yahoo] Crumb initialized via consent method (crumb length: ${yahooCrumb.length})`);
         } else {
           console.error(`[Yahoo] Crumb fetch FAILED even with consent cookies: HTTP ${crumbRetry.status}`);
@@ -158,8 +166,40 @@ function addCrumb(url: string): string {
   return `${url}${separator}crumb=${encodeURIComponent(yahooCrumb)}`;
 }
 
+/**
+ * Pre-emptively refresh crumb before batch operations (#3, #11).
+ * Call this before starting a scan to ensure fresh crumb.
+ */
+export async function ensureFreshCrumb(): Promise<void> {
+  const crumbAge = Date.now() - crumbInitializedAt;
+  if (!crumbInitialized || crumbAge > CRUMB_MAX_AGE_MS) {
+    console.log(`[Yahoo] Pre-emptive crumb refresh (age: ${Math.round(crumbAge / 1000)}s, max: ${CRUMB_MAX_AGE_MS / 1000}s)`);
+    crumbInitialized = false;
+    yahooCrumb = '';
+    await initYahooCrumb();
+  }
+}
+
+/**
+ * Validate a Yahoo Finance response body for expected structure.
+ * Returns true if the response looks like valid Yahoo data (#47).
+ */
+function isValidYahooResponse(data: unknown): boolean {
+  if (data == null) return false;
+  if (typeof data !== 'object') return false;
+  // Must have at least one expected top-level key
+  const keys = Object.keys(data as object);
+  const expectedKeys = ['chart', 'quoteResponse', 'quoteSummary', 'finance'];
+  return keys.some(k => expectedKeys.includes(k));
+}
+
 async function yahooFetch(url: string): Promise<unknown> {
-  // Ensure crumb is initialized before any API call
+  // Check circuit breaker first (#2)
+  if (!yahooCircuitBreaker.canExecute()) {
+    throw new CircuitBreakerOpenError('Yahoo');
+  }
+
+  // Ensure crumb is initialized and fresh
   if (!crumbInitialized) {
     await initYahooCrumb();
   }
@@ -213,9 +253,22 @@ async function yahooFetch(url: string): Promise<unknown> {
         return altRes.json();
       }
     }
+    yahooCircuitBreaker.recordFailure(`HTTP ${res.status}: ${res.statusText}`);
     throw new Error(`Yahoo Finance HTTP ${res.status}: ${res.statusText}`);
   }
-  return res.json();
+
+  const data = await res.json();
+
+  // Validate response structure (#47 - graceful handling of malformed responses)
+  if (!isValidYahooResponse(data)) {
+    const keys = data ? Object.keys(data as object).join(',') : 'null';
+    console.warn(`[Yahoo] Malformed response for ${url.split('?')[0]}: unexpected keys [${keys}]`);
+    yahooCircuitBreaker.recordFailure('Malformed response structure');
+    throw new Error(`Yahoo Finance returned unexpected response structure (keys: ${keys})`);
+  }
+
+  yahooCircuitBreaker.recordSuccess();
+  return data;
 }
 
 export async function getStockQuote(ticker: string): Promise<StockQuote | null> {
@@ -228,14 +281,17 @@ export async function getStockQuote(ticker: string): Promise<StockQuote | null> 
     const result = data?.quoteResponse?.result?.[0];
     if (!result || !result.regularMarketPrice) return null;
 
+    const price = safeNumber(result.regularMarketPrice);
+    if (!price || price <= 0) return null;
+
     return {
       ticker: result.symbol,
       name: result.shortName || result.longName || ticker,
-      price: result.regularMarketPrice,
+      price,
       exchange: result.exchange || '',
-      marketCap: result.marketCap,
-      allTimeHigh: result.fiftyTwoWeekHigh,
-      fiftyTwoWeekLow: result.fiftyTwoWeekLow,
+      marketCap: safeNumber(result.marketCap) ?? undefined,
+      allTimeHigh: safeNumber(result.fiftyTwoWeekHigh) ?? undefined,
+      fiftyTwoWeekLow: safeNumber(result.fiftyTwoWeekLow) ?? undefined,
     };
   } catch (error) {
     console.error(`Yahoo: Error fetching quote for ${ticker}:`, error);

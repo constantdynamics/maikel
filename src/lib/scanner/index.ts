@@ -13,6 +13,10 @@ import {
 import { sleep } from '../utils';
 import type { Settings, StockScanDetail } from '../types';
 import { MARKET_CAP_CATEGORIES, DEFAULT_VOLATILE_SECTORS } from '../types';
+import { cleanupStaleScanLogs, checkForRunningScans, shouldPreserveResults } from '../scan-guard';
+import { ensureEnvValidated } from '../validate-env';
+import { CircuitBreakerOpenError } from '../circuit-breaker';
+import { safeNumber, safePercent } from '../input-sanitize';
 
 // Prevent concurrent scans from running simultaneously
 let scanInProgress = false;
@@ -213,8 +217,8 @@ async function deepScanStock(
     phase: 'deep_scan' as const,
   };
 
-  // Get historical data with timeout
-  let history;
+  // Get historical data with timeout and per-stock retry (#19)
+  let history: Awaited<ReturnType<typeof yahoo.getHistoricalData>> = [];
   try {
     history = await withTimeout(
       yahoo.getHistoricalData(ticker, 5),
@@ -223,13 +227,47 @@ async function deepScanStock(
     );
     apiCallsYahoo++;
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    return {
-      detail: { ...baseDetail, result: 'error', errorMessage: errMsg, yahooHistoryDays: 0 },
-      isMatch: false,
-      apiCallsYahoo,
-      apiCallsAlphaVantage,
-    };
+    // Per-stock retry: try once more after a short delay (#19)
+    if (!(err instanceof CircuitBreakerOpenError)) {
+      try {
+        await sleep(500);
+        history = await withTimeout(
+          yahoo.getHistoricalData(ticker, 5),
+          PER_STOCK_TIMEOUT_MS,
+          `Yahoo ${ticker} (retry)`,
+        );
+        apiCallsYahoo++;
+      } catch (retryErr) {
+        const errMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        // Fallback to Alpha Vantage for historical data (#8)
+        if (alphavantage.getRemainingCalls() > 0) {
+          try {
+            history = await alphavantage.getHistoricalData(ticker);
+            apiCallsAlphaVantage++;
+            if (history.length > 0) {
+              console.log(`[Kuifje] ${ticker}: Yahoo failed, Alpha Vantage returned ${history.length} data points`);
+            }
+          } catch {
+            // AV also failed, report original Yahoo error
+          }
+        }
+        if (history.length === 0) {
+          return {
+            detail: { ...baseDetail, result: 'error', errorMessage: `Yahoo + AV failed: ${errMsg}`, yahooHistoryDays: 0 },
+            isMatch: false,
+            apiCallsYahoo,
+            apiCallsAlphaVantage,
+          };
+        }
+      }
+    } else {
+      return {
+        detail: { ...baseDetail, result: 'error', errorMessage: 'Yahoo circuit breaker open', yahooHistoryDays: 0 },
+        isMatch: false,
+        apiCallsYahoo,
+        apiCallsAlphaVantage,
+      };
+    }
   }
 
   if (history.length === 0) {
@@ -280,7 +318,8 @@ async function deepScanStock(
   }
 
   const currentPrice = tvStock.close;
-  const athDeclinePct = ((effectiveATH - currentPrice) / effectiveATH) * 100;
+  const rawDecline = ((effectiveATH - currentPrice) / effectiveATH) * 100;
+  const athDeclinePct = safePercent(rawDecline) ?? 0;
 
   if (athDeclinePct < settings.ath_decline_min || athDeclinePct > settings.ath_decline_max) {
     return {
@@ -507,6 +546,35 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
   const supabase = createServiceClient();
   const errors: string[] = [];
   const scanDetails: StockScanDetail[] = [];
+
+  // Validate environment at startup (#28)
+  ensureEnvValidated();
+
+  // Clean up stale scans and check for DB-level duplicates (#9, #17, #22)
+  await cleanupStaleScanLogs(supabase, 'scan_logs');
+  const runningId = await checkForRunningScans(supabase, 'scan_logs');
+  if (runningId) {
+    scanInProgress = false;
+    return {
+      status: 'failed',
+      stocksScanned: 0,
+      stocksFound: 0,
+      stocksFromSource: 0,
+      candidatesAfterPreFilter: 0,
+      errors: [`Another scan is already running in database (ID: ${runningId})`],
+      durationSeconds: 0,
+      apiCallsYahoo: 0,
+      apiCallsAlphaVantage: 0,
+      markets: [],
+    };
+  }
+
+  // Pre-emptive crumb refresh before batch operations (#3)
+  try {
+    await yahoo.ensureFreshCrumb();
+  } catch (err) {
+    console.warn('[Kuifje] Pre-emptive crumb refresh failed:', err);
+  }
   let stocksScanned = 0;
   let stocksFound = 0;
   let stocksFromSource = 0;
@@ -610,6 +678,11 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
 
     if (stocksFromSource === 0) {
       errors.push(`TradingView returned 0 candidates from ${marketNames}`);
+      // Fallback: preserve previous scan results (#6)
+      const preserve = await shouldPreserveResults(supabase, 'stocks', 0);
+      if (preserve) {
+        errors.push('Preserving previous scan results since current scan found 0 candidates');
+      }
     }
 
     // =========================================================

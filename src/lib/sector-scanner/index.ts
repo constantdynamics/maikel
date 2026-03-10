@@ -18,6 +18,8 @@ import { validatePriceHistory, detectStockSplit } from '../scanner/validator';
 import { sleep } from '../utils';
 import type { SectorScannerConfig, SectorScanDetail, SectorScannerType } from '../types';
 import { BIOPHARMA_CONFIG, MINING_CONFIG, HYDROGEN_CONFIG, SHIPPING_CONFIG } from '../types';
+import { cleanupStaleScanLogs } from '../scan-guard';
+import { ensureEnvValidated } from '../validate-env';
 
 const TIME_BUDGET_MS = 240_000;
 
@@ -171,6 +173,17 @@ export async function runSectorScan(scannerType: SectorScannerType): Promise<Sec
   let newStocksFound = 0;
   let apiCallsYahoo = 0;
   let timeBudgetExceeded = false;
+
+  // Validate environment and clean up stale scans (#9, #22, #28)
+  ensureEnvValidated();
+  await cleanupStaleScanLogs(supabase, 'sector_scan_logs');
+
+  // Pre-emptive crumb refresh (#3)
+  try {
+    await yahoo.ensureFreshCrumb();
+  } catch (err) {
+    console.warn(`[Sector:${scannerType}] Pre-emptive crumb refresh failed:`, err);
+  }
 
   // Create scan log
   const { data: scanLog } = await supabase

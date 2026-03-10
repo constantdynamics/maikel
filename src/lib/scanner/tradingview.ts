@@ -6,6 +6,7 @@
  */
 
 import { retryWithBackoff } from '../utils';
+import { tradingViewCircuitBreaker, CircuitBreakerOpenError } from '../circuit-breaker';
 
 // Market configurations
 export interface MarketConfig {
@@ -164,18 +165,57 @@ function parseResults(data: TradingViewResponse | null, marketId: string): Tradi
     .filter((s) => !s.ticker.match(/\.H$/i));
 }
 
+/**
+ * Validate TradingView response structure (#15).
+ */
+function isValidTradingViewResponse(data: unknown): data is TradingViewResponse {
+  if (!data || typeof data !== 'object') return false;
+  const obj = data as Record<string, unknown>;
+  return typeof obj.totalCount === 'number' && Array.isArray(obj.data);
+}
+
 async function fetchFromScanner(url: string, payload: object): Promise<TradingViewResponse> {
-  return retryWithBackoff(async () => {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      throw new Error(`TradingView scanner HTTP ${res.status}: ${res.statusText}`);
-    }
-    return res.json() as Promise<TradingViewResponse>;
-  });
+  // Check circuit breaker (#1)
+  if (!tradingViewCircuitBreaker.canExecute()) {
+    throw new CircuitBreakerOpenError('TradingView');
+  }
+
+  try {
+    const result = await retryWithBackoff(async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000); // 30s timeout (#75)
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`TradingView scanner HTTP ${res.status}: ${res.statusText}`);
+        }
+        const data = await res.json();
+
+        // Validate response structure (#15)
+        if (!isValidTradingViewResponse(data)) {
+          const keys = data ? Object.keys(data).join(',') : 'null';
+          throw new Error(`TradingView returned unexpected response structure (keys: ${keys})`);
+        }
+
+        return data;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }, 3, 1000); // 3 retries, exponential backoff from 1s (#18)
+
+    tradingViewCircuitBreaker.recordSuccess();
+    return result;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    tradingViewCircuitBreaker.recordFailure(msg);
+    throw error;
+  }
 }
 
 /**

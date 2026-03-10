@@ -21,6 +21,8 @@ import { validatePriceHistory, detectStockSplit } from '../scanner/validator';
 import { sleep } from '../utils';
 import type { ZonnebloemSettings, ZonnebloemScanDetail, OHLCData } from '../types';
 import { ZONNEBLOEM_DEFAULTS } from '../types';
+import { cleanupStaleScanLogs, checkForRunningScans } from '../scan-guard';
+import { ensureEnvValidated } from '../validate-env';
 
 let zbScanInProgress = false;
 
@@ -192,6 +194,34 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
   let newStocksFound = 0;
   let apiCallsYahoo = 0;
   let timeBudgetExceeded = false;
+
+  // Validate environment at startup (#28)
+  ensureEnvValidated();
+
+  // Clean up stale scans and check for DB-level duplicates (#9, #17, #22)
+  await cleanupStaleScanLogs(supabase, 'zonnebloem_scan_logs');
+  const runningId = await checkForRunningScans(supabase, 'zonnebloem_scan_logs');
+  if (runningId) {
+    zbScanInProgress = false;
+    return {
+      status: 'failed',
+      marketsScanned: [],
+      candidatesFound: 0,
+      stocksDeepScanned: 0,
+      stocksMatched: 0,
+      newStocksFound: 0,
+      errors: [`Another Zonnebloem scan is already running in database (ID: ${runningId})`],
+      durationSeconds: 0,
+      apiCallsYahoo: 0,
+    };
+  }
+
+  // Pre-emptive crumb refresh (#3)
+  try {
+    await yahoo.ensureFreshCrumb();
+  } catch (err) {
+    console.warn('[ZB] Pre-emptive crumb refresh failed:', err);
+  }
 
   // Create scan log
   const { data: scanLog } = await supabase

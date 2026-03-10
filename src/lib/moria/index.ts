@@ -13,6 +13,8 @@
 
 import { createServiceClient } from '@/lib/supabase';
 import { retryWithBackoff } from '@/lib/utils';
+import { cleanupStaleScanLogs } from '@/lib/scan-guard';
+import { ensureEnvValidated } from '@/lib/validate-env';
 
 // Mining keywords for sector matching
 const MINING_KEYWORDS = [
@@ -243,6 +245,14 @@ export async function runMoriaScan(): Promise<{
 }> {
   const supabase = createServiceClient();
   const errors: string[] = [];
+
+  // Validate environment and clean up stale scans (#9, #22, #28)
+  ensureEnvValidated();
+  try {
+    await cleanupStaleScanLogs(supabase, 'moria_scan_logs');
+  } catch {
+    // moria_scan_logs table may not exist yet
+  }
 
   // Try to create scan log (may fail if table doesn't exist yet)
   let scanSessionId: string | null = null;
