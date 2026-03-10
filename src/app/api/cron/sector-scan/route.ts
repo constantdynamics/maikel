@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyCronSecret } from '@/lib/auth';
 import { runSectorScan } from '@/lib/sector-scanner';
 
 export const dynamic = 'force-dynamic';
@@ -12,9 +13,7 @@ export const maxDuration = 300;
  * Schedule: Sundays at 12:00 UTC (markets closed, no rate limit pressure)
  */
 export async function GET(request: NextRequest) {
-  // Verify cron secret
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

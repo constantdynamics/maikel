@@ -2,11 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient, User, Session } from '@supabase/supabase-js';
 import type { Tab, ArchivedStock, PurchasedStock, UserSettings, LimitHistory } from '../types';
 
-// Supabase configuration
-// The anon key is designed to be public - it works with Row Level Security (RLS)
-// to ensure users can only access their own data. This is safe for client-side code.
-const supabaseUrl = process.env.NEXT_PUBLIC_DEFOG_SUPABASE_URL || 'https://rhdjrmxqpgykbnfcunhg.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_DEFOG_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoZGpybXhxcGd5a2JuZmN1bmhnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4MzIyNjgsImV4cCI6MjA4NTQwODI2OH0.ZXui5Zog_eXt41vHkwYvxjfY0eapxMepBymmC8dR7Ck';
+// Supabase configuration - credentials must be set via environment variables
+const supabaseUrl = process.env.NEXT_PUBLIC_DEFOG_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_DEFOG_SUPABASE_ANON_KEY || '';
 
 // Check if Supabase is configured
 export function isSupabaseConfigured(): boolean {
@@ -67,7 +65,6 @@ export async function signInWithGitHub(): Promise<{ error: Error | null }> {
   if (!client) return { error: new Error('Supabase not configured') };
 
   const redirectUrl = getRedirectUrl();
-  console.log('[Supabase] OAuth redirect URL:', redirectUrl);
 
   const { error } = await client.auth.signInWithOAuth({
     provider: 'github',
@@ -251,37 +248,34 @@ export async function getLastSyncTime(): Promise<string | null> {
 }
 
 // Real-time subscription (optional - for multi-tab sync)
-export function subscribeToWatchlistChanges(
+export async function subscribeToWatchlistChanges(
   callback: (data: WatchlistData) => void
-): (() => void) | null {
+): Promise<(() => void) | null> {
   const client = getSupabaseClient();
   if (!client) return null;
 
-  getCurrentUser().then(user => {
-    if (!user) return;
+  const user = await getCurrentUser();
+  if (!user) return null;
 
-    const channel = client
-      .channel('watchlist-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'watchlists',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          callback(payload.new as WatchlistData);
-        }
-      )
-      .subscribe();
+  const channel = client
+    .channel('watchlist-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'watchlists',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload) => {
+        callback(payload.new as WatchlistData);
+      }
+    )
+    .subscribe();
 
-    return () => {
-      channel.unsubscribe();
-    };
-  });
-
-  return null;
+  return () => {
+    channel.unsubscribe();
+  };
 }
 
 // SQL schema for Supabase (run this in Supabase SQL editor)

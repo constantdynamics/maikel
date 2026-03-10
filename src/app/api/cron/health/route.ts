@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyCronSecret } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase';
 import * as yahoo from '@/lib/scanner/yahoo';
 import * as alphavantage from '@/lib/scanner/alphavantage';
@@ -6,8 +7,7 @@ import * as alphavantage from '@/lib/scanner/alphavantage';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

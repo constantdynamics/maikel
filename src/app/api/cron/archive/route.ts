@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyCronSecret } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase';
 import { stocksToCSV } from '@/lib/utils';
 import { format, subMonths } from 'date-fns';
@@ -6,8 +7,7 @@ import { format, subMonths } from 'date-fns';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
