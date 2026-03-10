@@ -348,6 +348,7 @@ export default function StockTable({
                     checked={allSelected}
                     onChange={onToggleSelectAll}
                     className="rounded"
+                    aria-label="Select all stocks"
                   />
                 </th>
                 <th className="px-2 py-3 text-center w-10"></th>
@@ -388,6 +389,7 @@ export default function StockTable({
                       checked={selectedIds.has(stock.id)}
                       onChange={() => onToggleSelect(stock.id)}
                       className="rounded"
+                      aria-label={`Select ${stock.ticker}`}
                     />
                   </td>
                   <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -395,6 +397,7 @@ export default function StockTable({
                       onClick={() => handleFavoriteClick(stock.id)}
                       className={`star-btn text-lg ${favAnimating === stock.id ? 'star-pop' : ''}`}
                       title="Toggle favorite (F)"
+                      aria-label={`${stock.is_favorite ? 'Remove from' : 'Add to'} favorites: ${stock.ticker}`}
                     >
                       {stock.is_favorite ? (
                         <span className="text-yellow-400">★</span>
@@ -420,6 +423,7 @@ export default function StockTable({
                       onClick={() => onDelete(stock.id)}
                       className="text-[var(--text-muted)] hover:text-[var(--accent-red)] color-transition btn-press"
                       title="Delete (Del)"
+                      aria-label={`Delete ${stock.ticker}`}
                     >
                       ✗
                     </button>

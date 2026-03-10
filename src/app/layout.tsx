@@ -4,7 +4,10 @@ import ClientLayout from '@/components/ClientLayout';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Professor Zonnebloem',
+  title: {
+    default: 'Professor Zonnebloem',
+    template: '%s | Professor Zonnebloem',
+  },
   description: 'Automated detection of high-potential recovery opportunities',
   manifest: '/manifest.json',
   icons: {
@@ -34,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="nl" suppressHydrationWarning>
       <head>
         <meta name="theme-color" content="#1a1a1a" />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
