@@ -23,11 +23,12 @@ No test framework is configured. There are no unit tests.
 
 ## Architecture
 
-### Three Screening Algorithms
+### Four Screening Algorithms
 
 - **Kuifje** (`/api/scan`, `/api/stocks`) — Finds stocks that declined significantly from all-time highs and have historical 200%+ growth events. Core tables: `stocks`, `price_history`, `growth_events`.
 - **Professor Zonnebloem** (`/api/zonnebloem/scan`, `/api/zonnebloem/stocks`) — Detects price spike patterns in stocks. Core tables: `zonnebloem_stocks`, `zonnebloem_spike_events`.
-- **Sector Scanner** (`/api/sector/scan`) — Applies combined Kuifje + Zonnebloem analysis to specific sectors (BioPharma, Mining). Core table: `sector_stocks`.
+- **Sector Scanner** (`/api/sector/scan`) — Applies combined Kuifje + Zonnebloem analysis to specific sectors (BioPharma, Mining, Hydrogen, Shipping). Core table: `sector_stocks`.
+- **Moria** (`/api/moria/scan`, `/api/moria/stocks`) — Scans for ultra-cheap mining stocks with deep ATH declines. Core tables: `moria_stocks`, `moria_scan_logs`.
 
 ### Data Flow
 
@@ -49,13 +50,15 @@ No test framework is configured. There are no unit tests.
 
 ### Auth & Middleware
 
-`src/middleware.ts` protects cron endpoints with `CRON_SECRET` Bearer token auth and checks Supabase configuration for page routes.
+- `src/lib/auth.ts` — Shared authentication utilities (`requireAuth`, `getAuthenticatedClient`, `verifyCronSecret`, `parseLimit`) used by all API routes.
+- `src/middleware.ts` — Protects cron endpoints with `CRON_SECRET` Bearer token auth and checks Supabase configuration for page routes.
 
 ### Environment Variables
 
 Required (see `.env.example`):
-- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase client
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase client (scanner app)
 - `SUPABASE_SERVICE_ROLE_KEY` — Supabase admin access for API routes
+- `NEXT_PUBLIC_DEFOG_SUPABASE_URL`, `NEXT_PUBLIC_DEFOG_SUPABASE_ANON_KEY` — Supabase client (Defog widget dashboard)
 - `ALPHA_VANTAGE_API_KEY` — External stock data (25 free calls/day)
 - `CRON_SECRET` — Protects `/api/cron/*` endpoints
 
