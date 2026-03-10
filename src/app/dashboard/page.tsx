@@ -20,6 +20,7 @@ import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
 import { useMoriaStocks } from '@/hooks/useMoriaStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
+import { TableSkeleton } from '@/components/Skeleton';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
@@ -250,10 +251,41 @@ export default function DashboardPage() {
     loadSessions();
   }, [scanTriggered]);
 
+  // Keyboard shortcut help modal
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Escape always works - close shortcut help
+      if (e.key === 'Escape' && showShortcuts) {
+        setShowShortcuts(false);
+        return;
+      }
+
+      // Don't handle shortcuts when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+
+      // "/" - Focus search input
+      if (e.key === '/') {
+        e.preventDefault();
+        const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]');
+        searchInput?.focus();
+        return;
+      }
+
+      // "?" - Show keyboard shortcut help
+      if (e.key === '?') {
+        setShowShortcuts((prev) => !prev);
+        return;
+      }
+
+      // "1-7" - Switch scanner tabs
+      const tabKeys: Record<string, ScannerTab> = { '1': 'kuifje', '2': 'zonnebloem', '3': 'biopharma', '4': 'mining', '5': 'hydrogen', '6': 'shipping', '7': 'moria' };
+      if (tabKeys[e.key]) {
+        setActiveTab(tabKeys[e.key]);
+        return;
+      }
 
       if (e.key === 'f' || e.key === 'F') {
         if (selectedIds.size > 0) {
@@ -273,7 +305,7 @@ export default function DashboardPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds, activeTab]);
+  }, [selectedIds, activeTab, showShortcuts]);
 
   // Reset page when filters/tab change
   useEffect(() => {
@@ -894,9 +926,7 @@ export default function DashboardPage() {
         </div>
 
         {sectorLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-[var(--text-muted)]">Loading {label} stocks...</div>
-          </div>
+          <TableSkeleton rows={10} columns={8} />
         ) : sectorStocks.length === 0 ? (
           <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
             <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No {label} Stocks Yet</h2>
@@ -1083,6 +1113,14 @@ export default function DashboardPage() {
                 </>
               )}
             </div>
+
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="px-2 py-1.5 text-sm font-medium rounded transition-all bg-[var(--bg-tertiary)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]"
+              title="Keyboard shortcuts (?)"
+            >
+              ?
+            </button>
           </div>
         </div>
 
@@ -1147,9 +1185,7 @@ export default function DashboardPage() {
             />
 
             {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="text-[var(--text-muted)]">Loading stocks...</div>
-              </div>
+              <TableSkeleton rows={10} columns={8} />
             ) : stocks.length === 0 && !filters.search && !filters.sectorFilter ? (
               <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
                 <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Data Yet</h2>
@@ -1253,7 +1289,7 @@ export default function DashboardPage() {
             </div>
 
             {zbLoading ? (
-              <div className="flex items-center justify-center py-20"><div className="text-[var(--text-muted)]">Loading Zonnebloem stocks...</div></div>
+              <TableSkeleton rows={10} columns={8} />
             ) : zbStocks.length === 0 ? (
               <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
                 <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Zonnebloem Stocks Yet</h2>
@@ -1367,7 +1403,7 @@ export default function DashboardPage() {
             </div>
 
             {moriaLoading ? (
-              <div className="flex items-center justify-center py-20"><div className="text-[var(--text-muted)]">Loading Moria stocks...</div></div>
+              <TableSkeleton rows={10} columns={8} />
             ) : moriaStocks.length === 0 ? (
               <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
                 <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Moria Stocks Yet</h2>
@@ -1436,6 +1472,35 @@ export default function DashboardPage() {
         />
 
         <FixedUI />
+
+        {/* Keyboard shortcuts modal */}
+        {showShortcuts && (
+          <>
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowShortcuts(false)} />
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg shadow-xl p-6 w-96 max-w-[90vw]" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Keyboard Shortcuts</h2>
+                <button onClick={() => setShowShortcuts(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">✕</button>
+              </div>
+              <div className="space-y-2 text-sm">
+                {[
+                  ['/', 'Focus search'],
+                  ['?', 'Show this help'],
+                  ['1-7', 'Switch scanner tab'],
+                  ['F', 'Favorite selected'],
+                  ['A', 'Archive selected'],
+                  ['Del', 'Delete selected'],
+                  ['Esc', 'Close dialog'],
+                ].map(([key, desc]) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <span className="text-[var(--text-secondary)]">{desc}</span>
+                    <kbd className="px-2 py-0.5 bg-[var(--bg-tertiary)] border border-[var(--border-color)] rounded text-xs font-mono text-[var(--text-primary)]">{key}</kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </>
   );
