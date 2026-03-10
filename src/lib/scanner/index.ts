@@ -14,6 +14,9 @@ import { sleep } from '../utils';
 import type { Settings, StockScanDetail } from '../types';
 import { MARKET_CAP_CATEGORIES, DEFAULT_VOLATILE_SECTORS } from '../types';
 
+// Prevent concurrent scans from running simultaneously
+let scanInProgress = false;
+
 // All exchanges we support across all markets
 const ALLOWED_EXCHANGES = new Set([
   // US
@@ -484,6 +487,22 @@ async function deepScanStock(
  * @param selectedMarkets - Array of market IDs to scan (e.g., ['us', 'ca', 'uk'])
  */
 export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
+  if (scanInProgress) {
+    return {
+      status: 'failed',
+      stocksScanned: 0,
+      stocksFound: 0,
+      stocksFromSource: 0,
+      candidatesAfterPreFilter: 0,
+      errors: ['A scan is already in progress. Please wait for it to complete.'],
+      durationSeconds: 0,
+      apiCallsYahoo: 0,
+      apiCallsAlphaVantage: 0,
+      markets: [],
+    };
+  }
+
+  scanInProgress = true;
   const startTime = Date.now();
   const supabase = createServiceClient();
   const errors: string[] = [];
@@ -899,5 +918,7 @@ export async function runScan(selectedMarkets?: string[]): Promise<ScanResult> {
       apiCallsAlphaVantage,
       markets,
     };
+  } finally {
+    scanInProgress = false;
   }
 }

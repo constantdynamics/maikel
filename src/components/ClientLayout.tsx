@@ -66,7 +66,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   return (
     <div className="h-screen flex flex-col bg-[var(--bg-primary)]">
       <Navbar />
-      <main className="flex-1 overflow-auto relative z-0">
+      <main id="main-content" className="flex-1 overflow-auto relative z-0">
         <div className="max-w-screen-2xl mx-auto p-4">{children}</div>
       </main>
       <VersionBadge />

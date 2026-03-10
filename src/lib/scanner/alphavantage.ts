@@ -97,13 +97,22 @@ export async function getHistoricalData(
       const date = new Date(dateStr);
       if (date < fiveYearsAgo) continue;
 
+      const open = parseFloat(values['1. open']);
+      const high = parseFloat(values['2. high']);
+      const low = parseFloat(values['3. low']);
+      const close = parseFloat(values['4. close']);
+      const volume = parseInt(values['5. volume'], 10);
+
+      // Skip data points with NaN values
+      if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) continue;
+
       results.push({
         date: dateStr,
-        open: parseFloat(values['1. open']),
-        high: parseFloat(values['2. high']),
-        low: parseFloat(values['3. low']),
-        close: parseFloat(values['4. close']),
-        volume: parseInt(values['5. volume'], 10),
+        open,
+        high,
+        low,
+        close,
+        volume: isNaN(volume) ? 0 : volume,
       });
     }
 

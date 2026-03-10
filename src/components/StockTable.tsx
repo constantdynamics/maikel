@@ -300,9 +300,9 @@ export default function StockTable({
   if (stocks.length === 0) {
     return (
       <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-12 text-center">
-        <div className="text-[var(--text-secondary)] text-lg mb-2">No stocks found</div>
+        <div className="text-[var(--text-secondary)] text-lg mb-2">Geen aandelen gevonden</div>
         <p className="text-[var(--text-muted)] text-sm">
-          Run a scan to detect stocks matching your criteria, or adjust your filters.
+          Start een scan om aandelen te detecteren, of pas je filters aan.
         </p>
       </div>
     );

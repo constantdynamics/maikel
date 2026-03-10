@@ -22,6 +22,8 @@ import { sleep } from '../utils';
 import type { ZonnebloemSettings, ZonnebloemScanDetail, OHLCData } from '../types';
 import { ZONNEBLOEM_DEFAULTS } from '../types';
 
+let zbScanInProgress = false;
+
 // Hard time budget: stop deep scanning after this many ms to stay within Vercel limits
 const TIME_BUDGET_MS = 240_000; // 240 seconds (leaving 60s buffer for Phase 1 + DB ops)
 
@@ -166,6 +168,21 @@ function shuffleArray<T>(arr: T[]): void {
  * Phase 3: Deep scan with Yahoo Finance (TIME-BUDGETED)
  */
 export async function runZonnebloemScan(): Promise<ZBScanResult> {
+  if (zbScanInProgress) {
+    return {
+      status: 'failed',
+      marketsScanned: [],
+      candidatesFound: 0,
+      stocksDeepScanned: 0,
+      stocksMatched: 0,
+      newStocksFound: 0,
+      errors: ['A Zonnebloem scan is already in progress.'],
+      durationSeconds: 0,
+      apiCallsYahoo: 0,
+    };
+  }
+
+  zbScanInProgress = true;
   const startTime = Date.now();
   const supabase = createServiceClient();
   const errors: string[] = [];
@@ -419,6 +436,8 @@ export async function runZonnebloemScan(): Promise<ZBScanResult> {
       durationSeconds,
       apiCallsYahoo,
     };
+  } finally {
+    zbScanInProgress = false;
   }
 }
 
