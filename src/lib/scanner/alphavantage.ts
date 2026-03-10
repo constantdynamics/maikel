@@ -1,7 +1,7 @@
 import type { StockQuote, OHLCData } from '../types';
 import { retryWithBackoff } from '../utils';
 
-const API_KEY = process.env.ALPHA_VANTAGE_API_KEY || 'demo';
+const API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
 const BASE_URL = 'https://www.alphavantage.co/query';
 
 // Track daily call count (25/day free tier)
@@ -22,6 +22,11 @@ function canMakeCall(): boolean {
 }
 
 async function fetchAlphaVantage(params: Record<string, string>): Promise<unknown> {
+  if (!API_KEY) {
+    console.warn('Alpha Vantage: ALPHA_VANTAGE_API_KEY not configured');
+    return null;
+  }
+
   if (!canMakeCall()) {
     console.warn('Alpha Vantage: Daily limit reached (25 calls)');
     return null;

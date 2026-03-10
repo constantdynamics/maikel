@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { parseLimit } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,8 +31,8 @@ export async function GET(request: NextRequest) {
 
   query = query.order(sortBy, { ascending: false });
 
-  if (limitParam) {
-    const limit = Math.min(Math.max(1, parseInt(limitParam, 10) || 250), 1000);
+  const limit = parseLimit(limitParam);
+  if (limit) {
     query = query.limit(limit);
   }
 

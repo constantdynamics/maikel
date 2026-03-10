@@ -1,44 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedClient } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-// Helper to get authenticated supabase client
-async function getAuthenticatedClient(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return null;
-  }
-
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '') ||
-    request.cookies.get('sb-access-token')?.value ||
-    request.cookies.get(`sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`)?.value;
-
-  if (!token) {
-    return null;
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data: { user } } = await supabase.auth.getUser(token);
-  if (!user) {
-    return null;
-  }
-
-  return supabase;
-}
-
 // Create a backup
 export async function POST(request: NextRequest) {
-  const supabase = await getAuthenticatedClient(request);
-  if (!supabase) {
+  const auth = await getAuthenticatedClient(request);
+  if (!auth) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
+  const { supabase } = auth;
 
   try {
     // Parse request body for backup type
@@ -115,10 +86,11 @@ export async function POST(request: NextRequest) {
 
 // Get backup history
 export async function GET(request: NextRequest) {
-  const supabase = await getAuthenticatedClient(request);
-  if (!supabase) {
+  const auth = await getAuthenticatedClient(request);
+  if (!auth) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
+  const { supabase } = auth;
 
   try {
     const { data: backups, error } = await supabase

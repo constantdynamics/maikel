@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,30 +48,9 @@ function toYahooTicker(ticker: string, exchange: string | null): string {
 }
 
 export async function GET(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return NextResponse.json({ error: 'Not configured' }, { status: 503 });
-  }
-
-  // Auth: require valid Supabase token
-  const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '') ||
-    request.cookies.get('sb-access-token')?.value ||
-    request.cookies.get(`sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`)?.value;
-
-  if (!token) {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-  }
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) return auth;
+  const { supabase } = auth;
 
   // Fetch Kuifje stocks (not deleted, not archived)
   const { data: kuifjeStocks } = await supabase
@@ -134,7 +114,8 @@ export async function GET(request: NextRequest) {
   // Archive: save daily report to kz_reports table (upsert by date)
   const today = new Date().toISOString().split('T')[0];
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (serviceKey) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (serviceKey && supabaseUrl) {
     const adminClient = createClient(supabaseUrl, serviceKey);
     await adminClient
       .from('kz_reports')
