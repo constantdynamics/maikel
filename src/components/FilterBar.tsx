@@ -1,10 +1,30 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { FilterConfig } from '@/lib/types';
 import MarketSelector, { getSelectedMarkets } from './MarketSelector';
 import ApiStatus from './ApiStatus';
 import AutoScanner from './AutoScanner';
+
+function useDebouncedCallback<T extends (...args: Parameters<T>) => void>(
+  callback: T,
+  delay: number,
+): T {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  return useCallback((...args: Parameters<T>) => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => callbackRef.current(...args), delay);
+  }, [delay]) as T;
+}
 
 export type QuickSelectType = 'top5' | 'top10' | 'score10' | 'scoreMin8' | 'scoreMin6' | 'none';
 
@@ -40,6 +60,12 @@ export default function FilterBar({
   const [showQuickSelect, setShowQuickSelect] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>(getSelectedMarkets);
+  const [searchValue, setSearchValue] = useState(filters.search);
+
+  // Keep local search in sync when filters are reset externally
+  useEffect(() => {
+    setSearchValue(filters.search);
+  }, [filters.search]);
 
   const handleMarketsChange = useCallback((markets: string[]) => {
     setSelectedMarkets(markets);
@@ -48,6 +74,10 @@ export default function FilterBar({
   function updateFilter(key: keyof FilterConfig, value: unknown) {
     onFilterChange({ ...filters, [key]: value });
   }
+
+  const debouncedSearch = useDebouncedCallback((value: string) => {
+    updateFilter('search', value);
+  }, 300);
 
   function handleRunScan() {
     onRunScan(selectedMarkets);
@@ -61,8 +91,11 @@ export default function FilterBar({
           <input
             type="text"
             placeholder="Search ticker or company name..."
-            value={filters.search}
-            onChange={(e) => updateFilter('search', e.target.value)}
+            value={searchValue}
+            onChange={(e) => {
+              setSearchValue(e.target.value);
+              debouncedSearch(e.target.value);
+            }}
             className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-primary)] text-sm"
           />
         </div>

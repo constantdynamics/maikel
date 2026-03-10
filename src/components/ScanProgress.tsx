@@ -98,6 +98,19 @@ export default function ScanProgress({ scanTriggered, onScanComplete }: ScanProg
     ? Math.round((Date.now() - new Date(scan.startedAt).getTime()) / 1000)
     : 0;
 
+  // Estimate remaining time based on scan rate
+  const estimatedRemaining = (() => {
+    if (!isRunning || elapsed < 5 || scan.stocksScanned < 3) return null;
+    const rate = scan.stocksScanned / elapsed; // stocks per second
+    // Estimate ~10 more stocks to scan (conservative)
+    const remaining = Math.max(10, 50 - scan.stocksScanned);
+    const secondsLeft = Math.round(remaining / rate);
+    if (secondsLeft < 60) return `~${secondsLeft}s remaining`;
+    const mins = Math.floor(secondsLeft / 60);
+    const secs = secondsLeft % 60;
+    return `~${mins}m ${secs}s remaining`;
+  })();
+
   return (
     <div
       className={`rounded-lg border p-4 mb-4 ${
@@ -127,7 +140,7 @@ export default function ScanProgress({ scanTriggered, onScanComplete }: ScanProg
         </div>
         <span className="text-xs text-slate-400">
           {isRunning
-            ? `${elapsed}s elapsed`
+            ? `${elapsed}s elapsed${estimatedRemaining ? ` · ${estimatedRemaining}` : ''}`
             : scan.durationSeconds
               ? `${scan.durationSeconds}s`
               : ''}

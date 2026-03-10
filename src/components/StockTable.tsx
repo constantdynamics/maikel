@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Stock, SortConfig, SortDirection } from '@/lib/types';
 import { getScoreColor } from '@/lib/types';
-import { formatCurrency, formatPercent, formatDate } from '@/lib/utils';
+import { formatCurrency, formatPercent, formatDate, formatRelativeDate } from '@/lib/utils';
 import { getExchangeFlag } from '@/lib/exchanges';
 import RainbowScore from './RainbowScore';
 import StockDetailModal from './StockDetailModal';
@@ -161,6 +161,14 @@ export default function StockTable({
   onDelete,
 }: StockTableProps) {
   const [favAnimating, setFavAnimating] = useState<string | null>(null);
+  const [copiedTicker, setCopiedTicker] = useState<string | null>(null);
+
+  const handleCopyTicker = useCallback((ticker: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(ticker);
+    setCopiedTicker(ticker);
+    setTimeout(() => setCopiedTicker(null), 1500);
+  }, []);
   const [columns, setColumns] = useState<ColumnConfig[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('stockTableColumns');
@@ -246,6 +254,28 @@ export default function StockTable({
             >
               {String(value)}
             </a>
+            <button
+              onClick={(e) => handleCopyTicker(String(value), e)}
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors opacity-0 group-hover:opacity-100"
+              title="Copy ticker"
+              aria-label={`Copy ${value}`}
+            >
+              {copiedTicker === String(value) ? (
+                <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              )}
+            </button>
+            <a
+              href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(String(value))}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors opacity-0 group-hover:opacity-100"
+              title="Open in TradingView"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+            </a>
           </div>
         );
       case 'exchange':
@@ -267,7 +297,11 @@ export default function StockTable({
       case 'sunflower_events':
         return getGrowthDots(stock.growth_event_count, stock.highest_growth_pct);
       case 'detection_date':
-        return formatDate(value as string | null);
+        return (
+          <span title={formatDate(value as string | null)}>
+            {formatRelativeDate(value as string | null)}
+          </span>
+        );
       case 'scan_info':
         // Show scan date with scan number (e.g., "07 Feb #2")
         if (!stock.scan_date) return '-';
@@ -339,7 +373,7 @@ export default function StockTable({
       <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg overflow-hidden animate-card">
         <div className="table-container-mobile overflow-x-auto">
           <table className="stock-table w-full text-sm">
-            <thead className="bg-[var(--bg-tertiary)]">
+            <thead className="bg-[var(--bg-tertiary)] sticky top-0 z-10">
               <tr>
                 <th className="px-2 py-3 text-center w-8 text-[var(--text-muted)] text-xs font-medium">#</th>
                 <th className="px-3 py-3 text-left w-10">
@@ -377,7 +411,7 @@ export default function StockTable({
                 <tr
                   key={stock.id}
                   onClick={() => setSelectedStock(stock)}
-                  className={`${getRowColorClass(stock.score)} animate-row color-transition cursor-pointer`}
+                  className={`group ${getRowColorClass(stock.score)} animate-row color-transition cursor-pointer`}
                   style={{ animationDelay: `${Math.min(index * 0.02, 0.3)}s` }}
                 >
                   <td className="px-2 py-2.5 text-center text-xs font-mono text-[var(--text-muted)]">

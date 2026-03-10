@@ -1,4 +1,4 @@
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
 export function formatCurrency(value: number | null): string {
   if (value === null || value === undefined) return '-';
@@ -28,6 +28,17 @@ export function formatDate(dateStr: string | null): string {
 export function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return '-';
   return format(new Date(dateStr), 'yyyy-MM-dd HH:mm');
+}
+
+export function formatRelativeDate(dateStr: string | null): string {
+  if (!dateStr) return '-';
+  const date = new Date(dateStr);
+  const diffMs = Date.now() - date.getTime();
+  // For dates older than 7 days, use "DD MMM" format
+  if (diffMs > 7 * 24 * 60 * 60 * 1000) {
+    return format(date, 'dd MMM');
+  }
+  return formatDistanceToNow(date, { addSuffix: true });
 }
 
 export function generateCsvFilename(prefix: string = 'StockScreener'): string {
