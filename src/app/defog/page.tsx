@@ -432,11 +432,12 @@ export default function DefogPage() {
   }, [updateStockInTab]);
 
   useEffect(() => {
-    if (ready) runSync();
+    if (ready && useStore.getState().settings.autoScanDefault) runSync();
   }, [ready, runSync]);
 
   useEffect(() => {
     if (!ready) return;
+    if (!useStore.getState().settings.autoScanDefault) return;
     const interval = setInterval(runSync, 60_000);
     return () => clearInterval(interval);
   }, [ready, runSync]);
