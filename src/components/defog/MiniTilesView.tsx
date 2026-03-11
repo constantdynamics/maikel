@@ -122,9 +122,11 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, onRefreshSto
 
   const handleBulkGoogleSearch = useCallback(() => {
     const selected = stocks.filter(s => selectedIds.has(s.id));
-    for (const stock of selected) {
-      openGoogleFinance(stock);
-    }
+    // Open each in a separate tab with a small staggered delay.
+    // Browsers block rapid window.open() calls as popups; staggering avoids this.
+    selected.forEach((stock, i) => {
+      setTimeout(() => openGoogleFinance(stock), i * 150);
+    });
   }, [stocks, selectedIds]);
 
   const handleBulkRefresh = useCallback(() => {

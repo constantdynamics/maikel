@@ -631,6 +631,29 @@ export async function syncScannerToDefog(
     ? processStocksForTab(shippingStocks, shippingResult.tab, getDefogTicker, sectorBuyLimitInput)
     : { newStocks: [], updates: new Map(), added: 0 };
 
+  // Build a combined lookup of ALL scanner stocks (for cross-referencing NBY tab)
+  const allScannerStocks = new Map<string, { ticker: string; buyLimit: number | null }>();
+  const addToLookup = <T extends { company_name: string }>(
+    stocks: T[], getTickerFn: (s: T) => string,
+    getBuyLimitFn: (s: T) => [Parameters<typeof calculateBuyLimit>[0], number | null],
+  ) => {
+    for (const s of stocks) {
+      const ticker = getTickerFn(s);
+      const baseTicker = getBaseTicker(ticker);
+      const normName = normalizeCompanyName(s.company_name);
+      const [limitInput, currentPrice] = getBuyLimitFn(s);
+      const buyLimit = calculateBuyLimit(limitInput, currentPrice);
+      allScannerStocks.set(baseTicker, { ticker, buyLimit });
+      if (normName) allScannerStocks.set(`name:${normName}`, { ticker, buyLimit });
+    }
+  };
+  addToLookup(kuifjeStocks, getDefogTicker, kuifjeBuyLimitInput);
+  addToLookup(zbStocks, getDefogTicker, zbBuyLimitInput);
+  addToLookup(biopharmaStocks, getDefogTicker, sectorBuyLimitInput);
+  addToLookup(miningStocks, getDefogTicker, sectorBuyLimitInput);
+  addToLookup(hydrogenStocks, getDefogTicker, sectorBuyLimitInput);
+  addToLookup(shippingStocks, getDefogTicker, sectorBuyLimitInput);
+
   // Apply all updates in a single setTabs call
   const tabConfigs = [
     { tab: kuifjeResult, processed: kuifjeProcessed },
@@ -652,11 +675,45 @@ export async function syncScannerToDefog(
     }
 
     return result.map((t) => {
+      // Scanner tabs: full sync with new stocks + updates
       for (const { tab: { tab }, processed } of tabConfigs) {
         if (t.id === tab.id) {
           return applyTabSync(t, processed.updates, processed.newStocks);
         }
       }
+
+      // NBY tab (and other custom tabs): cross-reference with scanner data
+      // to update buy limits from scanner results — but never add/remove stocks
+      if (!SCANNER_TAB_NAMES.includes(t.name as ScannerTabName) && t.name !== 'Watchlist') {
+        let changed = false;
+        const updatedStocks = t.stocks.map((stock) => {
+          const baseTicker = getBaseTicker(stock.ticker);
+          const normName = normalizeCompanyName(stock.name);
+          const match = allScannerStocks.get(baseTicker) ||
+            (normName ? allScannerStocks.get(`name:${normName}`) : undefined);
+
+          if (match) {
+            const upd: Partial<typeof stock> = {};
+            // Update buy limit if stock doesn't have one yet, or if scanner has a better (lower) one
+            if (match.buyLimit != null && (stock.buyLimit == null || (match.buyLimit < stock.buyLimit && !stock.rangeFetched))) {
+              upd.buyLimit = match.buyLimit;
+            }
+            // Upgrade ticker quality
+            if (tickerQualityScore(match.ticker) > tickerQualityScore(stock.ticker)) {
+              upd.ticker = match.ticker;
+            }
+            if (Object.keys(upd).length > 0) {
+              changed = true;
+              return { ...stock, ...upd };
+            }
+          }
+          return stock;
+        });
+        if (changed) {
+          return { ...t, stocks: updatedStocks };
+        }
+      }
+
       return t;
     });
   });
