@@ -166,15 +166,22 @@ export class SmartRefreshEngine {
     this.onStatsChanged({ ...this.stats });
   }
 
-  // Build a priority-sorted queue of all stocks across all tabs
+  // Build a priority-sorted queue of all stocks across all tabs.
+  // Stocks in the "nby" tab get a large priority boost so they refresh first.
   private buildQueue(): Array<{ tabId: string; stock: DefogStock; priority: number }> {
     const tabs = this.getTabs();
     const items: Array<{ tabId: string; stock: DefogStock; priority: number }> = [];
 
     for (const tab of tabs) {
+      const isNby = tab.name.toLowerCase() === 'nby';
       for (const stock of tab.stocks) {
         const meta = this.meta[stock.ticker];
-        const priority = calculatePriority(stock, meta);
+        let priority = calculatePriority(stock, meta);
+        // NBY tab stocks get a massive boost (subtract 10000 from priority)
+        // so they always sort before other tabs' stocks
+        if (isNby && priority < 999_999) {
+          priority -= 10_000;
+        }
         items.push({ tabId: tab.id, stock, priority });
       }
     }
@@ -371,7 +378,27 @@ export class SmartRefreshEngine {
         await this.sleep(delay);
       }
 
-      // After full cycle, wait 30s before starting again
+      // After full cycle, do a quick nby-only pass before the long wait.
+      // This ensures nby stocks get refreshed ~2x as often as other tabs.
+      if (this.running && !this.paused) {
+        const nbyOnly = this.buildQueue().filter(q => {
+          const tab = this.getTabs().find(t => t.id === q.tabId);
+          return tab && tab.name.toLowerCase() === 'nby' && q.priority < 999_999;
+        });
+        if (nbyOnly.length > 0) {
+          console.log(`[SmartRefresh] Quick nby pass: ${nbyOnly.length} stocks`);
+          for (let i = 0; i < nbyOnly.length && this.running && !this.paused; i++) {
+            const { tabId, stock } = nbyOnly[i];
+            this.stats.currentIndex = i + 1;
+            this.stats.queueLength = nbyOnly.length;
+            this.emit();
+            const success = await this.refreshStock(tabId, stock);
+            await this.sleep(success ? DELAY_BETWEEN_STOCKS_MS : DELAY_AFTER_FAILURE_MS);
+          }
+        }
+      }
+
+      // Wait before starting next full cycle
       if (this.running) {
         console.log('[SmartRefresh] Cycle complete, waiting 30s...');
         await this.sleep(30_000);

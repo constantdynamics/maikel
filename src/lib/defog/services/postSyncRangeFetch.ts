@@ -277,23 +277,26 @@ function buildSmartRangeQueue(tabs: Tab[]): Array<{ tabId: string; stock: Stock 
   const candidates: Array<{ tabId: string; stock: Stock; sortKey: number }> = [];
 
   for (const tab of tabs) {
+    // NBY tab stocks get a massive priority boost (negative sortKey)
+    const nbyBoost = tab.name.toLowerCase() === 'nby' ? -1e12 : 0;
+
     for (const stock of tab.stocks) {
       // Skip stocks that errored — user must clear the error flag to retry
       if (stock.rangeFetchError) continue;
 
-      // Never fetched → highest priority (sortKey = 0)
+      // Never fetched → highest priority (sortKey = 0, or negative for nby)
       if (!stock.rangeFetched) {
-        candidates.push({ tabId: tab.id, stock, sortKey: 0 });
+        candidates.push({ tabId: tab.id, stock, sortKey: nbyBoost });
         continue;
       }
 
       // Already fetched — sort by rangeFetchedAt (oldest first)
       const fetchedAt = stock.rangeFetchedAt ? new Date(stock.rangeFetchedAt).getTime() : 0;
-      candidates.push({ tabId: tab.id, stock, sortKey: fetchedAt || 1 });
+      candidates.push({ tabId: tab.id, stock, sortKey: (fetchedAt || 1) + nbyBoost });
     }
   }
 
-  // Sort: never-fetched first (0), then oldest rangeFetchedAt
+  // Sort: nby stocks first (negative), then never-fetched (0), then oldest
   candidates.sort((a, b) => a.sortKey - b.sortKey);
 
   return candidates.map(({ tabId, stock }) => ({ tabId, stock }));
