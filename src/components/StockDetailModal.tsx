@@ -75,12 +75,12 @@ export default function StockDetailModal({ stock, onClose }: StockDetailModalPro
             Google Finance
           </a>
           <a
-            href={`https://finance.yahoo.com/quote/${encodeURIComponent(stock.ticker)}`}
+            href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(stock.ticker)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 py-2 text-center rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-medium hover:opacity-90 transition-opacity"
           >
-            Yahoo Finance
+            TradingView
           </a>
         </div>
       </div>
