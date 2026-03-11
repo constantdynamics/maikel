@@ -6,6 +6,7 @@ import type { Stock, ChartTimeframe, RangePeriod, ColumnVisibility, ColumnStyles
 import { ProgressBar } from './ProgressBar';
 import { Sparkline, ExpandedChart } from './Sparkline';
 import { isMarketOpen, getRefreshAgeInfo } from '@/lib/defog/services/stockApi';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface StockCardProps {
   stock: Stock;
@@ -249,17 +250,16 @@ export function StockCard({
         {(() => {
           const tickerStyle = getColumnClasses(columnStyles.ticker, undefined, accentColor, false);
           const marketStatus = isMarketOpen(stock.exchange);
-          const openGoogleSearch = (e: React.MouseEvent) => {
+          const openGoogleFinance = (e: React.MouseEvent) => {
             e.stopPropagation();
-            const searchQuery = encodeURIComponent(`${stock.ticker} ${stock.name} stock`);
-            window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank');
+            window.open(getGoogleFinanceUrl(stock.ticker, stock.exchange), '_blank');
           };
           return (
             <div
               className={`truncate cursor-pointer hover:opacity-80 hover:underline flex items-center gap-1.5 ${tickerStyle.className}`}
               style={tickerStyle.style}
-              onClick={openGoogleSearch}
-              title={`Zoek ${stock.ticker} op Google`}
+              onClick={openGoogleFinance}
+              title={`${stock.ticker} op Google Finance`}
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${marketStatus.isOpen ? 'bg-green-400' : 'bg-gray-500'}`}
@@ -421,10 +421,9 @@ export function StockCard({
               style={{ color: accentColor }}
               onClick={(e) => {
                 e.stopPropagation();
-                const searchQuery = encodeURIComponent(`${stock.ticker} ${stock.name} stock`);
-                window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank');
+                window.open(getGoogleFinanceUrl(stock.ticker, stock.exchange), '_blank');
               }}
-              title={`Zoek ${stock.ticker} op Google`}
+              title={`${stock.ticker} op Google Finance`}
             >
               <span
                 className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isMarketOpen(stock.exchange).isOpen ? 'bg-green-400' : 'bg-gray-500'}`}

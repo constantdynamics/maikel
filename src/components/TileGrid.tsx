@@ -1,6 +1,7 @@
 'use client';
 
 import type { Stock } from '@/lib/types';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface TileGridProps {
   stocks: Stock[];
@@ -61,7 +62,7 @@ export default function TileGrid({ stocks }: TileGridProps) {
         return (
           <a
             key={stock.id}
-            href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+            href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
             target="_blank"
             rel="noopener noreferrer"
             className="block rounded transition-transform hover:scale-105 hover:shadow-lg"

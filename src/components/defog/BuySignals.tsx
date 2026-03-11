@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CheckIcon } from '@heroicons/react/24/outline';
 import type { BuySignal, BuySignalDisplayOptions } from '@/lib/defog/types';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 import { Modal } from './Modal';
 
 interface BuySignalsProps {
@@ -83,10 +84,9 @@ export function BuySignals({ signals, onMarkAsPurchased, displayOptions }: BuySi
                         style={{ color: signal.tabColor }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          const searchQuery = encodeURIComponent(`${signal.stock.ticker} ${signal.stock.name} stock`);
-                          window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank');
+                          window.open(getGoogleFinanceUrl(signal.stock.ticker, signal.stock.exchange), '_blank');
                         }}
-                        title={`Zoek ${signal.stock.ticker} op Google`}
+                        title={`${signal.stock.ticker} op Google Finance`}
                       >
                         {signal.stock.ticker}
                       </span>

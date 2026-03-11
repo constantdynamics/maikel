@@ -302,6 +302,7 @@ export interface AppState {
   settings: UserSettings;
   lastSyncTime: string | null;
   encryptionKeyHash: string | null;
+  weeklyRefreshTimestamp?: string;  // Persisted to cloud so it survives Vercel URL changes
 }
 
 // Stock issue types for troubleshooting

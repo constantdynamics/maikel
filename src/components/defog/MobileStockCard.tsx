@@ -6,6 +6,7 @@ import type { Stock, ChartTimeframe, RangePeriod, ColumnVisibility } from '@/lib
 import { ProgressBar } from './ProgressBar';
 import { Sparkline, ExpandedChart } from './Sparkline';
 import { isMarketOpen } from '@/lib/defog/services/stockApi';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface MobileStockCardProps {
   stock: Stock;
@@ -187,10 +188,9 @@ export function MobileStockCard({
                 style={{ color: isUnavailable ? undefined : accentColor }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  const searchQuery = encodeURIComponent(`${stock.ticker} ${stock.name} stock`);
-                  window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank');
+                  window.open(getGoogleFinanceUrl(stock.ticker, stock.exchange), '_blank');
                 }}
-                title={`Zoek ${stock.ticker} op Google`}
+                title={`${stock.ticker} op Google Finance`}
               >
                 {stock.ticker}
                 {tabName && (

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ZonnebloemStock, Stock, SectorStock } from '@/lib/types';
 import { SpikeDotDisplay } from './ZonnebloemTable';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 import packageJson from '../../package.json';
 
 interface ScanStatus {
@@ -643,7 +644,7 @@ export default function UnderwaterMode({
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
@@ -681,7 +682,7 @@ export default function UnderwaterMode({
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
@@ -719,7 +720,7 @@ export default function UnderwaterMode({
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
@@ -754,7 +755,7 @@ export default function UnderwaterMode({
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
@@ -789,7 +790,7 @@ export default function UnderwaterMode({
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs font-medium truncate hover:text-white transition-colors"
@@ -826,7 +827,7 @@ export default function UnderwaterMode({
                 style={{ borderColor: '#252729', breakInside: 'avoid' }}
               >
                 <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                  href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs font-medium truncate hover:text-white transition-colors"

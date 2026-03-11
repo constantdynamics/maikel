@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { ZonnebloemStock, SortConfig } from '@/lib/types';
-import { getExchangeFlag } from '@/lib/exchanges';
+import { getExchangeFlag, getGoogleFinanceUrl } from '@/lib/exchanges';
 import { ALL_ZB_COLUMNS, type ScanSessionInfo } from '@/hooks/useZonnebloemStocks';
 import RainbowScore from './RainbowScore';
 
@@ -205,7 +205,7 @@ export default function ZonnebloemTable({
           <span className="flex items-center gap-1.5">
             <span className="text-xs">{getExchangeFlag(stock.exchange, stock.ticker)}</span>
             <a
-              href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+              href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}

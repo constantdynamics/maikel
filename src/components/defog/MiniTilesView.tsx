@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import type { Stock, TileSettings } from '@/lib/defog/types';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 import { RAINBOW_PRESETS, type RainbowPreset } from './rainbowPresets';
 
 // No buy limit set - neutral gray
@@ -61,9 +62,8 @@ function getFreshnessDots(lastUpdated: string): number {
   return 0;
 }
 
-function openGoogleSearch(stock: Stock) {
-  const query = encodeURIComponent(`${stock.ticker} ${stock.name || ''} stock`);
-  window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer');
+function openGoogleFinance(stock: Stock) {
+  window.open(getGoogleFinanceUrl(stock.ticker, stock.exchange), '_blank', 'noopener,noreferrer');
 }
 
 const DEFAULT_TILE_SETTINGS: TileSettings = {
@@ -116,14 +116,14 @@ export function MiniTilesView({ stocks, tileSettings, onStockClick, onRefreshSto
       toggleSelection(stock.id);
     } else {
       // Default: open Google search in new tab
-      openGoogleSearch(stock);
+      openGoogleFinance(stock);
     }
   }, [selectionMode, toggleSelection]);
 
   const handleBulkGoogleSearch = useCallback(() => {
     const selected = stocks.filter(s => selectedIds.has(s.id));
     for (const stock of selected) {
-      openGoogleSearch(stock);
+      openGoogleFinance(stock);
     }
   }, [stocks, selectedIds]);
 

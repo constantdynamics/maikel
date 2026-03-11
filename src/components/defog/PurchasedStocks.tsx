@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { PurchasedStock } from '@/lib/defog/types';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface PurchasedStocksProps {
   stocks: Array<{
@@ -232,10 +233,9 @@ export function PurchasedStocks({ stocks, onSelectStock, onRemovePurchased, onRe
                     style={{ color: item.tabColor }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      const searchQuery = encodeURIComponent(`${item.stock.ticker} ${item.stock.name} stock`);
-                      window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank');
+                      window.open(getGoogleFinanceUrl(item.stock.ticker, item.stock.exchange), '_blank');
                     }}
-                    title={`Zoek ${item.stock.ticker} op Google`}
+                    title={`${item.stock.ticker} op Google Finance`}
                   >
                     {item.stock.ticker}
                   </div>

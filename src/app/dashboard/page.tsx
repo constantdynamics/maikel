@@ -21,6 +21,7 @@ import { useSectorStocks } from '@/hooks/useSectorStocks';
 import { useMoriaStocks } from '@/hooks/useMoriaStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { TableSkeleton } from '@/components/Skeleton';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
@@ -906,7 +907,7 @@ export default function DashboardPage() {
                 <button onClick={() => {
                   const selected = sectorStocks.filter((s) => selectedIds.has(s.id));
                   for (const s of selected) {
-                    window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank');
+                    window.open(getGoogleFinanceUrl(s.ticker, s.exchange), '_blank');
                   }
                 }} className={`px-3 py-2 text-sm ${btnColor} text-white hover:opacity-90 rounded transition-colors`}>
                   Open in Google
@@ -1179,7 +1180,7 @@ export default function DashboardPage() {
               onBulkArchive={handleBulkArchive} onBulkDelete={requestBulkDelete}
               onOpenInGoogle={() => {
                 const selected = stocks.filter((s) => selectedIds.has(s.id));
-                for (const s of selected) window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank');
+                for (const s of selected) window.open(getGoogleFinanceUrl(s.ticker, s.exchange), '_blank');
               }}
               onQuickSelect={handleQuickSelect}
             />
@@ -1278,7 +1279,7 @@ export default function DashboardPage() {
                 {selectedIds.size > 0 && (
                   <div className="flex items-center gap-2 ml-auto">
                     <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
-                    <button onClick={() => { const selected = zbStocks.filter((s) => selectedIds.has(s.id)); for (const s of selected) window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock')}`, '_blank'); }}
+                    <button onClick={() => { const selected = zbStocks.filter((s) => selectedIds.has(s.id)); for (const s of selected) window.open(getGoogleFinanceUrl(s.ticker, s.exchange), '_blank'); }}
                       className="px-3 py-2 text-sm bg-purple-600 text-white hover:opacity-90 rounded transition-colors">Open in Google</button>
                     <button onClick={handleBulkFavorite} className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors">Favorite</button>
                     <button onClick={() => { zbBulkArchive(selectedIds); setSelectedIds(new Set()); }} className="px-3 py-2 text-sm bg-blue-600 text-white hover:opacity-90 rounded transition-colors">Archive</button>
@@ -1392,7 +1393,7 @@ export default function DashboardPage() {
                 {selectedIds.size > 0 && (
                   <div className="flex items-center gap-2 ml-auto">
                     <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
-                    <button onClick={() => { const selected = moriaStocks.filter((s) => selectedIds.has(s.id)); for (const s of selected) window.open(`https://www.google.com/search?q=${encodeURIComponent(s.ticker + ' ' + (s.company_name || '') + ' stock mining')}`, '_blank'); }}
+                    <button onClick={() => { const selected = moriaStocks.filter((s) => selectedIds.has(s.id)); for (const s of selected) window.open(getGoogleFinanceUrl(s.ticker, s.exchange), '_blank'); }}
                       className="px-3 py-2 text-sm bg-rose-600 text-white hover:opacity-90 rounded transition-colors">Open in Google</button>
                     <button onClick={handleBulkFavorite} className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors">Favorite</button>
                     <button onClick={handleBulkArchive} className="px-3 py-2 text-sm bg-blue-600 text-white hover:opacity-90 rounded transition-colors">Archive</button>

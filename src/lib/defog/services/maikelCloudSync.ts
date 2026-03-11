@@ -3,7 +3,7 @@
 
 import type { AppState } from '../types';
 
-const SYNC_DEBOUNCE_MS = 3000;
+const SYNC_DEBOUNCE_MS = 1000;
 
 let syncTimeout: ReturnType<typeof setTimeout> | null = null;
 let isSyncing = false;

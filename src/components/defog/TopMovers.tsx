@@ -2,6 +2,7 @@
 
 import type { Stock } from '@/lib/defog/types';
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
+import { getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface StockWithTab {
   stock: Stock;
@@ -57,7 +58,7 @@ export function TopMovers({ gainers, losers, onStockClick }: TopMoversProps) {
                     <span className="text-green-400 font-bold w-6">{index + 1}</span>
                     <div className="text-left">
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-semibold">{item.stock.ticker}</span>
+                        <a href={getGoogleFinanceUrl(item.stock.ticker, item.stock.exchange)} target="_blank" rel="noopener noreferrer" className="text-white font-semibold hover:underline" onClick={(e) => e.stopPropagation()}>{item.stock.ticker}</a>
                         <span
                           className="text-xs px-1.5 py-0.5 rounded"
                           style={{ backgroundColor: item.tabColor + '30', color: item.tabColor }}
@@ -103,7 +104,7 @@ export function TopMovers({ gainers, losers, onStockClick }: TopMoversProps) {
                     <span className="text-red-400 font-bold w-6">{index + 1}</span>
                     <div className="text-left">
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-semibold">{item.stock.ticker}</span>
+                        <a href={getGoogleFinanceUrl(item.stock.ticker, item.stock.exchange)} target="_blank" rel="noopener noreferrer" className="text-white font-semibold hover:underline" onClick={(e) => e.stopPropagation()}>{item.stock.ticker}</a>
                         <span
                           className="text-xs px-1.5 py-0.5 rounded"
                           style={{ backgroundColor: item.tabColor + '30', color: item.tabColor }}

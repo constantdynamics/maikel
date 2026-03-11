@@ -272,6 +272,76 @@ export function getExchangeFlag(exchange: string | null, ticker?: string | null)
   return countryCode.toLowerCase();
 }
 
+// Google Finance exchange code mapping
+const GOOGLE_FINANCE_EXCHANGE: Record<string, string> = {
+  NYSE: 'NYSE', NASDAQ: 'NASDAQ', AMEX: 'NYSEAMERICAN', 'NYSE ARCA': 'NYSEARCA', 'NYSE MKT': 'NYSEAMERICAN',
+  OTC: 'OTCMKTS', BATS: 'BATS',
+  TSX: 'TSE', TSXV: 'CVE', NEO: 'NEO', CSE: 'CNSX',
+  LSE: 'LON', AIM: 'LON',
+  XETRA: 'ETR', FWB: 'FRA',
+  EURONEXT: 'EPA', AEX: 'AMS',
+  ASX: 'ASX', TSE: 'TYO', HKEX: 'HKG',
+  NSE: 'NSE', BSE: 'BOM',
+  B3: 'BVMF', BOVESPA: 'BVMF', BMV: 'BMV',
+  BME: 'BME', MIL: 'BIT', SIX: 'SWX',
+  KRX: 'KRX', KOSDAQ: 'KOSDAQ', TWSE: 'TPE',
+  SGX: 'SGX', JSE: 'JSE', MOEX: 'MCX',
+  GPW: 'WSE', BIST: 'IST', TASE: 'TLV',
+  OMX: 'STO', OSE: 'OSL', CSE_DK: 'CPH', OMXH: 'HEL',
+  EURONEXT_BR: 'EBR', WBAG: 'VIE', NZX: 'NZE',
+  IDX: 'IDX', MYX: 'KLSE', SET: 'BKK', PSE: 'PSE',
+  HOSE: 'HM', BCBA: 'BCBA', BCS: 'SNSE', BVC: 'BVC', BVL: 'BVL',
+};
+
+// Ticker suffix to Google Finance exchange code
+const TICKER_SUFFIX_GF: Record<string, string> = {
+  '.TO': 'TSE', '.V': 'CVE', '.L': 'LON', '.DE': 'ETR', '.F': 'FRA',
+  '.PA': 'EPA', '.AS': 'AMS', '.BR': 'EBR', '.MI': 'BIT', '.MC': 'BME',
+  '.SW': 'SWX', '.VI': 'VIE', '.ST': 'STO', '.OL': 'OSL', '.CO': 'CPH',
+  '.HE': 'HEL', '.WA': 'WSE', '.IS': 'IST', '.TA': 'TLV',
+  '.AX': 'ASX', '.NZ': 'NZE', '.T': 'TYO', '.HK': 'HKG',
+  '.KS': 'KRX', '.KQ': 'KOSDAQ', '.TW': 'TPE', '.SI': 'SGX',
+  '.JK': 'IDX', '.KL': 'KLSE', '.BK': 'BKK', '.NS': 'NSE', '.BO': 'BOM',
+  '.SA': 'BVMF', '.MX': 'BMV', '.BA': 'BCBA', '.SN': 'SNSE', '.JO': 'JSE',
+  '.ME': 'MCX',
+};
+
+/**
+ * Build a Google Finance URL for a given ticker and exchange.
+ * Returns a direct link like https://www.google.com/finance/quote/AAPL:NASDAQ
+ * Falls back to a Google Finance search if exchange mapping is unknown.
+ */
+export function getGoogleFinanceUrl(ticker: string, exchange?: string | null): string {
+  // Strip any Yahoo-style suffix from ticker for the base symbol
+  const dotIdx = ticker.indexOf('.');
+  const baseTicker = dotIdx > 0 ? ticker.substring(0, dotIdx) : ticker;
+
+  // Try exchange mapping first
+  if (exchange) {
+    const gfExchange = GOOGLE_FINANCE_EXCHANGE[exchange.toUpperCase()];
+    if (gfExchange) {
+      return `https://www.google.com/finance/quote/${encodeURIComponent(baseTicker)}:${gfExchange}`;
+    }
+  }
+
+  // Try ticker suffix mapping
+  if (dotIdx > 0) {
+    const suffix = ticker.substring(dotIdx).toUpperCase();
+    const gfExchange = TICKER_SUFFIX_GF[suffix];
+    if (gfExchange) {
+      return `https://www.google.com/finance/quote/${encodeURIComponent(baseTicker)}:${gfExchange}`;
+    }
+  }
+
+  // No suffix + no exchange → assume US, try NASDAQ first (Google redirects if wrong)
+  if (dotIdx < 0) {
+    return `https://www.google.com/finance/quote/${encodeURIComponent(baseTicker)}:NASDAQ`;
+  }
+
+  // Fallback: Google Finance search
+  return `https://www.google.com/finance?q=${encodeURIComponent(ticker)}`;
+}
+
 // TradingView scanner endpoints for different markets
 export const TRADINGVIEW_MARKETS = {
   america: {

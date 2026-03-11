@@ -1,7 +1,7 @@
 'use client';
 
 import type { MoriaStock, SortConfig } from '@/lib/types';
-import { getExchangeFlag } from '@/lib/exchanges';
+import { getExchangeFlag, getGoogleFinanceUrl } from '@/lib/exchanges';
 
 interface Props {
   stocks: MoriaStock[];
@@ -97,7 +97,7 @@ export default function MoriaStockTable({
                     </button>
                   </td>
                   <td className="p-3">
-                    <a href={`https://finance.yahoo.com/quote/${yahooTicker}`}
+                    <a href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                       target="_blank" rel="noopener noreferrer"
                       className="font-mono font-medium text-rose-400 hover:underline">
                       {flag && <span className="mr-1">{flag}</span>}

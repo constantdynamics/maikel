@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Stock, SortConfig, SortDirection } from '@/lib/types';
 import { getScoreColor } from '@/lib/types';
 import { formatCurrency, formatPercent, formatDate, formatRelativeDate } from '@/lib/utils';
-import { getExchangeFlag } from '@/lib/exchanges';
+import { getExchangeFlag, getGoogleFinanceUrl } from '@/lib/exchanges';
 import RainbowScore from './RainbowScore';
 import StockDetailModal from './StockDetailModal';
 import ColumnSettings, { type ColumnConfig } from './ColumnSettings';
@@ -228,7 +228,7 @@ export default function StockTable({
     // This works better than setTimeout which only allows the first one
     selectedStocks.forEach((stock) => {
       window.open(
-        `https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`,
+        getGoogleFinanceUrl(stock.ticker, stock.exchange),
         '_blank',
         'noopener,noreferrer',
       );
@@ -246,7 +246,7 @@ export default function StockTable({
               {getExchangeFlag(stock.exchange, stock.ticker)}
             </span>
             <a
-              href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+              href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
               target="_blank"
               rel="noopener noreferrer"
               className="ticker-link font-mono"

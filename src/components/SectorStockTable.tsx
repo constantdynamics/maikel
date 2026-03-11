@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { SectorStock, SortConfig } from '@/lib/types';
 import type { ScanSessionInfo } from '@/hooks/useSectorStocks';
-import { getExchangeFlag } from '@/lib/exchanges';
+import { getExchangeFlag, getGoogleFinanceUrl } from '@/lib/exchanges';
 import RainbowScore from './RainbowScore';
 
 interface Props {
@@ -235,7 +235,7 @@ export default function SectorStockTable({
                         {getExchangeFlag(stock.exchange, stock.ticker)}
                       </span>
                       <a
-                        href={`https://www.google.com/search?q=${encodeURIComponent(stock.ticker + ' ' + (stock.company_name || '') + ' stock')}`}
+                        href={getGoogleFinanceUrl(stock.ticker, stock.exchange)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ticker-link font-mono"
