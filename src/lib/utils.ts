@@ -169,7 +169,7 @@ const SECTOR_CSV_COLUMNS = [
   { header: 'Review Reason', key: 'review_reason' },
 ];
 
-type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
+type ExportTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria' | 'bluepill';
 
 /** Convert scanner stocks to CSV based on tab type. */
 export function scannerStocksToCSV(stocks: Record<string, unknown>[], tab: ExportTab): string {
@@ -195,7 +195,7 @@ export function allScannerTabsToJSON(data: Record<ExportTab, Record<string, unkn
     exportedAt: new Date().toISOString(),
     tabs: {} as Record<string, unknown>,
   };
-  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining', 'hydrogen', 'shipping', 'moria'] as ExportTab[]) {
+  for (const tab of ['kuifje', 'zonnebloem', 'biopharma', 'mining', 'hydrogen', 'shipping', 'moria', 'bluepill'] as ExportTab[]) {
     const stocks = (data[tab] || []).map((s) => {
       const { is_deleted, deleted_at, is_archived, archived_at, ...rest } = s;
       return rest;

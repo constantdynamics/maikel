@@ -15,17 +15,19 @@ import Pagination from '@/components/Pagination';
 import FixedUI from '@/components/FixedUI';
 import ExportReminder from '@/components/ExportReminder';
 import MoriaStockTable from '@/components/MoriaStockTable';
+import BluePillStockTable from '@/components/BluePillStockTable';
 import { useStocks } from '@/hooks/useStocks';
 import { useZonnebloemStocks } from '@/hooks/useZonnebloemStocks';
 import { useSectorStocks } from '@/hooks/useSectorStocks';
 import { useMoriaStocks } from '@/hooks/useMoriaStocks';
+import { useBluePillStocks } from '@/hooks/useBluePillStocks';
 import { stocksToCSV, downloadCSV, generateCsvFilename, scannerStocksToCSV, scannerStocksToJSON, allScannerTabsToJSON, downloadFile, generateExportFilename } from '@/lib/utils';
 import { TableSkeleton } from '@/components/Skeleton';
 import { getGoogleFinanceUrl } from '@/lib/exchanges';
 import { supabase } from '@/lib/supabase';
 import type { SectorScannerType } from '@/lib/types';
 
-type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
+type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria' | 'bluepill';
 
 interface ScanSession {
   id: string;
@@ -172,6 +174,23 @@ export default function DashboardPage() {
     refreshStocks: moriaRefreshStocks,
   } = useMoriaStocks();
 
+  // Blue Pill state
+  const {
+    stocks: bluepillStocks,
+    loading: bluepillLoading,
+    filters: bluepillFilters,
+    setFilters: setBluepillFilters,
+    sort: bluepillSort,
+    handleSort: bluepillHandleSort,
+    markets: bluepillMarkets,
+    toggleFavorite: bluepillToggleFavorite,
+    deleteStock: bluepillDeleteStock,
+    bulkFavorite: bluepillBulkFavorite,
+    bulkDelete: bluepillBulkDelete,
+    bulkArchive: bluepillBulkArchive,
+    refreshStocks: bluepillRefreshStocks,
+  } = useBluePillStocks();
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [underwaterMode, setUnderwaterMode] = useState(false);
 
@@ -222,6 +241,12 @@ export default function DashboardPage() {
   const [moriaAutoScan, setMoriaAutoScan] = useState(false);
   const [moriaAutoNext, setMoriaAutoNext] = useState<Date | null>(null);
   const moriaAutoLastRun = useRef<number>(0);
+
+  // Blue Pill scan state
+  const [bluepillScanRunning, setBluepillScanRunning] = useState(false);
+  const [bluepillAutoScan, setBluepillAutoScan] = useState(false);
+  const [bluepillAutoNext, setBluepillAutoNext] = useState<Date | null>(null);
+  const bluepillAutoLastRun = useRef<number>(0);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [sessions, setSessions] = useState<ScanSession[]>([]);
@@ -282,7 +307,7 @@ export default function DashboardPage() {
       }
 
       // "1-7" - Switch scanner tabs
-      const tabKeys: Record<string, ScannerTab> = { '1': 'kuifje', '2': 'zonnebloem', '3': 'biopharma', '4': 'mining', '5': 'hydrogen', '6': 'shipping', '7': 'moria' };
+      const tabKeys: Record<string, ScannerTab> = { '1': 'kuifje', '2': 'zonnebloem', '3': 'biopharma', '4': 'mining', '5': 'hydrogen', '6': 'shipping', '7': 'moria', '8': 'bluepill' };
       if (tabKeys[e.key]) {
         setActiveTab(tabKeys[e.key]);
         return;
@@ -294,7 +319,7 @@ export default function DashboardPage() {
         }
       }
       if (e.key === 'a' || e.key === 'A') {
-        if (selectedIds.size > 0 && (activeTab === 'kuifje' || activeTab === 'biopharma' || activeTab === 'mining' || activeTab === 'hydrogen' || activeTab === 'shipping' || activeTab === 'moria')) {
+        if (selectedIds.size > 0 && (activeTab === 'kuifje' || activeTab === 'biopharma' || activeTab === 'mining' || activeTab === 'hydrogen' || activeTab === 'shipping' || activeTab === 'moria' || activeTab === 'bluepill')) {
           handleBulkArchive();
         }
       }
@@ -312,7 +337,7 @@ export default function DashboardPage() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedIds(new Set());
-  }, [filters, sort, zbFilters, zbSort, bpFilters, bpSort, mnFilters, mnSort, h2Filters, h2Sort, shpFilters, shpSort, moriaFilters, moriaSort, activeTab]);
+  }, [filters, sort, zbFilters, zbSort, bpFilters, bpSort, mnFilters, mnSort, h2Filters, h2Sort, shpFilters, shpSort, moriaFilters, moriaSort, bluepillFilters, bluepillSort, activeTab]);
 
   // Pagination for active tab
   const activeStocks = activeTab === 'kuifje' ? stocks
@@ -321,7 +346,8 @@ export default function DashboardPage() {
     : activeTab === 'mining' ? mnStocks
     : activeTab === 'hydrogen' ? h2Stocks
     : activeTab === 'shipping' ? shpStocks
-    : moriaStocks;
+    : activeTab === 'moria' ? moriaStocks
+    : bluepillStocks;
   const totalPages = Math.ceil(activeStocks.length / ITEMS_PER_PAGE);
   const paginatedStocks = activeStocks.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -354,6 +380,8 @@ export default function DashboardPage() {
   async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
     const url = tab === 'kuifje' ? '/api/stocks'
       : tab === 'zonnebloem' ? '/api/zonnebloem/stocks'
+      : tab === 'moria' ? '/api/moria/stocks'
+      : tab === 'bluepill' ? '/api/bluepill/stocks'
       : `/api/sector/stocks?type=${tab}`;
     const res = await fetch(url);
     if (!res.ok) return [];
@@ -362,7 +390,7 @@ export default function DashboardPage() {
   }
 
   async function handleScannerExportTab(tab: ScannerTab, fmt: 'csv' | 'json') {
-    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' };
+    const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria', bluepill: 'Blue Pill' };
     setExportStatus(`Ophalen ${labelMap[tab]}...`);
     try {
       const data = await fetchScannerData(tab);
@@ -381,20 +409,20 @@ export default function DashboardPage() {
   async function handleScannerExportAll(fmt: 'csv' | 'json') {
     setExportStatus('Alle tabs ophalen...');
     try {
-      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria] = await Promise.all([
+      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria, bluepill] = await Promise.all([
         fetchScannerData('kuifje'), fetchScannerData('zonnebloem'),
         fetchScannerData('biopharma'), fetchScannerData('mining'),
         fetchScannerData('hydrogen'), fetchScannerData('shipping'),
-        fetchScannerData('moria'),
+        fetchScannerData('moria'), fetchScannerData('bluepill'),
       ]);
       if (fmt === 'json') {
-        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria }), generateExportFilename('AllScanners', 'json'), 'application/json');
+        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria, bluepill }), generateExportFilename('AllScanners', 'json'), 'application/json');
       } else {
         for (const [tab, data, label] of [
           ['kuifje', kuifje, 'Kuifje'], ['zonnebloem', zonnebloem, 'Zonnebloem'],
           ['biopharma', biopharma, 'BioPharma'], ['mining', mining, 'Mining'],
           ['hydrogen', hydrogen, 'Hydrogen'], ['shipping', shipping, 'Shipping'],
-          ['moria', moria, 'Moria'],
+          ['moria', moria, 'Moria'], ['bluepill', bluepill, 'Blue Pill'],
         ] as [ScannerTab, Record<string, unknown>[], string][]) {
           if (data.length > 0) downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
         }
@@ -485,6 +513,23 @@ export default function DashboardPage() {
       console.error('[Moria] Scan error:', err);
     } finally {
       setMoriaScanRunning(false);
+    }
+  }
+
+  async function handleRunBluepillScan() {
+    setBluepillScanRunning(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/bluepill/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+      });
+      if (res.ok) { const result = await res.json(); console.log(`[BluePill] Scan: ${result.candidatesFound} candidates, ${result.newStocksFound} new`); }
+      bluepillRefreshStocks();
+    } catch (err) {
+      console.error('[BluePill] Scan error:', err);
+    } finally {
+      setBluepillScanRunning(false);
     }
   }
 
@@ -586,6 +631,12 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moriaAutoScan, moriaScanRunning]);
 
+  const bluepillAutoCheck = useCallback(() => {
+    if (!bluepillAutoScan || bluepillScanRunning) return;
+    if (Date.now() - bluepillAutoLastRun.current >= AUTO_INTERVAL) handleRunBluepillScan();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bluepillAutoScan, bluepillScanRunning]);
+
   // Start first scan when auto-scan toggles on
   useEffect(() => {
     if (kuifjeAutoScan && !scanRunning) {
@@ -650,9 +701,18 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moriaAutoScan]);
 
+  useEffect(() => {
+    if (bluepillAutoScan && !bluepillScanRunning) {
+      bluepillAutoLastRun.current = Date.now();
+      handleRunBluepillScan();
+      setBluepillAutoNext(new Date(Date.now() + AUTO_INTERVAL));
+    } else if (!bluepillAutoScan) setBluepillAutoNext(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bluepillAutoScan]);
+
   // Polling timer
   useEffect(() => {
-    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan && !moriaAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan && !moriaAutoScan && !bluepillAutoScan) return;
     const timer = setInterval(() => {
       kuifjeAutoCheck();
       zbAutoCheck();
@@ -661,13 +721,14 @@ export default function DashboardPage() {
       h2AutoCheck();
       shpAutoCheck();
       moriaAutoCheck();
+      bluepillAutoCheck();
     }, 30_000);
     return () => clearInterval(timer);
-  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck, moriaAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, bluepillAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck, moriaAutoCheck, bluepillAutoCheck]);
 
   // Visibility change catch-up
   useEffect(() => {
-    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan && !moriaAutoScan) return;
+    if (!kuifjeAutoScan && !zbAutoScan && !bpAutoScan && !mnAutoScan && !h2AutoScan && !shpAutoScan && !moriaAutoScan && !bluepillAutoScan) return;
     function onVisible() {
       if (document.visibilityState === 'visible') {
         kuifjeAutoCheck();
@@ -677,11 +738,12 @@ export default function DashboardPage() {
         h2AutoCheck();
         shpAutoCheck();
         moriaAutoCheck();
+        bluepillAutoCheck();
       }
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck, moriaAutoCheck]);
+  }, [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, bluepillAutoScan, kuifjeAutoCheck, zbAutoCheck, bpAutoCheck, mnAutoCheck, h2AutoCheck, shpAutoCheck, moriaAutoCheck, bluepillAutoCheck]);
 
   // ===== BULK ACTIONS =====
 
@@ -692,7 +754,8 @@ export default function DashboardPage() {
     else if (activeTab === 'mining') mnBulkFavorite(selectedIds);
     else if (activeTab === 'hydrogen') h2BulkFavorite(selectedIds);
     else if (activeTab === 'shipping') shpBulkFavorite(selectedIds);
-    else moriaBulkFavorite(selectedIds);
+    else if (activeTab === 'moria') moriaBulkFavorite(selectedIds);
+    else bluepillBulkFavorite(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -703,7 +766,8 @@ export default function DashboardPage() {
     else if (activeTab === 'mining') mnBulkArchive(selectedIds);
     else if (activeTab === 'hydrogen') h2BulkArchive(selectedIds);
     else if (activeTab === 'shipping') shpBulkArchive(selectedIds);
-    else moriaBulkArchive(selectedIds);
+    else if (activeTab === 'moria') moriaBulkArchive(selectedIds);
+    else bluepillBulkArchive(selectedIds);
     setSelectedIds(new Set());
   }
 
@@ -720,7 +784,8 @@ export default function DashboardPage() {
         else if (activeTab === 'mining') mnBulkDelete(selectedIds);
         else if (activeTab === 'hydrogen') h2BulkDelete(selectedIds);
         else if (activeTab === 'shipping') shpBulkDelete(selectedIds);
-        else moriaBulkDelete(selectedIds);
+        else if (activeTab === 'moria') moriaBulkDelete(selectedIds);
+        else bluepillBulkDelete(selectedIds);
         setSelectedIds(new Set());
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
@@ -728,7 +793,7 @@ export default function DashboardPage() {
   }
 
   function requestDelete(id: string) {
-    const allStocks = activeTab === 'kuifje' ? stocks : activeTab === 'zonnebloem' ? zbStocks : activeTab === 'biopharma' ? bpStocks : activeTab === 'mining' ? mnStocks : activeTab === 'hydrogen' ? h2Stocks : activeTab === 'shipping' ? shpStocks : moriaStocks;
+    const allStocks = activeTab === 'kuifje' ? stocks : activeTab === 'zonnebloem' ? zbStocks : activeTab === 'biopharma' ? bpStocks : activeTab === 'mining' ? mnStocks : activeTab === 'hydrogen' ? h2Stocks : activeTab === 'shipping' ? shpStocks : activeTab === 'moria' ? moriaStocks : bluepillStocks;
     const stock = allStocks.find((s) => s.id === id);
     setConfirmDialog({
       open: true,
@@ -741,7 +806,8 @@ export default function DashboardPage() {
         else if (activeTab === 'mining') mnDeleteStock(id);
         else if (activeTab === 'hydrogen') h2DeleteStock(id);
         else if (activeTab === 'shipping') shpDeleteStock(id);
-        else moriaDeleteStock(id);
+        else if (activeTab === 'moria') moriaDeleteStock(id);
+        else bluepillDeleteStock(id);
         setConfirmDialog((prev) => ({ ...prev, open: false }));
       },
     });
@@ -768,9 +834,9 @@ export default function DashboardPage() {
   }
 
   // Count how many auto-scans are active
-  const allAutoActive = kuifjeAutoScan && zbAutoScan && bpAutoScan && mnAutoScan && h2AutoScan && shpAutoScan && moriaAutoScan;
-  const anyAutoActive = kuifjeAutoScan || zbAutoScan || bpAutoScan || mnAutoScan || h2AutoScan || shpAutoScan || moriaAutoScan;
-  const autoCount = [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan].filter(Boolean).length;
+  const allAutoActive = kuifjeAutoScan && zbAutoScan && bpAutoScan && mnAutoScan && h2AutoScan && shpAutoScan && moriaAutoScan && bluepillAutoScan;
+  const anyAutoActive = kuifjeAutoScan || zbAutoScan || bpAutoScan || mnAutoScan || h2AutoScan || shpAutoScan || moriaAutoScan || bluepillAutoScan;
+  const autoCount = [kuifjeAutoScan, zbAutoScan, bpAutoScan, mnAutoScan, h2AutoScan, shpAutoScan, moriaAutoScan, bluepillAutoScan].filter(Boolean).length;
 
   // ===== RENDER SECTOR TAB (shared for BioPharma & Mining) =====
   function renderSectorTab(
@@ -1057,6 +1123,17 @@ export default function DashboardPage() {
               Moria
               <span className="ml-2 text-xs text-[var(--text-muted)]">({moriaStocks.length})</span>
             </button>
+            <button
+              onClick={() => setActiveTab('bluepill')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+                activeTab === 'bluepill'
+                  ? 'border-pink-500 text-pink-400'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+            >
+              Blue Pill
+              <span className="ml-2 text-xs text-[var(--text-muted)]">({bluepillStocks.length})</span>
+            </button>
           </div>
 
           <div className="ml-auto flex items-center gap-2 py-1">
@@ -1070,6 +1147,7 @@ export default function DashboardPage() {
                 setH2AutoScan(newState);
                 setShpAutoScan(newState);
                 setMoriaAutoScan(newState);
+                setBluepillAutoScan(newState);
               }}
               className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded transition-all whitespace-nowrap ${
                 allAutoActive
@@ -1096,7 +1174,7 @@ export default function DashboardPage() {
                     {exportStatus && <div className="text-xs text-blue-400">{exportStatus}</div>}
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Huidige tab ({
-                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' }[activeTab]
+                        { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria', bluepill: 'Blue Pill' }[activeTab]
                       })</div>
                       <div className="flex gap-2">
                         <button onClick={() => handleScannerExportTab(activeTab, 'csv')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">CSV</button>
@@ -1423,6 +1501,87 @@ export default function DashboardPage() {
                 {totalPages > 1 && (
                   <Pagination currentPage={currentPage} totalPages={totalPages}
                     onPageChange={handlePageChange} totalItems={moriaStocks.length} itemsPerPage={ITEMS_PER_PAGE} />
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* Blue Pill Tab */}
+        {activeTab === 'bluepill' && (
+          <>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                Blue Pill
+                <span className="ml-3 text-sm font-normal text-[var(--text-muted)]">
+                  {bluepillStocks.length} ultra-cheap biopharma stocks
+                </span>
+              </h1>
+
+              <div className="flex items-center gap-3">
+                <button onClick={handleRunBluepillScan} disabled={bluepillScanRunning}
+                  className="px-4 py-2 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 rounded text-sm font-medium text-white transition-colors">
+                  {bluepillScanRunning ? 'Scanning...' : 'Run Blue Pill Scan'}
+                </button>
+                <button onClick={() => setBluepillAutoScan(!bluepillAutoScan)}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm rounded transition-colors ${
+                    bluepillAutoScan ? 'bg-green-600 text-white' : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                  }`}>
+                  <span className={`inline-block w-2 h-2 rounded-full ${bluepillAutoScan ? 'bg-white animate-pulse' : 'bg-[var(--text-muted)]'}`} />
+                  {bluepillAutoScan ? `Auto ON${bluepillAutoNext ? ` (${Math.ceil((bluepillAutoNext.getTime() - Date.now()) / 60000)}m)` : ''}` : 'Auto'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-4 mb-4 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <input type="text" placeholder="Search ticker or company name..."
+                    value={bluepillFilters.search} onChange={(e) => setBluepillFilters({ ...bluepillFilters, search: e.target.value })}
+                    className="w-full px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-pink-500 text-sm" />
+                </div>
+                <select value={bluepillFilters.marketFilter} onChange={(e) => setBluepillFilters({ ...bluepillFilters, marketFilter: e.target.value })}
+                  className="px-3 py-2 bg-[var(--input-bg)] border border-[var(--border-color)] rounded text-[var(--text-primary)] text-sm focus:outline-none cursor-pointer [&>option]:bg-[#1a1a2e] [&>option]:text-white">
+                  <option value="">All Markets</option>
+                  {bluepillMarkets.map((m) => (<option key={m} value={m}>{m}</option>))}
+                </select>
+                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+                  <input type="checkbox" checked={bluepillFilters.showFavorites} onChange={(e) => setBluepillFilters({ ...bluepillFilters, showFavorites: e.target.checked })} className="rounded" />
+                  Favorites
+                </label>
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-sm text-[var(--text-muted)]">{selectedIds.size} selected</span>
+                    <button onClick={() => { const selected = bluepillStocks.filter((s) => selectedIds.has(s.id)); for (const s of selected) window.open(getGoogleFinanceUrl(s.ticker, s.exchange), '_blank'); }}
+                      className="px-3 py-2 text-sm bg-pink-600 text-white hover:opacity-90 rounded transition-colors">Open in Google</button>
+                    <button onClick={handleBulkFavorite} className="px-3 py-2 text-sm bg-[var(--accent-orange)] text-white hover:opacity-90 rounded transition-colors">Favorite</button>
+                    <button onClick={handleBulkArchive} className="px-3 py-2 text-sm bg-blue-600 text-white hover:opacity-90 rounded transition-colors">Archive</button>
+                    <button onClick={requestBulkDelete} className="px-3 py-2 text-sm bg-[var(--accent-red)] text-white hover:opacity-90 rounded transition-colors">Delete</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {bluepillLoading ? (
+              <TableSkeleton rows={10} columns={8} />
+            ) : bluepillStocks.length === 0 ? (
+              <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg p-16 text-center">
+                <h2 className="text-xl font-semibold mb-2 text-[var(--text-primary)]">No Blue Pill Stocks Yet</h2>
+                <p className="text-[var(--text-secondary)] mb-4">Click &ldquo;Run Blue Pill Scan&rdquo; to find ultra-cheap biopharma stocks that have declined 90%+ from all-time highs.</p>
+                <button onClick={handleRunBluepillScan} disabled={bluepillScanRunning}
+                  className="px-6 py-3 bg-pink-600 hover:bg-pink-700 disabled:opacity-50 rounded-lg font-medium text-white transition-colors">
+                  {bluepillScanRunning ? 'Scanning...' : 'Run First Blue Pill Scan'}
+                </button>
+              </div>
+            ) : (
+              <>
+                <BluePillStockTable stocks={paginatedStocks as Parameters<typeof BluePillStockTable>[0]['stocks']}
+                  sort={bluepillSort} onSort={bluepillHandleSort} selectedIds={selectedIds}
+                  onToggleSelect={toggleSelect} onToggleSelectAll={toggleSelectAll}
+                  onToggleFavorite={bluepillToggleFavorite} onDelete={requestDelete} />
+                {totalPages > 1 && (
+                  <Pagination currentPage={currentPage} totalPages={totalPages}
+                    onPageChange={handlePageChange} totalItems={bluepillStocks.length} itemsPerPage={ITEMS_PER_PAGE} />
                 )}
               </>
             )}

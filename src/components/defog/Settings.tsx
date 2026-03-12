@@ -289,12 +289,13 @@ export function Settings({
   // ── Scanner Export ──
   const [scannerExportStatus, setScannerExportStatus] = useState<string | null>(null);
 
-  type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
+  type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria' | 'bluepill';
 
   async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
     const url = tab === 'kuifje' ? '/api/stocks'
       : tab === 'zonnebloem' ? '/api/zonnebloem/stocks'
       : tab === 'moria' ? '/api/moria/stocks'
+      : tab === 'bluepill' ? '/api/bluepill/stocks'
       : `/api/sector/stocks?type=${tab}`;
     const res = await fetch(url);
     if (!res.ok) return [];
@@ -307,7 +308,7 @@ export function Settings({
     try {
       const data = await fetchScannerData(tab);
       if (data.length === 0) { setScannerExportStatus('Geen data'); setTimeout(() => setScannerExportStatus(null), 2000); return; }
-      const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' };
+      const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria', bluepill: 'Blue Pill' };
       const label = labelMap[tab];
       if (fmt === 'csv') {
         downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
@@ -321,19 +322,20 @@ export function Settings({
   async function handleScannerExportAll(fmt: 'csv' | 'json') {
     setScannerExportStatus('Alle tabs ophalen...');
     try {
-      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria] = await Promise.all([
+      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria, bluepill] = await Promise.all([
         fetchScannerData('kuifje'), fetchScannerData('zonnebloem'),
         fetchScannerData('biopharma'), fetchScannerData('mining'),
         fetchScannerData('hydrogen'), fetchScannerData('shipping'),
-        fetchScannerData('moria'),
+        fetchScannerData('moria'), fetchScannerData('bluepill'),
       ]);
       if (fmt === 'json') {
-        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria }), generateExportFilename('AllScanners', 'json'), 'application/json');
+        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria, bluepill }), generateExportFilename('AllScanners', 'json'), 'application/json');
       } else {
         for (const [tab, data, label] of [
           ['kuifje', kuifje, 'Kuifje'], ['zonnebloem', zonnebloem, 'Zonnebloem'],
           ['biopharma', biopharma, 'BioPharma'], ['mining', mining, 'Mining'],
           ['hydrogen', hydrogen, 'Hydrogen'], ['shipping', shipping, 'Shipping'],
+          ['moria', moria, 'Moria'], ['bluepill', bluepill, 'Blue Pill'],
         ] as [ScannerTab, Record<string, unknown>[], string][]) {
           if (data.length > 0) downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
         }
@@ -722,6 +724,8 @@ export function Settings({
                     { tab: 'mining' as ScannerTab, label: 'Mining', color: '#f59e0b' },
                     { tab: 'hydrogen' as ScannerTab, label: 'Hydrogen', color: '#06b6d4' },
                     { tab: 'shipping' as ScannerTab, label: 'Shipping', color: '#3b82f6' },
+                    { tab: 'moria' as ScannerTab, label: 'Moria', color: '#ef4444' },
+                    { tab: 'bluepill' as ScannerTab, label: 'Blue Pill', color: '#ec4899' },
                   ]).map(({ tab, label, color }) => (
                     <div key={tab} className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
