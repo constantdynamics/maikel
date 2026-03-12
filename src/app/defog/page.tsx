@@ -401,6 +401,8 @@ export default function DefogPage() {
       if (result.miningAdded > 0) parts.push(`${result.miningAdded} Mining`);
       if (result.hydrogenAdded > 0) parts.push(`${result.hydrogenAdded} Hydrogen`);
       if (result.shippingAdded > 0) parts.push(`${result.shippingAdded} Shipping`);
+      if (result.moriaAdded > 0) parts.push(`${result.moriaAdded} Moria`);
+      if (result.bluepillAdded > 0) parts.push(`${result.bluepillAdded} Blue Pill`);
       if (parts.length > 0) {
         setSyncMessage(`Synced: +${parts.join(', ')}`);
         setTimeout(() => setSyncMessage(null), 4000);

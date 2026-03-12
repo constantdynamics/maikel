@@ -8,12 +8,14 @@ const BIOPHARMA_TAB_COLOR = '#10b981';  // Emerald
 const MINING_TAB_COLOR = '#f59e0b';     // Amber
 const HYDROGEN_TAB_COLOR = '#06b6d4';   // Cyan
 const SHIPPING_TAB_COLOR = '#3b82f6';   // Blue
+const MORIA_TAB_COLOR = '#ef4444';      // Red
+const BLUEPILL_TAB_COLOR = '#ec4899';   // Pink
 
 // Top N stocks per tab for weekly refresh
 const TOP_N_LIMIT = 250;
 
 // Scanner tab names (used for matching)
-export const SCANNER_TAB_NAMES = ['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining', 'Hydrogen', 'Shipping'] as const;
+export const SCANNER_TAB_NAMES = ['Kuifje', 'Prof. Zonnebloem', 'BioPharma', 'Mining', 'Hydrogen', 'Shipping', 'Moria', 'Blue Pill'] as const;
 export type ScannerTabName = typeof SCANNER_TAB_NAMES[number];
 
 const SCANNER_TAB_COLORS: Record<ScannerTabName, string> = {
@@ -23,6 +25,8 @@ const SCANNER_TAB_COLORS: Record<ScannerTabName, string> = {
   'Mining': MINING_TAB_COLOR,
   'Hydrogen': HYDROGEN_TAB_COLOR,
   'Shipping': SHIPPING_TAB_COLOR,
+  'Moria': MORIA_TAB_COLOR,
+  'Blue Pill': BLUEPILL_TAB_COLOR,
 };
 
 // Weekly refresh timestamp key
@@ -85,6 +89,27 @@ interface MaikelSectorStock {
   score: number;
   spike_score: number;
 }
+
+// Moria stocks — ultra-cheap mining stocks with deep ATH declines
+interface MaikelMoriaStock {
+  id: string;
+  ticker: string;
+  yahoo_ticker: string | null;
+  company_name: string;
+  current_price: number | null;
+  all_time_high: number | null;
+  ath_decline_pct: number | null;
+  high_3y: number | null;
+  high_1y: number | null;
+  high_6m: number | null;
+  exchange: string | null;
+  market: string | null;
+  sector: string | null;
+}
+
+// BluePill stocks — ultra-cheap biopharma stocks with deep ATH declines
+// Same structure as Moria
+type MaikelBluePillStock = MaikelMoriaStock;
 
 // Buy limit is set to the historical low, with cascade:
 // 5-year low → 3-year low → 1-year low (no multiplier)
@@ -153,11 +178,29 @@ function sectorBuyLimitInput(stock: MaikelSectorStock): [Parameters<typeof calcu
 }
 
 /**
+ * Build buy-limit input for a Moria stock.
+ * Moria stocks have high_3y and high_1y but no five_year_low — use ATH decline to estimate.
+ */
+function moriaBuyLimitInput(stock: MaikelMoriaStock): [Parameters<typeof calculateBuyLimit>[0], number | null] {
+  return [{
+    threeYearLow: stock.high_3y ? stock.current_price : null, // Moria stocks ARE at lows
+    twelveMonthLow: stock.high_1y ? stock.current_price : null,
+  }, stock.current_price];
+}
+
+/**
+ * Build buy-limit input for a BluePill stock (same logic as Moria).
+ */
+function bluepillBuyLimitInput(stock: MaikelBluePillStock): [Parameters<typeof calculateBuyLimit>[0], number | null] {
+  return moriaBuyLimitInput(stock);
+}
+
+/**
  * Determine the best ticker for Defog (that data providers can resolve).
  * For Zonnebloem stocks, use yahoo_ticker if available (e.g., "0A91.F" or "LMND").
  * For Kuifje stocks, ticker is typically already a proper US ticker.
  */
-function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock): string {
+function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock | MaikelMoriaStock | MaikelBluePillStock): string {
   // Zonnebloem stocks have yahoo_ticker which includes the proper exchange suffix
   if ('yahoo_ticker' in m && m.yahoo_ticker) {
     return m.yahoo_ticker;
@@ -168,7 +211,7 @@ function getDefogTicker(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSec
 /**
  * Determine the exchange for Defog based on the yahoo_ticker suffix.
  */
-function getDefogExchange(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock): string {
+function getDefogExchange(m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock | MaikelMoriaStock | MaikelBluePillStock): string {
   const ticker = getDefogTicker(m);
   // Extract exchange from Yahoo suffix
   if (ticker.includes('.')) {
@@ -269,7 +312,7 @@ function deduplicateScannerStocks<T extends { company_name: string }>(
 }
 
 function maikelToDefogStock(
-  m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock,
+  m: MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock | MaikelMoriaStock | MaikelBluePillStock,
   buyLimit: number | null,
   overrideTicker?: string,
 ): DefogStock {
@@ -563,15 +606,17 @@ async function fetchScannerStocks(url: string): Promise<unknown[]> {
 export async function syncScannerToDefog(
   getTabs: () => Tab[],
   setTabs: (updater: (tabs: Tab[]) => Tab[]) => void,
-): Promise<{ kuifjeAdded: number; zbAdded: number; biopharmaAdded: number; miningAdded: number; hydrogenAdded: number; shippingAdded: number }> {
+): Promise<{ kuifjeAdded: number; zbAdded: number; biopharmaAdded: number; miningAdded: number; hydrogenAdded: number; shippingAdded: number; moriaAdded: number; bluepillAdded: number }> {
   // Fetch all scanner results (top 250 each)
-  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw, hydrogenRaw, shippingRaw] = await Promise.all([
+  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw, hydrogenRaw, shippingRaw, moriaRaw, bluepillRaw] = await Promise.all([
     fetchScannerStocks(`/api/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/zonnebloem/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=biopharma&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=mining&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=hydrogen&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=shipping&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/moria/stocks`),
+    fetchScannerStocks(`/api/bluepill/stocks`),
   ]);
 
   const kuifjeStocksRaw = kuifjeRaw as MaikelKuifjeStock[];
@@ -580,12 +625,14 @@ export async function syncScannerToDefog(
   const miningStocksRaw = miningRaw as MaikelSectorStock[];
   const hydrogenStocksRaw = hydrogenRaw as MaikelSectorStock[];
   const shippingStocksRaw = shippingRaw as MaikelSectorStock[];
+  const moriaStocksRaw = moriaRaw as MaikelMoriaStock[];
+  const bluepillStocksRaw = bluepillRaw as MaikelBluePillStock[];
 
   // SAFETY: If ALL scanner APIs returned zero stocks, skip sync entirely
-  const totalStocks = kuifjeStocksRaw.length + zbStocksRaw.length + biopharmaStocksRaw.length + miningStocksRaw.length + hydrogenStocksRaw.length + shippingStocksRaw.length;
+  const totalStocks = kuifjeStocksRaw.length + zbStocksRaw.length + biopharmaStocksRaw.length + miningStocksRaw.length + hydrogenStocksRaw.length + shippingStocksRaw.length + moriaStocksRaw.length + bluepillStocksRaw.length;
   if (totalStocks === 0) {
     console.log('[ScannerSync] All APIs returned 0 stocks — skipping sync to prevent data loss');
-    return { kuifjeAdded: 0, zbAdded: 0, biopharmaAdded: 0, miningAdded: 0, hydrogenAdded: 0, shippingAdded: 0 };
+    return { kuifjeAdded: 0, zbAdded: 0, biopharmaAdded: 0, miningAdded: 0, hydrogenAdded: 0, shippingAdded: 0, moriaAdded: 0, bluepillAdded: 0 };
   }
 
   // Deduplicate incoming scanner results by company name
@@ -595,6 +642,8 @@ export async function syncScannerToDefog(
   const miningStocks = deduplicateScannerStocks(miningStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
   const hydrogenStocks = deduplicateScannerStocks(hydrogenStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
   const shippingStocks = deduplicateScannerStocks(shippingStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...sectorBuyLimitInput(s)));
+  const moriaStocks = deduplicateScannerStocks(moriaStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...moriaBuyLimitInput(s)));
+  const bluepillStocks = deduplicateScannerStocks(bluepillStocksRaw, getDefogTicker, (s) => calculateBuyLimit(...bluepillBuyLimitInput(s)));
 
   const tabs = getTabs();
 
@@ -605,6 +654,8 @@ export async function syncScannerToDefog(
   const miningResult = findOrCreateTab(tabs, 'Mining');
   const hydrogenResult = findOrCreateTab(tabs, 'Hydrogen');
   const shippingResult = findOrCreateTab(tabs, 'Shipping');
+  const moriaResult = findOrCreateTab(tabs, 'Moria');
+  const bluepillResult = findOrCreateTab(tabs, 'Blue Pill');
 
   // Process each scanner's stocks
   const kuifjeProcessed = kuifjeStocksRaw.length > 0
@@ -631,6 +682,14 @@ export async function syncScannerToDefog(
     ? processStocksForTab(shippingStocks, shippingResult.tab, getDefogTicker, sectorBuyLimitInput)
     : { newStocks: [], updates: new Map(), added: 0 };
 
+  const moriaProcessed = moriaStocksRaw.length > 0
+    ? processStocksForTab(moriaStocks, moriaResult.tab, getDefogTicker, moriaBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
+
+  const bluepillProcessed = bluepillStocksRaw.length > 0
+    ? processStocksForTab(bluepillStocks, bluepillResult.tab, getDefogTicker, bluepillBuyLimitInput)
+    : { newStocks: [], updates: new Map(), added: 0 };
+
   // Build a combined lookup of ALL scanner stocks (for cross-referencing NBY tab)
   const allScannerStocks = new Map<string, { ticker: string; buyLimit: number | null }>();
   const addToLookup = <T extends { company_name: string }>(
@@ -653,6 +712,8 @@ export async function syncScannerToDefog(
   addToLookup(miningStocks, getDefogTicker, sectorBuyLimitInput);
   addToLookup(hydrogenStocks, getDefogTicker, sectorBuyLimitInput);
   addToLookup(shippingStocks, getDefogTicker, sectorBuyLimitInput);
+  addToLookup(moriaStocks, getDefogTicker, moriaBuyLimitInput);
+  addToLookup(bluepillStocks, getDefogTicker, bluepillBuyLimitInput);
 
   // Apply all updates in a single setTabs call
   const tabConfigs = [
@@ -662,6 +723,8 @@ export async function syncScannerToDefog(
     { tab: miningResult, processed: miningProcessed },
     { tab: hydrogenResult, processed: hydrogenProcessed },
     { tab: shippingResult, processed: shippingProcessed },
+    { tab: moriaResult, processed: moriaProcessed },
+    { tab: bluepillResult, processed: bluepillProcessed },
   ];
 
   setTabs((currentTabs) => {
@@ -725,6 +788,8 @@ export async function syncScannerToDefog(
     miningAdded: miningProcessed.added,
     hydrogenAdded: hydrogenProcessed.added,
     shippingAdded: shippingProcessed.added,
+    moriaAdded: moriaProcessed.added,
+    bluepillAdded: bluepillProcessed.added,
   };
 }
 
@@ -762,17 +827,19 @@ export function markWeeklyRefreshDone(): void {
 export async function refreshDefogTop250(
   getTabs: () => Tab[],
   setTabs: (updater: (tabs: Tab[]) => Tab[]) => void,
-): Promise<{ kuifje: number; zonnebloem: number; biopharma: number; mining: number; hydrogen: number; shipping: number }> {
+): Promise<{ kuifje: number; zonnebloem: number; biopharma: number; mining: number; hydrogen: number; shipping: number; moria: number; bluepill: number }> {
   console.log('[ScannerSync] Starting weekly top-250 refresh...');
 
   // Fetch top 250 from each scanner
-  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw, hydrogenRaw, shippingRaw] = await Promise.all([
+  const [kuifjeRaw, zbRaw, biopharmaRaw, miningRaw, hydrogenRaw, shippingRaw, moriaRaw, bluepillRaw] = await Promise.all([
     fetchScannerStocks(`/api/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/zonnebloem/stocks?limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=biopharma&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=mining&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=hydrogen&limit=${TOP_N_LIMIT}`),
     fetchScannerStocks(`/api/sector/stocks?type=shipping&limit=${TOP_N_LIMIT}`),
+    fetchScannerStocks(`/api/moria/stocks`),
+    fetchScannerStocks(`/api/bluepill/stocks`),
   ]);
 
   const kuifjeStocks = deduplicateScannerStocks(
@@ -799,11 +866,19 @@ export async function refreshDefogTop250(
     shippingRaw as MaikelSectorStock[], getDefogTicker,
     (s) => calculateBuyLimit(...sectorBuyLimitInput(s)),
   );
+  const moriaStocks = deduplicateScannerStocks(
+    moriaRaw as MaikelMoriaStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...moriaBuyLimitInput(s)),
+  );
+  const bluepillStocks = deduplicateScannerStocks(
+    bluepillRaw as MaikelBluePillStock[], getDefogTicker,
+    (s) => calculateBuyLimit(...bluepillBuyLimitInput(s)),
+  );
 
   // SAFETY: if all APIs return 0, skip
-  if (kuifjeStocks.length + zbStocks.length + biopharmaStocks.length + miningStocks.length + hydrogenStocks.length + shippingStocks.length === 0) {
+  if (kuifjeStocks.length + zbStocks.length + biopharmaStocks.length + miningStocks.length + hydrogenStocks.length + shippingStocks.length + moriaStocks.length + bluepillStocks.length === 0) {
     console.log('[ScannerSync] Weekly refresh: All APIs returned 0 stocks — skipping');
-    return { kuifje: 0, zonnebloem: 0, biopharma: 0, mining: 0, hydrogen: 0, shipping: 0 };
+    return { kuifje: 0, zonnebloem: 0, biopharma: 0, mining: 0, hydrogen: 0, shipping: 0, moria: 0, bluepill: 0 };
   }
 
   const tabs = getTabs();
@@ -851,7 +926,7 @@ export async function refreshDefogTop250(
 
       if (existing) {
         // Update price from scanner but keep all defog data (range, buyLimit, etc.)
-        const scannerStock = stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock;
+        const scannerStock = stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock | MaikelMoriaStock | MaikelBluePillStock;
         newStockList.push({
           ...existing,
           currentPrice: scannerStock.current_price || existing.currentPrice,
@@ -864,7 +939,7 @@ export async function refreshDefogTop250(
         const [limitInput, currentPrice] = getBuyLimitInputFn(stock);
         const buyLimit = calculateBuyLimit(limitInput, currentPrice);
         newStockList.push(maikelToDefogStock(
-          stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock,
+          stock as unknown as MaikelKuifjeStock | MaikelZonnebloemStock | MaikelSectorStock | MaikelMoriaStock | MaikelBluePillStock,
           buyLimit,
         ));
       }
@@ -880,8 +955,10 @@ export async function refreshDefogTop250(
   const miningResult = replaceTabStocks('Mining', miningStocks, getDefogTicker, sectorBuyLimitInput);
   const hydrogenResult = replaceTabStocks('Hydrogen', hydrogenStocks, getDefogTicker, sectorBuyLimitInput);
   const shippingResult = replaceTabStocks('Shipping', shippingStocks, getDefogTicker, sectorBuyLimitInput);
+  const moriaResult = replaceTabStocks('Moria', moriaStocks, getDefogTicker, moriaBuyLimitInput);
+  const bluepillResult = replaceTabStocks('Blue Pill', bluepillStocks, getDefogTicker, bluepillBuyLimitInput);
 
-  const allResults = [kuifjeResult, zbResult, biopharmaResult, miningResult, hydrogenResult, shippingResult];
+  const allResults = [kuifjeResult, zbResult, biopharmaResult, miningResult, hydrogenResult, shippingResult, moriaResult, bluepillResult];
 
   setTabs((currentTabs) => {
     let result = [...currentTabs];
@@ -893,7 +970,9 @@ export async function refreshDefogTop250(
           : r === zbResult ? 'Prof. Zonnebloem'
           : r === biopharmaResult ? 'BioPharma'
           : r === miningResult ? 'Mining'
-          : r === hydrogenResult ? 'Hydrogen' : 'Shipping';
+          : r === hydrogenResult ? 'Hydrogen'
+          : r === shippingResult ? 'Shipping'
+          : r === moriaResult ? 'Moria' : 'Blue Pill';
         const { tab } = findOrCreateTab([], tabName);
         tab.id = r.tabId;
         if (!result.find((t) => t.id === r.tabId)) {
@@ -922,9 +1001,11 @@ export async function refreshDefogTop250(
     mining: miningResult.newStocks.length,
     hydrogen: hydrogenResult.newStocks.length,
     shipping: shippingResult.newStocks.length,
+    moria: moriaResult.newStocks.length,
+    bluepill: bluepillResult.newStocks.length,
   };
 
-  console.log(`[ScannerSync] Weekly refresh complete: K=${counts.kuifje}, Z=${counts.zonnebloem}, BP=${counts.biopharma}, M=${counts.mining}, H2=${counts.hydrogen}, SH=${counts.shipping}`);
+  console.log(`[ScannerSync] Weekly refresh complete: K=${counts.kuifje}, Z=${counts.zonnebloem}, BP=${counts.biopharma}, M=${counts.mining}, H2=${counts.hydrogen}, SH=${counts.shipping}, MO=${counts.moria}, BL=${counts.bluepill}`);
 
   return counts;
 }
