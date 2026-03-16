@@ -289,7 +289,7 @@ export function Settings({
   // ── Scanner Export ──
   const [scannerExportStatus, setScannerExportStatus] = useState<string | null>(null);
 
-  type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
+  type ScannerTab = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
 
   async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
     const url = tab === 'kuifje' ? '/api/stocks'
@@ -320,18 +320,20 @@ export function Settings({
   async function handleScannerExportAll(fmt: 'csv' | 'json') {
     setScannerExportStatus('Alle tabs ophalen...');
     try {
-      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping] = await Promise.all([
+      const [kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria] = await Promise.all([
         fetchScannerData('kuifje'), fetchScannerData('zonnebloem'),
         fetchScannerData('biopharma'), fetchScannerData('mining'),
         fetchScannerData('hydrogen'), fetchScannerData('shipping'),
+        fetchScannerData('moria'),
       ]);
       if (fmt === 'json') {
-        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping }), generateExportFilename('AllScanners', 'json'), 'application/json');
+        downloadFile(allScannerTabsToJSON({ kuifje, zonnebloem, biopharma, mining, hydrogen, shipping, moria }), generateExportFilename('AllScanners', 'json'), 'application/json');
       } else {
         for (const [tab, data, label] of [
           ['kuifje', kuifje, 'Kuifje'], ['zonnebloem', zonnebloem, 'Zonnebloem'],
           ['biopharma', biopharma, 'BioPharma'], ['mining', mining, 'Mining'],
           ['hydrogen', hydrogen, 'Hydrogen'], ['shipping', shipping, 'Shipping'],
+          ['moria', moria, 'Moria'],
         ] as [ScannerTab, Record<string, unknown>[], string][]) {
           if (data.length > 0) downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
         }
