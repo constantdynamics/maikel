@@ -306,7 +306,7 @@ export function Settings({
     try {
       const data = await fetchScannerData(tab);
       if (data.length === 0) { setScannerExportStatus('Geen data'); setTimeout(() => setScannerExportStatus(null), 2000); return; }
-      const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping' };
+      const labelMap: Record<ScannerTab, string> = { kuifje: 'Kuifje', zonnebloem: 'Zonnebloem', biopharma: 'BioPharma', mining: 'Mining', hydrogen: 'Hydrogen', shipping: 'Shipping', moria: 'Moria' };
       const label = labelMap[tab];
       if (fmt === 'csv') {
         downloadFile(scannerStocksToCSV(data, tab), generateExportFilename(label, 'csv'), 'text/csv;charset=utf-8;');
