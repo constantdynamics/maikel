@@ -6,8 +6,11 @@ import * as alphavantage from '@/lib/scanner/alphavantage';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return NextResponse.json({ error: 'Cron secret not configured' }, { status: 401 });
+  }
+  if (request.headers.get('authorization') !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -59,12 +62,15 @@ export async function GET(request: NextRequest) {
   }
 
   // Store health check
-  await supabase.from('health_checks').insert({
+  const { error: insertError } = await supabase.from('health_checks').insert({
     yahoo_finance_status: healthCheck.yahoo_finance_status,
     alpha_vantage_status: healthCheck.alpha_vantage_status,
     database_status: healthCheck.database_status,
     last_scan_status: healthCheck.last_scan_status,
   });
+  if (insertError) {
+    console.error('[Health] Failed to store health check:', insertError.message);
+  }
 
   return NextResponse.json(healthCheck);
 }

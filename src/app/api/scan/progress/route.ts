@@ -23,8 +23,27 @@ export async function GET() {
       return NextResponse.json({ running: false, scan: null });
     }
 
+    // Auto-clean stuck scans: if status is 'running' but started > 10 minutes ago,
+    // the serverless function was likely killed by Vercel's timeout.
+    let isRunning = scan.status === 'running';
+    if (isRunning && scan.started_at) {
+      const startedAt = new Date(scan.started_at).getTime();
+      const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+      if (startedAt < tenMinutesAgo) {
+        await supabase.from('scan_logs').update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          errors: [...(scan.errors || []), 'Scan timed out (exceeded Vercel function limit)'],
+        }).eq('id', scan.id);
+
+        isRunning = false;
+        scan.status = 'failed';
+        scan.completed_at = new Date().toISOString();
+      }
+    }
+
     return NextResponse.json({
-      running: scan.status === 'running',
+      running: isRunning,
       scan: {
         id: scan.id,
         status: scan.status,

@@ -398,7 +398,7 @@ async function deepScanStock(
     scan_number: scanNumber,
     scan_date: today,
     // NovaBay-type analysis
-    twelve_month_low: stableSpikeAnalysis.twelveMontLow > 0 ? clampNum(stableSpikeAnalysis.twelveMontLow) : null,
+    twelve_month_low: stableSpikeAnalysis.twelveMonthLow > 0 ? clampNum(stableSpikeAnalysis.twelveMonthLow) : null,
     twelve_month_max_decline_pct: clampNum(stableSpikeAnalysis.maxDeclineFromAverage),
     twelve_month_max_spike_pct: clampNum(stableSpikeAnalysis.maxSpikeAboveAverage),
     is_stable_with_spikes: stableSpikeAnalysis.isStableWithSpikes,
