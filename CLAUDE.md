@@ -23,33 +23,63 @@ No test framework is configured. There are no unit tests.
 
 ## Architecture
 
-### Three Screening Algorithms
+### Four Screening Algorithms
 
-- **Kuifje** (`/api/scan`, `/api/stocks`) — Finds stocks that declined significantly from all-time highs and have historical 200%+ growth events. Core tables: `stocks`, `price_history`, `growth_events`.
-- **Professor Zonnebloem** (`/api/zonnebloem/scan`, `/api/zonnebloem/stocks`) — Detects price spike patterns in stocks. Core tables: `zonnebloem_stocks`, `zonnebloem_spike_events`.
-- **Sector Scanner** (`/api/sector/scan`) — Applies combined Kuifje + Zonnebloem analysis to specific sectors (BioPharma, Mining). Core table: `sector_stocks`.
+- **Kuifje** (`/api/scan`, `/api/stocks`) — Finds stocks that declined significantly from all-time highs and have historical 200%+ growth events. Scores using triangular numbers: n events = n*(n+1)/2 points. Core tables: `stocks`, `price_history`, `growth_events`.
+- **Professor Zonnebloem** (`/api/zonnebloem/scan`, `/api/zonnebloem/stocks`) — Detects price spike patterns (75%+ upward spikes lasting 4+ days) across 25+ global markets. Maintains `zonnebloem_scan_history` to prioritize never-scanned stocks. Core tables: `zonnebloem_stocks`, `zonnebloem_spike_events`.
+- **Sector Scanner** (`/api/sector/scan`, `/api/sector/stocks`) — Hybrid algorithm combining Kuifje + Zonnebloem criteria. Supports four configurable sectors: BioPharma, Mining, Hydrogen, Shipping. A stock qualifies if it meets either algorithm's criteria. Core table: `sector_stocks`.
+- **Moria** (`/api/moria/scan`, `/api/moria/stocks`) — Finds ultra-cheap mining stocks ≥90% below all-time high. Markets: NYSE/NASDAQ/AMEX, TSX/TSXV, ASX. Manual-only (no cron schedule). Core table: `moria_stocks`.
+
+### Cron Schedule (Vercel)
+
+| Algorithm | Route | Schedule |
+|---|---|---|
+| Kuifje | `/api/cron/scan` | Weekdays 21:00 UTC |
+| Zonnebloem | `/api/cron/zonnebloem` | Weekdays 16:00 UTC |
+| Sector Scanner | `/api/cron/sector-scan` | Sundays 12:00 UTC |
+| Moria | — | Manual only |
+
+Additional cron routes exist (`/api/cron/archive`, `/api/cron/health`) but are not scheduled in `vercel.json`.
 
 ### Data Flow
 
-1. **Cron jobs** (Vercel, defined in `vercel.json`) trigger API routes on weekday schedules
-2. **API routes** fetch data from Yahoo Finance / Alpha Vantage, run algorithms, write to Supabase
-3. **Custom hooks** (`src/hooks/useStocks.ts`, `useZonnebloemStocks.ts`, `useSectorStocks.ts`) fetch from API routes and manage client-side state via Zustand
-4. **Pages** render data using shared components (`StockTable`, `FilterBar`, etc.)
+1. **Candidate discovery** — TradingView screener API used by all algorithms to get a broad candidate pool quickly
+2. **Deep scan** — Yahoo Finance historical data for detailed per-stock analysis (time-budgeted to 240s)
+3. **Cron jobs** write results to Supabase; manual scans use progress polling (`GET /api/*/scan/progress`) since there are no websockets
+4. **Custom hooks** (`useStocks`, `useZonnebloemStocks`, `useSectorStocks`, `useMoriaStocks`) fetch from API routes and manage client-side state via Zustand
+5. **Pages** render data using shared components (`StockTable`, `FilterBar`, etc.)
+
+### Time Budget Pattern
+
+All long-running scans enforce a **240-second hard limit** (leaving a 60s buffer for Vercel's 300s max). Scans check elapsed time before each batch and exit early, saving partial results. Partial scans are marked `"partial"` (not `"failed"`) and are still stored and displayed.
 
 ### Key Directories
 
-- `src/app/api/` — All backend logic lives in Next.js API route handlers
-- `src/app/defog/` — Widget-based dashboard pages (alerts, movers, portfolio, scan, underwater)
+- `src/app/api/` — All backend logic in Next.js route handlers
+- `src/app/defog/widget/` — Widget-based dashboard pages: alerts, movers, portfolio, scan, underwater, tablet layout
 - `src/components/` — Shared UI components; `src/components/defog/` for widget-specific components
-- `src/hooks/` — Three data hooks, one per algorithm, using Zustand stores
-- `src/lib/types.ts` — All TypeScript interfaces for stocks, events, scans, configs
-- `src/lib/supabase.ts` — Supabase client initialization
-- `src/lib/exchanges.ts` — Exchange data and market configuration
-- `supabase/migrations/` — SQL migration files for schema changes
+- `src/hooks/` — Four data hooks, one per algorithm, using Zustand stores
+- `src/lib/scanner/` — Kuifje algorithm: orchestrator, scorer, Yahoo/Alpha Vantage/TradingView clients, validator
+- `src/lib/zonnebloem/` — Zonnebloem algorithm: orchestrator, spike scorer, TradingView client
+- `src/lib/sector-scanner/` — Sector Scanner algorithm
+- `src/lib/moria/` — Moria algorithm
+- `src/lib/defog/services/` — Client-side services: rate limiter, persistent cache (IndexedDB), auto-scan, backup, notifications, smart refresh
+- `src/lib/types.ts` — All TypeScript interfaces (stocks, events, scans, configs for all four algorithms)
+- `src/lib/supabase.ts` — Dual Supabase clients: lazy anon (client-side) + service role (server-side)
+- `src/lib/exchanges.ts` — Exchange and market configuration
+- `supabase/migrations/` — SQL migration files
 
 ### Auth & Middleware
 
-`src/middleware.ts` protects cron endpoints with `CRON_SECRET` Bearer token auth and checks Supabase configuration for page routes.
+`src/middleware.ts` protects `/api/cron/*` endpoints with `CRON_SECRET` Bearer token auth. If `CRON_SECRET` is not set, the check is NOT skipped — requests are rejected. Page routes are checked for valid Supabase configuration and redirected to `/setup-required` if missing.
+
+### Key Patterns
+
+- **Data resurrection** — Deleted stocks are revived (`is_deleted: false`) when re-found by a scan, allowing users to control visibility via deletion without losing coverage.
+- **Never-scanned prioritization** — Zonnebloem and Sector Scanner use history tables to scan previously-unseen stocks first.
+- **Rate limiting** — `src/lib/defog/services/rateLimiter.ts` enforces per-provider limits tracked in localStorage: Alpha Vantage 5/min (25/day), Twelve Data 8/min, Yahoo Finance 60/min.
+- **Numeric sanitization** — All values written to Supabase are checked with `isFinite()`, clamped, and rounded to fit `numeric(9,2)` column limits.
+- **Scan log pruning** — Old scan log details are pruned (keeps last 5 per algorithm) to prevent database bloat.
 
 ### Environment Variables
 

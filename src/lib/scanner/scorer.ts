@@ -257,7 +257,7 @@ export function calculateThreeYearLow(history: OHLCData[]): {
 export interface StableSpikeAnalysis {
   isStableWithSpikes: boolean;
   averagePrice: number;
-  twelveMontLow: number;
+  twelveMonthLow: number;
   maxDeclineFromAverage: number;  // How much it dropped below average (as %)
   maxSpikeAboveAverage: number;   // Highest spike above average (as %)
   spikeCount: number;             // Number of significant spikes
@@ -273,7 +273,7 @@ export function analyzeStableWithSpikes(
   const result: StableSpikeAnalysis = {
     isStableWithSpikes: false,
     averagePrice: 0,
-    twelveMontLow: 0,
+    twelveMonthLow: 0,
     maxDeclineFromAverage: 0,
     maxSpikeAboveAverage: 0,
     spikeCount: 0,
@@ -318,7 +318,7 @@ export function analyzeStableWithSpikes(
     }
   }
 
-  result.twelveMontLow = minLow;
+  result.twelveMonthLow = minLow;
 
   // Calculate decline from median (how stable is the base?)
   const declineFromMedian = ((medianPrice - minLow) / medianPrice) * 100;

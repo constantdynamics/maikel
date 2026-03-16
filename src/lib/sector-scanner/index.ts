@@ -104,7 +104,7 @@ async function recordScanHistory(
     .eq('ticker', ticker)
     .single();
 
-  await supabase.from('sector_scan_history').upsert(
+  const { error } = await supabase.from('sector_scan_history').upsert(
     {
       scanner_type: scannerType,
       ticker,
@@ -115,6 +115,7 @@ async function recordScanHistory(
     },
     { onConflict: 'scanner_type,ticker' },
   );
+  if (error) console.error(`[Sector] Failed to record scan history for ${ticker}: ${error.message}`);
 }
 
 function prioritizeCandidates(

@@ -146,7 +146,7 @@ async function fetchMoriaCandidates(market: MarketScanConfig): Promise<MoriaCand
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`TradingView HTTP ${res.status}: ${text.substring(0, 200)}`);
+      throw new Error(`TradingView HTTP ${res.status}: ${text.length > 200 ? text.substring(0, 200) + '...' : text}`);
     }
     return res.json() as Promise<TradingViewResponse>;
   });
