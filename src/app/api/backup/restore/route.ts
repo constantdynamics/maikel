@@ -59,8 +59,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Backup not found' }, { status: 404 });
     }
 
-    const backupData = backup.data as { stocks: Array<Record<string, unknown>> };
-    const stocks = backupData.stocks || [];
+    const backupData = backup.data as { stocks?: unknown };
+    if (!backupData || !Array.isArray(backupData.stocks)) {
+      return NextResponse.json({ error: 'Invalid backup format' }, { status: 400 });
+    }
+    const stocks = backupData.stocks as Array<Record<string, unknown>>;
 
     if (stocks.length === 0) {
       return NextResponse.json({ error: 'Backup contains no stocks' }, { status: 400 });
@@ -77,7 +80,11 @@ export async function POST(request: NextRequest) {
         .from('stocks')
         .upsert(stockData, { onConflict: 'ticker' });
 
-      if (!error) restored++;
+      if (!error) {
+        restored++;
+      } else {
+        console.error(`[Backup] Failed to restore stock ${stock.ticker}: ${error.message}`);
+      }
     }
 
     return NextResponse.json({

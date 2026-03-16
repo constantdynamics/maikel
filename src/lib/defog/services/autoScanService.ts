@@ -38,8 +38,8 @@ export function isWithinScanHours(exchange: string): boolean {
   const minutePart = parts.find(p => p.type === 'minute');
   const dayPart = parts.find(p => p.type === 'weekday');
 
-  const hour = parseInt(hourPart?.value || '0');
-  const minute = parseInt(minutePart?.value || '0');
+  const hour = parseInt(hourPart?.value || '0', 10);
+  const minute = parseInt(minutePart?.value || '0', 10);
   const dayOfWeek = dayPart?.value || '';
 
   // Weekend check

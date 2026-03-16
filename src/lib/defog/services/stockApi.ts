@@ -139,8 +139,8 @@ export function isMarketOpen(exchange: string): MarketStatus {
     const minutePart = parts.find(p => p.type === 'minute');
     const dayPart = parts.find(p => p.type === 'weekday');
 
-    const currentHour = parseInt(hourPart?.value || '0');
-    const currentMinute = parseInt(minutePart?.value || '0');
+    const currentHour = parseInt(hourPart?.value || '0', 10);
+    const currentMinute = parseInt(minutePart?.value || '0', 10);
     const dayOfWeek = dayPart?.value || '';
 
     const isWeekend = dayOfWeek === 'Sat' || dayOfWeek === 'Sun';

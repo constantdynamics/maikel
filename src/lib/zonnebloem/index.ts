@@ -106,7 +106,7 @@ async function recordScanHistory(
     .eq('ticker', ticker)
     .single();
 
-  await supabase.from('zonnebloem_scan_history').upsert(
+  const { error } = await supabase.from('zonnebloem_scan_history').upsert(
     {
       ticker,
       market,
@@ -116,6 +116,7 @@ async function recordScanHistory(
     },
     { onConflict: 'ticker' },
   );
+  if (error) console.error(`[ZB] Failed to record scan history for ${ticker}: ${error.message}`);
 }
 
 function prioritizeCandidates(
