@@ -321,6 +321,7 @@ export default function DashboardPage() {
   async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
     const url = tab === 'kuifje' ? '/api/stocks'
       : tab === 'zonnebloem' ? '/api/zonnebloem/stocks'
+      : tab === 'moria' ? '/api/moria/stocks'
       : `/api/sector/stocks?type=${tab}`;
     const res = await fetch(url);
     if (!res.ok) return [];
@@ -1073,7 +1074,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="border-t border-[var(--border-color)] pt-3">
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Alle 6 tabs</div>
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">Alle 7 tabs</div>
                       <div className="flex gap-2">
                         <button onClick={() => handleScannerExportAll('json')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">JSON</button>
                         <button onClick={() => handleScannerExportAll('csv')} className="flex-1 px-3 py-1.5 text-xs bg-[var(--bg-tertiary)] hover:bg-[var(--border-color)] text-[var(--text-secondary)] rounded transition-colors">CSV</button>

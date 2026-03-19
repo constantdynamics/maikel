@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-type TabType = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping';
+type TabType = 'kuifje' | 'zonnebloem' | 'biopharma' | 'mining' | 'hydrogen' | 'shipping' | 'moria';
 
 interface ColumnLegendProps {
   activeTab: TabType;
@@ -86,7 +86,7 @@ export default function ColumnLegend({ activeTab }: ColumnLegendProps) {
         <div className="absolute right-0 top-full mt-2 z-50 w-[420px] max-h-[70vh] overflow-y-auto bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg shadow-2xl">
           <div className="sticky top-0 bg-[var(--card-bg)] border-b border-[var(--border-color)] px-4 py-3 flex items-center justify-between">
             <span className="text-sm font-semibold text-[var(--text-primary)]">
-              Kolom uitleg — {activeTab === 'kuifje' ? 'Kuifje' : activeTab === 'zonnebloem' ? 'Zonnebloem' : activeTab === 'biopharma' ? 'BioPharma' : 'Mining'}
+              Kolom uitleg — {activeTab === 'kuifje' ? 'Kuifje' : activeTab === 'zonnebloem' ? 'Zonnebloem' : activeTab === 'biopharma' ? 'BioPharma' : activeTab === 'hydrogen' ? 'Hydrogen' : activeTab === 'shipping' ? 'Shipping' : activeTab === 'moria' ? 'Moria' : 'Mining'}
             </span>
             <button onClick={() => setOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
               &#x2715;

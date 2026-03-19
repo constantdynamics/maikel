@@ -294,6 +294,7 @@ export function Settings({
   async function fetchScannerData(tab: ScannerTab): Promise<Record<string, unknown>[]> {
     const url = tab === 'kuifje' ? '/api/stocks'
       : tab === 'zonnebloem' ? '/api/zonnebloem/stocks'
+      : tab === 'moria' ? '/api/moria/stocks'
       : `/api/sector/stocks?type=${tab}`;
     const res = await fetch(url);
     if (!res.ok) return [];
