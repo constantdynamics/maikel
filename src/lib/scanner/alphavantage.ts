@@ -3,26 +3,46 @@ import { retryWithBackoff } from '../utils';
 
 const API_KEY = process.env.ALPHA_VANTAGE_API_KEY || 'demo';
 const BASE_URL = 'https://www.alphavantage.co/query';
+const DAILY_LIMIT = 25;
 
-// Track daily call count (25/day free tier)
+// Track daily call count (25/day free tier).
+// Note: this is per-instance state and resets on serverless cold start,
+// so it is best-effort — but it still prevents runaway within a single invocation.
 let dailyCallCount = 0;
-let lastResetDate = new Date().toDateString();
+let lastResetKey = utcDayKey();
+
+function utcDayKey(): string {
+  // ISO YYYY-MM-DD in UTC; stable across server timezones and DST.
+  return new Date().toISOString().slice(0, 10);
+}
 
 function checkAndResetDailyCount(): void {
-  const today = new Date().toDateString();
-  if (today !== lastResetDate) {
+  const today = utcDayKey();
+  if (today !== lastResetKey) {
     dailyCallCount = 0;
-    lastResetDate = today;
+    lastResetKey = today;
   }
 }
 
-function canMakeCall(): boolean {
+/**
+ * Atomically reserve a call slot. Returns true if reserved, false if over limit.
+ * Because JS is single-threaded, the read+increment between here and the next
+ * caller is uninterruptible — this prevents the check-then-act race that the
+ * previous "increment after await" pattern had.
+ */
+function reserveCall(): boolean {
   checkAndResetDailyCount();
-  return dailyCallCount < 25;
+  if (dailyCallCount >= DAILY_LIMIT) return false;
+  dailyCallCount++;
+  return true;
+}
+
+function releaseCall(): void {
+  if (dailyCallCount > 0) dailyCallCount--;
 }
 
 async function fetchAlphaVantage(params: Record<string, string>): Promise<unknown> {
-  if (!canMakeCall()) {
+  if (!reserveCall()) {
     console.warn('Alpha Vantage: Daily limit reached (25 calls)');
     return null;
   }
@@ -33,14 +53,16 @@ async function fetchAlphaVantage(params: Record<string, string>): Promise<unknow
     url.searchParams.set(key, value);
   }
 
-  const response = await retryWithBackoff(async () => {
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`Alpha Vantage HTTP error: ${res.status}`);
-    return res.json();
-  });
-
-  dailyCallCount++;
-  return response;
+  try {
+    return await retryWithBackoff(async () => {
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`Alpha Vantage HTTP error: ${res.status}`);
+      return res.json();
+    });
+  } catch (error) {
+    releaseCall();
+    throw error;
+  }
 }
 
 export async function getStockQuote(ticker: string): Promise<StockQuote | null> {
@@ -111,7 +133,7 @@ export async function getHistoricalData(
 
 export function getRemainingCalls(): number {
   checkAndResetDailyCount();
-  return Math.max(0, 25 - dailyCallCount);
+  return Math.max(0, DAILY_LIMIT - dailyCallCount);
 }
 
 export async function verifyPrice(

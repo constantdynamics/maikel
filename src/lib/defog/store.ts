@@ -36,7 +36,6 @@ const DEFAULT_SETTINGS: UserSettings = {
     dailyDropAlert: null,  // Alert if stock drops X% in one day
   },
   globalChartTimeframe: null,
-  sessionTimeout: 30 * 60 * 1000, // 30 minutes
   apiKey: '',
   apiProvider: 'twelvedata',
   apiKeys: [], // Multiple API keys

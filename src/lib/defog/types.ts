@@ -207,7 +207,6 @@ export interface UserSettings {
     dailyDropAlert: number | null;  // Alert if stock drops X% in one day (null = disabled)
   };
   globalChartTimeframe: ChartTimeframe | null;
-  sessionTimeout: number;
   apiKey: string;
   apiProvider: ApiProvider;
   apiKeys: ApiKeyConfig[];  // Multiple API keys support

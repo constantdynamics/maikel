@@ -30,13 +30,21 @@ export async function GET() {
       .select('id', { count: 'exact', head: true })
       .eq('is_deleted', false);
 
-    return NextResponse.json({
-      version: packageJson.version,
-      health: healthCheck || null,
-      lastScan: lastScan || null,
-      stockCount: stockCount || 0,
-      timestamp: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        version: packageJson.version,
+        health: healthCheck || null,
+        lastScan: lastScan || null,
+        stockCount: stockCount || 0,
+        timestamp: new Date().toISOString(),
+      },
+      {
+        headers: {
+          // Health data is expensive to compute and rarely changes between requests.
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120',
+        },
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

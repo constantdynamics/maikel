@@ -262,14 +262,18 @@ export function analyzeSpikeEvents(
     spikeScore *= 1.2;
   }
 
+  const safeNumber = (n: number): number => (Number.isFinite(n) ? n : 0);
+  const safeNullable = (n: number | null): number | null =>
+    n === null ? null : Number.isFinite(n) ? n : null;
+
   return {
     events,
-    spikeScore: Math.round(spikeScore * 100) / 100,
-    highestSpikePct,
+    spikeScore: Math.round(safeNumber(spikeScore) * 100) / 100,
+    highestSpikePct: safeNumber(highestSpikePct),
     highestSpikeDate,
-    basePriceMedian: overallBaseMedian,
-    priceChange12m,
-    baseDeclinePct,
+    basePriceMedian: safeNumber(overallBaseMedian),
+    priceChange12m: safeNullable(priceChange12m),
+    baseDeclinePct: safeNullable(baseDeclinePct),
   };
 }
 

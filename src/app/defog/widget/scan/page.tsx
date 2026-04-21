@@ -64,18 +64,19 @@ export default function ScanActivatorWidget() {
     } catch { /* ignore */ }
   }, []);
 
+  // Single polling effect: interval speed adapts to whether a scan is running.
+  // Using one effect avoids the race where two effects both manage pollRef.current
+  // and one's cleanup closes over the other's interval id.
   useEffect(() => {
     fetchProgress();
-    pollRef.current = setInterval(fetchProgress, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fetchProgress]);
-
-  // Speed up polling when a scan is running
-  useEffect(() => {
     const isRunning = scanState.kuifje?.running || scanState.zonnebloem?.running;
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(fetchProgress, isRunning ? 3000 : 10000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    const delay = isRunning ? 3000 : 10000;
+    const id = setInterval(fetchProgress, delay);
+    pollRef.current = id;
+    return () => {
+      clearInterval(id);
+      if (pollRef.current === id) pollRef.current = null;
+    };
   }, [scanState.kuifje?.running, scanState.zonnebloem?.running, fetchProgress]);
 
   // Trigger scan

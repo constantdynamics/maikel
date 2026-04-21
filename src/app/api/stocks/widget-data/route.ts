@@ -106,9 +106,17 @@ export async function GET(request: NextRequest) {
   allStocks.sort((a, b) => a.distancePercent - b.distancePercent);
   const topStocks = allStocks.slice(0, limit);
 
-  return NextResponse.json({
-    stocks: topStocks,
-    total: allStocks.length,
-    updatedAt: parsed.lastSyncTime || new Date().toISOString(),
-  });
+  return NextResponse.json(
+    {
+      stocks: topStocks,
+      total: allStocks.length,
+      updatedAt: parsed.lastSyncTime || new Date().toISOString(),
+    },
+    {
+      headers: {
+        // Shared across all widget viewers; refreshed whenever defog_state is synced.
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60',
+      },
+    },
+  );
 }
